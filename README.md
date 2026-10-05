@@ -58,3 +58,7 @@ Setup instructions will be added once the skeleton is in place (Block 0 of the b
 - [docs/SPEC.md](docs/SPEC.md): the full spec and build guide
 - [prompt_log.md](prompt_log.md): prompts used to build this project
 - [AGENTS.md](AGENTS.md): rules for AI coding agents working in this repo
+
+## References
+
+- Stan Waddell, *Creating a Digital Twin GPT: A Higher Education Practitioner's Guide*, Carnegie Mellon University Computing Services. [Guide page](https://www.cmu.edu/computing/services/ai/tools/chatgpt/digital_twin_gpt.html) · [PDF](https://www.cmu.edu/computing/services/ai/tools/chatgpt/how-to/gpt-digital-twin-guide.pdf). Background reading on faculty digital twins; this repo links to it rather than hosting a copy.
