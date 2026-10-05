@@ -132,7 +132,10 @@ These are requirements from the spec, not polish. Do not weaken them:
 - The question log stores question text and scores only: no names, accounts,
   or IP addresses.
 - `gpt-digital-twin-guide.pdf` is a third-party reference (Stan Waddell, CMU).
-  It is git-ignored. Never commit it.
+  It is git-ignored. Never commit it; cite it from the README's References
+  section instead. It is published at
+  https://www.cmu.edu/computing/services/ai/tools/chatgpt/how-to/gpt-digital-twin-guide.pdf
+  (guide page: https://www.cmu.edu/computing/services/ai/tools/chatgpt/digital_twin_gpt.html).
 
 ## Copy
 

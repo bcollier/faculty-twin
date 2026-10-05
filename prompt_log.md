@@ -173,3 +173,18 @@ Prompts below are verbatim. Responses are summarized.
 - Says plainly that this is not a GAIM repo and overrides `gaim_claude_dev/AGENTS.md`, dropping the design-docs repo, CI minute budget, `needs Ben` label, and platform trigger rules.
 - Added project rules from the spec: the spec is the source of truth, one build block at a time, the four pieces of code I write by hand, the prompt log at the repo root, secrets handling, the voice safety rules, and content and privacy limits.
 - Merged through a pull request.
+
+### Prompt 4 (6:04 PM)
+
+> add a source for the pdf guide the original source is here https://www.cmu.edu/computing/services/ai/tools/chatgpt/digital_twin_gpt.html so ensure the pdf is publicly available here is another source of the same pdf
+
+**Response summary.** The second source mentioned in the prompt was not included. Checked the CMU page: it links the PDF at `how-to/gpt-digital-twin-guide.pdf`, which downloads without a login. Its SHA-256 matches the local copy exactly, so it is the same file.
+
+- Added a References section to the README citing the guide with links to both the guide page and the PDF.
+- Updated `AGENTS.md` to point to the public URL. The PDF itself stays out of the repo; linking to CMU's copy cites the source without redistributing it.
+
+### Prompt 5 (6:05 PM, sent while Prompt 4 was running)
+
+> push this and all prompts to github
+
+**Response summary.** Committed the citation and this log update on a branch, opened a pull request, and squash-merged it to `main`.
