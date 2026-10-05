@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+.vercel/
+.DS_Store
+
+# Reference material, not ours to publish
+gpt-digital-twin-guide.pdf
