@@ -162,3 +162,14 @@ Prompts below are verbatim. Responses are summarized.
 > I added prompt_log.md. log all the prompts from here appended to this, and push all this to github
 
 **Response summary.** Appended this section to `docs/prompt_log.md`, committed it, created the public `bcollier/faculty-twin` repo on GitHub, and pushed `main`.
+
+### Prompt 3 (6:03 PM)
+
+> move it for me . write agents.md based on the same for all the othe repos I've worked on. note that this one is not from gaim so it doesn't use the same gaim specific rules
+
+**Response summary.** On a branch, moved `prompt_log.md` from `docs/` to the repo root, where the assignment requires it, and wrote `AGENTS.md`.
+
+- Based on the portfolio repo's `AGENTS.md` and the shared workspace rules: branch and pull request for every change, squash merge, no em dashes in visitor-facing copy, and steps only I can do called out in the PR body.
+- Says plainly that this is not a GAIM repo and overrides `gaim_claude_dev/AGENTS.md`, dropping the design-docs repo, CI minute budget, `needs Ben` label, and platform trigger rules.
+- Added project rules from the spec: the spec is the source of truth, one build block at a time, the four pieces of code I write by hand, the prompt log at the repo root, secrets handling, the voice safety rules, and content and privacy limits.
+- Merged through a pull request.
