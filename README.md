@@ -55,4 +55,6 @@ Setup instructions will be added once the skeleton is in place (Block 0 of the b
 
 ## Docs
 
-The full spec and build guide is in [docs/SPEC.md](docs/SPEC.md).
+- [docs/SPEC.md](docs/SPEC.md): the full spec and build guide
+- [prompt_log.md](prompt_log.md): prompts used to build this project
+- [AGENTS.md](AGENTS.md): rules for AI coding agents working in this repo
