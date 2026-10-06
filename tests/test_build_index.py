@@ -63,6 +63,8 @@ def test_index_loads_in_backend_from_content_dir(archive, tmp_path, monkeypatch)
     text = build_index.embed_text(s1)
     assert text.index("What is an apple") < text.index("Apples grow") < text.index("Say apples") < text.index("favorite")
     assert "APPLES 2026" in build_index.embed_text(s3)
+    blank = dict(s3, title="", text="", notes="", ocr_text="", transcript="")
+    assert build_index.embed_text(blank) == "Fake Course A, session 1: Fruit basics, slide 3"
 
     # The real backend store, pointed at the build folder.
     monkeypatch.setenv("CONTENT_DIR", str(build))
@@ -118,8 +120,23 @@ def test_without_key_builds_everything_but_embeddings(archive, tmp_path):
 
 def test_voyage_429_is_retried(archive, tmp_path):
     voyage = pf.FakeVoyage(fail_first=2)
-    assert run(archive, tmp_path, voyage) == 0
+    lines: list[str] = []
+    assert run(archive, tmp_path, voyage, lines) == 0
     assert voyage.calls == 3
+    assert any(line.startswith("Voyage usage this run:") for line in lines)
+
+
+def test_reduced_limit_account_switches_to_paced_mode(archive, tmp_path):
+    voyage = pf.FakeVoyage(reduced_first=1)
+    lines: list[str] = []
+    waits: list[float] = []
+    code = build_index.build(
+        archive, key="test-voyage-key", client=voyage.client(), code_map=pf.code_map(tmp_path),
+        sleep=waits.append, log=lines.append,
+    )
+    assert code == 0
+    assert any("paced mode" in line for line in lines)
+    assert waits and waits[0] >= 60  # waits out the minute before retrying
 
 
 def test_build_leak_check_reports_location_not_name(archive, tmp_path):

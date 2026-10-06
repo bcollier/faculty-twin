@@ -139,15 +139,19 @@ def fake_vector(text: str) -> list[float]:
 class FakeVoyage:
     """TEST FAKE for https://api.voyageai.com/v1/embeddings (httpx MockTransport handler)."""
 
-    def __init__(self, fail_first: int = 0) -> None:
+    def __init__(self, fail_first: int = 0, reduced_first: int = 0) -> None:
         self.calls = 0
         self.inputs: list[str] = []
         self.fail_first = fail_first
+        self.reduced_first = reduced_first
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.calls += 1
         assert request.url.path == "/v1/embeddings"
         assert request.headers["authorization"] == "Bearer test-voyage-key"
+        if self.reduced_first:
+            self.reduced_first -= 1
+            return httpx.Response(429, json={"detail": "You have not yet added your payment method in the billing page and will have reduced rate limits of 3 RPM and 10K TPM."})
         if self.fail_first:
             self.fail_first -= 1
             return httpx.Response(429, headers={"retry-after": "0"}, json={"detail": "slow down"})
@@ -155,7 +159,8 @@ class FakeVoyage:
         assert body["input_type"] == "document"
         self.inputs.extend(body["input"])
         data = [{"index": i, "embedding": fake_vector(t)} for i, t in enumerate(body["input"])]
-        return httpx.Response(200, json={"data": data, "model": body["model"]})
+        usage = {"total_tokens": sum(len(t.split()) for t in body["input"])}
+        return httpx.Response(200, json={"data": data, "model": body["model"], "usage": usage})
 
     def client(self) -> httpx.Client:
         return httpx.Client(transport=httpx.MockTransport(self))

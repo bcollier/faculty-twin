@@ -63,6 +63,16 @@ class EmbeddingError(RuntimeError):
     pass
 
 
+class ReducedLimits(EmbeddingError):
+    """Voyage accounts without a payment method get 3 requests and 10K tokens per minute."""
+
+
+# Paced mode for reduced-limit accounts: small batches, one request at a time, waits between them.
+SLOW_BATCH_CHARS = 20_000  # at 2.5+ characters per token, under 8K tokens per request
+SLOW_TPM = 10_000
+SLOW_RPM = 3
+
+
 # ---------------------------------------------------------------- records
 
 def _clip_text(value: Any, limit: int) -> str:
@@ -78,7 +88,11 @@ def embed_text(rec: dict[str, Any]) -> str:
     """Title, slide text, notes, OCR text, then what Ben said (code: title, markdown, source)."""
     keys = ("title", "text", "notes", "ocr_text", "transcript") if rec["kind"] == "slide" else ("title", "text", "source")
     parts = [_clip_text(rec.get(k), LIMITS.get(k, 3000)) for k in keys]
-    return _clip_text("\n\n".join(p for p in parts if p), EMBED_MAX_CHARS)
+    text = _clip_text("\n\n".join(p for p in parts if p), EMBED_MAX_CHARS)
+    if not text:  # an image-only slide with no OCR text: Voyage rejects empty input
+        where = f"slide {rec.get('slide_number')}" if rec["kind"] == "slide" else f"cell {rec.get('cell_number')}"
+        text = f"{rec.get('course_title') or rec.get('course')}, session {rec.get('session')}: {rec.get('session_title') or ''}, {where}"
+    return text
 
 
 def _load_align(path: Path) -> dict[str, str]:
@@ -284,6 +298,7 @@ def voyage_embed(
     key: str,
     client: httpx.Client,
     sleep: Callable[[float], None] = time.sleep,
+    usage: dict[str, int] | None = None,
 ) -> list[np.ndarray]:
     """One Voyage call with retry and backoff on 429, 5xx, and network errors."""
     body = {"input": texts, "model": model, "input_type": INPUT_TYPE}
@@ -296,11 +311,16 @@ def voyage_embed(
             last = type(exc).__name__
         else:
             if resp.status_code < 400:
-                data = sorted(resp.json().get("data", []), key=lambda d: d.get("index", 0))
+                payload = resp.json()
+                if usage is not None:
+                    usage["tokens"] = usage.get("tokens", 0) + int((payload.get("usage") or {}).get("total_tokens") or 0)
+                data = sorted(payload.get("data", []), key=lambda d: d.get("index", 0))
                 if len(data) != len(texts):
                     raise EmbeddingError(f"Voyage returned {len(data)} embeddings for {len(texts)} inputs")
                 return [np.asarray(d["embedding"], dtype=np.float32) for d in data]
-            last = f"HTTP {resp.status_code}"
+            last = f"HTTP {resp.status_code}: {resp.text[:300]}"
+            if resp.status_code == 429 and "reduced rate limits" in resp.text:
+                raise ReducedLimits(last)
             if resp.status_code not in (408, 409, 425, 429) and resp.status_code < 500:
                 raise EmbeddingError(f"Voyage returned {resp.status_code}: {resp.text[:200]}")
             retry_after = resp.headers.get("retry-after")
@@ -311,12 +331,12 @@ def voyage_embed(
     raise EmbeddingError(f"Voyage failed after {MAX_RETRIES} tries ({last})")
 
 
-def batches(items: list[str]) -> list[list[str]]:
+def batches(items: list[str], max_chars: int = BATCH_CHARS) -> list[list[str]]:
     out: list[list[str]] = []
     cur: list[str] = []
     size = 0
     for t in items:
-        if cur and (len(cur) >= BATCH_SIZE or size + len(t) > BATCH_CHARS):
+        if cur and (len(cur) >= BATCH_SIZE or size + len(t) > max_chars):
             out.append(cur)
             cur, size = [], 0
         cur.append(t)
@@ -333,8 +353,9 @@ def embed_records(
     client: httpx.Client | None = None,
     sleep: Callable[[float], None] = time.sleep,
     log: Callable[[str], None] = print,
+    usage: dict[str, int] | None = None,
 ) -> tuple[np.ndarray | None, int, int]:
-    """Return (matrix or None, cached count, newly embedded count)."""
+    """Return (matrix or None, cached count, newly embedded count). Adds Voyage tokens to `usage`."""
     texts = [embed_text(r) for r in records]
     vecs: list[np.ndarray | None] = [cache.get(t) for t in texts]
     cached = sum(v is not None for v in vecs)
@@ -344,12 +365,40 @@ def embed_records(
     if todo:
         own = client is None
         client = client or httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0))
+        slow = bool(common.env("VOYAGE_SLOW"))
         try:
-            groups = batches(todo)
-            for i, group in enumerate(groups, 1):
-                for text, vec in zip(group, voyage_embed(group, cache.model, key or "", client, sleep)):
+            groups = batches(todo, SLOW_BATCH_CHARS if slow else BATCH_CHARS)
+            done = 0
+            while groups:
+                group = groups.pop(0)
+                before = usage.get("tokens", 0) if usage is not None else 0
+                try:
+                    got = voyage_embed(group, cache.model, key or "", client, sleep, usage)
+                except ReducedLimits:
+                    if slow and len(group) == 1:
+                        raise
+                    if not slow:
+                        rest = group + [t for g in groups for t in g]
+                        est = sum(map(len, rest)) // 3
+                        log(
+                            "  Voyage says this account has reduced limits (no payment method yet): 3 requests and\n"
+                            f"  10K tokens per minute. Switching to paced mode: about {est // SLOW_TPM + 1} minutes for the rest.\n"
+                            "  Adding a payment method at https://dashboard.voyageai.com lifts the limit."
+                        )
+                        slow, groups = True, batches(rest, SLOW_BATCH_CHARS)
+                    else:  # still too big for one minute's budget: split it
+                        half = len(group) // 2
+                        groups = [group[:half], group[half:]] + groups
+                    sleep(61.0)
+                    continue
+                for text, vec in zip(group, got):
                     cache.put(text, vec)
-                log(f"  embedded batch {i}/{len(groups)} ({len(group)} texts)")
+                done += 1
+                log(f"  embedded batch {done} ({len(group)} texts, {len(groups)} batches left)")
+                if slow and groups:
+                    spent = (usage.get("tokens", 0) - before) if usage is not None else 0
+                    spent = spent or sum(map(len, group)) // 3
+                    sleep(max(60.0 / SLOW_RPM, 60.0 * spent / SLOW_TPM) + 1.0)
         finally:
             if own:
                 client.close()
@@ -392,8 +441,9 @@ def build(
         return 1
     chash = content_hash(records, model)
     cache = EmbedCache(out / "embed_cache", model)
+    usage: dict[str, int] = {"tokens": 0}
     try:
-        matrix, cached, fresh = embed_records(records, cache, key, client, sleep, log)
+        matrix, cached, fresh = embed_records(records, cache, key, client, sleep, log, usage)
     except EmbeddingError as exc:
         log(f"Embedding failed: {exc}. Re-run the same command; finished batches are cached.")
         return 2
@@ -459,6 +509,8 @@ def build(
         )
         return EXIT_PENDING
     log(f"embeddings.npy: {matrix.shape[0]} x {matrix.shape[1]} ({fresh} newly embedded, {cached} from cache)")
+    if fresh:
+        log(f"Voyage usage this run: {usage['tokens']:,} tokens")
     return EXIT_OK
 
 
