@@ -7,3 +7,6 @@ torch
 torchaudio
 kokoro>=0.9.4
 chatterbox-tts>=0.1.7
+# resemble-perth (a chatterbox dependency) imports pkg_resources, which setuptools 81 removed;
+# without it Chatterbox fails with "TypeError: 'NoneType' object is not callable".
+setuptools<81
