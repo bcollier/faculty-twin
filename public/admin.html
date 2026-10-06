@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="color-scheme" content="light dark">
+  <title>Faculty Twin Settings</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="admin.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#admin-main">Skip to content</a>
+
+  <section id="a-boot" class="screen-center"><p class="muted">Loading...</p></section>
+
+  <section id="a-offline" class="screen-center" hidden>
+    <div class="card narrow">
+      <h1 class="title-sm">Can't reach the server.</h1>
+      <p>It may be waking up.</p>
+      <button type="button" class="btn btn-primary" id="a-retry">Try again</button>
+    </div>
+  </section>
+
+  <section id="a-login" class="screen-center" hidden>
+    <form id="a-login-form" class="card narrow" novalidate>
+      <p class="eyebrow">Faculty Twin</p>
+      <h1 class="title-sm">Settings</h1>
+      <p id="a-login-note" class="note" hidden></p>
+      <label class="field-label" for="a-passcode">Admin passcode</label>
+      <div class="row">
+        <input id="a-passcode" type="password" autocomplete="current-password" required aria-describedby="a-login-error">
+        <button class="btn btn-primary" type="submit">Sign in</button>
+      </div>
+      <p id="a-login-error" class="error-text" role="alert"></p>
+    </form>
+  </section>
+
+  <div id="a-app" class="admin" hidden>
+    <header class="admin-head">
+      <div>
+        <p class="eyebrow">Faculty Twin</p>
+        <h1 class="title-sm">Settings</h1>
+      </div>
+      <p class="muted small" id="a-index-version"></p>
+    </header>
+
+    <nav class="admin-nav" aria-label="Settings sections">
+      <ul>
+        <li><a href="#sec-model">Model</a></li>
+        <li><a href="#sec-voice">Voice</a></li>
+        <li><a href="#sec-courses">Courses and source material</a></li>
+        <li><a href="#sec-limits">Limits and access</a></li>
+        <li><a href="#sec-activity">Activity</a></li>
+      </ul>
+    </nav>
+
+    <main id="admin-main" tabindex="-1">
+
+      <!-- Keys -->
+      <section class="panel" aria-labelledby="keys-h">
+        <h2 id="keys-h">Keys</h2>
+        <p class="panel-intro">Keys live in environment variables on the server. This only shows whether each one is set.</p>
+        <ul class="pills" id="keys-list" aria-live="polite"></ul>
+      </section>
+
+      <!-- 1. Model -->
+      <section class="panel" id="sec-model" aria-labelledby="model-h">
+        <h2 id="model-h">Model</h2>
+        <p class="panel-intro">The model that writes narration. Embeddings stay on Voyage whatever you pick here.</p>
+        <div class="grid-2">
+          <div>
+            <div class="field">
+              <label for="provider">Provider</label>
+              <select id="provider">
+                <option value="anthropic">Claude (Anthropic API)</option>
+                <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+              <p class="status-line err" id="provider-key-warn" hidden></p>
+            </div>
+            <div class="field">
+              <label for="model-search">Pick a model</label>
+              <input id="model-search" type="search" placeholder="Search models" autocomplete="off" aria-controls="model-list">
+              <ul class="model-list" id="model-list" role="listbox" aria-label="Models"></ul>
+              <p class="status-line" id="models-status" aria-live="polite"></p>
+            </div>
+            <div class="field">
+              <label for="model-id">Model id</label>
+              <input id="model-id" type="text" autocomplete="off" spellcheck="false" aria-describedby="model-id-hint">
+              <p class="hint" id="model-id-hint">Pick from the list or type any model id the provider accepts.</p>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn btn-primary" id="save-model">Save</button>
+              <span class="muted small" id="current-model"></span>
+            </div>
+            <p class="status-line" id="save-model-status" role="status"></p>
+          </div>
+          <div>
+            <div class="field">
+              <label for="test-q">Test question</label>
+              <input id="test-q" type="text" maxlength="300" value="What is the main idea of the first session?">
+            </div>
+            <button type="button" class="btn" id="test-model">Test this model</button>
+            <p class="status-line" id="test-status" role="status"></p>
+            <pre class="json" id="test-output" hidden></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Voice -->
+      <section class="panel" id="sec-voice" aria-labelledby="voice-h">
+        <h2 id="voice-h">Voice</h2>
+        <p class="panel-intro">Voices from the ElevenLabs account. Changing the voice means each answer's audio is made fresh the next time it plays.</p>
+        <fieldset class="bare">
+          <legend class="visually-hidden">Voice</legend>
+          <ul class="voice-list" id="voice-list"></ul>
+        </fieldset>
+        <p class="status-line" id="voices-status" aria-live="polite"></p>
+        <div class="actions" style="margin-top:.75rem">
+          <button type="button" class="btn btn-primary" id="save-voice">Save voice</button>
+        </div>
+        <p class="status-line" id="save-voice-status" role="status"></p>
+      </section>
+
+      <!-- 3. Courses and source material -->
+      <section class="panel" id="sec-courses" aria-labelledby="courses-h">
+        <h2 id="courses-h">Courses and source material</h2>
+        <p class="panel-intro">Uploads go straight from this browser to private storage. The worker on Ben's Mac picks them up, rebuilds the index, and updates the status here.</p>
+        <div class="actions">
+          <button type="button" class="btn btn-small" id="refresh-courses">Refresh</button>
+          <span class="status-line" id="courses-status" aria-live="polite"></span>
+        </div>
+        <div id="course-blocks"></div>
+
+        <div class="grid-2">
+          <form class="subform" id="upload-form" novalidate>
+            <fieldset class="bare">
+              <legend>Upload source material</legend>
+              <div class="grid-2">
+                <div class="field"><label for="up-course">Course</label><select id="up-course" required></select></div>
+                <div class="field"><label for="up-session">Session</label><select id="up-session" required></select></div>
+              </div>
+              <div class="field">
+                <label for="up-kind">What it is</label>
+                <select id="up-kind">
+                  <option value="slides">Slides (PDF or PowerPoint)</option>
+                  <option value="transcript">Zoom transcript (.vtt)</option>
+                  <option value="video">Class video (.mp4)</option>
+                  <option value="notebook">Notebook (.ipynb)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="up-file">File</label>
+                <input id="up-file" type="file" accept=".pdf,.pptx" required>
+              </div>
+              <button class="btn btn-primary" type="submit">Upload</button>
+              <p class="status-line" id="upload-status" role="status"></p>
+              <ul class="upload-list" id="upload-list"></ul>
+            </fieldset>
+          </form>
+
+          <div>
+            <form class="subform" id="session-form" novalidate>
+              <fieldset class="bare">
+                <legend>Add a session</legend>
+                <div class="grid-2">
+                  <div class="field"><label for="ns-course">Course</label><select id="ns-course" required></select></div>
+                  <div class="field"><label for="ns-number">Session number</label><input id="ns-number" type="number" min="1" max="99" required></div>
+                </div>
+                <div class="grid-2">
+                  <div class="field"><label for="ns-date">Date</label><input id="ns-date" type="date" required></div>
+                  <div class="field"><label for="ns-title">Title</label><input id="ns-title" type="text" required></div>
+                </div>
+                <button class="btn" type="submit">Add session</button>
+                <p class="status-line" id="session-status" role="status"></p>
+              </fieldset>
+            </form>
+            <form class="subform" id="course-form" novalidate>
+              <fieldset class="bare">
+                <legend>Add a course</legend>
+                <div class="grid-2">
+                  <div class="field"><label for="nc-code">Course code</label><input id="nc-code" type="text" inputmode="numeric" pattern="\d{5}" placeholder="70445" required></div>
+                  <div class="field"><label for="nc-term">Term</label><input id="nc-term" type="text" placeholder="Spring 2027" required></div>
+                </div>
+                <div class="field"><label for="nc-title">Title</label><input id="nc-title" type="text" required></div>
+                <button class="btn" type="submit">Add course</button>
+                <p class="status-line" id="course-status" role="status"></p>
+              </fieldset>
+            </form>
+          </div>
+        </div>
+
+        <h3 style="margin-top:1.25rem">Uploaded files</h3>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th scope="col">Course</th><th scope="col">Session</th><th scope="col">Kind</th><th scope="col">File</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+            <tbody id="sources-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 4. Limits and access -->
+      <section class="panel" id="sec-limits" aria-labelledby="limits-h">
+        <h2 id="limits-h">Limits and access</h2>
+        <div class="grid-2">
+          <form id="cap-form" novalidate>
+            <div class="field">
+              <label for="cap">Daily voice character cap</label>
+              <input id="cap" type="number" min="0" step="1000" aria-describedby="cap-hint">
+              <p class="hint" id="cap-hint">Characters sent to ElevenLabs per day. Past the cap, answers continue with captions only. Zero turns the voice off.</p>
+            </div>
+            <button class="btn btn-primary" type="submit">Save cap</button>
+            <p class="status-line" id="cap-status" role="status"></p>
+            <h3 class="h-sub">Per-visitor limits</h3>
+            <dl class="kv" id="limits-kv"></dl>
+          </form>
+          <form id="pass-form" novalidate>
+            <div class="field">
+              <label for="pass-new">New student passcode</label>
+              <input id="pass-new" type="password" autocomplete="new-password" minlength="6" aria-describedby="pass-hint">
+            </div>
+            <div class="field">
+              <label for="pass-confirm">Type it again</label>
+              <input id="pass-confirm" type="password" autocomplete="new-password" minlength="6">
+            </div>
+            <p class="hint" id="pass-hint">At least 6 characters. The server stores only a hash. Students already signed in keep access until their session cookie runs out.</p>
+            <button class="btn btn-primary" type="submit">Change passcode</button>
+            <p class="status-line" id="pass-status" role="status"></p>
+          </form>
+        </div>
+      </section>
+
+      <!-- 5. Activity -->
+      <section class="panel" id="sec-activity" aria-labelledby="activity-h">
+        <h2 id="activity-h">Activity</h2>
+        <div class="actions" style="margin-bottom:.75rem">
+          <button type="button" class="btn btn-small" id="refresh-activity">Refresh</button>
+        </div>
+        <h3 class="h-sub">Today</h3>
+        <dl class="kv" id="today-kv"></dl>
+        <h3 class="h-sub">Last 50 questions</h3>
+        <div class="table-wrap" style="max-height:480px;overflow:auto">
+          <table class="data">
+            <thead><tr><th scope="col">When</th><th scope="col">Question</th><th scope="col">Covered</th><th scope="col">Top score</th><th scope="col">Model</th><th scope="col">Latency</th></tr></thead>
+            <tbody id="log-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
