@@ -14,3 +14,6 @@ gpt-digital-twin-guide.pdf
 
 # Eval data and runs: real (de-identified) student questions never enter git
 evals/private/
+
+# Local voice A/B renders (may contain a clone of Ben's voice)
+localvoice/out/

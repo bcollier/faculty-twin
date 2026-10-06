@@ -1,0 +1,9 @@
+# Local voice engines, for Ben's Mac mini only. NEVER merge these into the root
+# requirements.txt: Vercel bundles that file and cannot run torch.
+# kokoro 0.9.4 needs Python >= 3.10 and < 3.13, so run with `uv run --python 3.12`.
+numpy
+soundfile
+torch
+torchaudio
+kokoro>=0.9.4
+chatterbox-tts>=0.1.7

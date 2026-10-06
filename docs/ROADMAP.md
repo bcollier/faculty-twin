@@ -14,6 +14,8 @@ Added October 5, 2026. These run locally on Ben's Mac mini, so they cost nothing
 
 Not yet verified: current versions, licenses, and quality on my recordings. Check each before building.
 
+*Update Oct 5:* versions and licenses checked (Kokoro 0.9.4, Apache-2.0, Python below 3.13; Chatterbox `chatterbox-tts` 0.1.7, MIT). Steps 1 and 2 are built in [`localvoice/`](../localvoice/README.md): an instructor-only sample cutter and a blind A/B page. Kokoro renders on the laptop at about 0.16x real time. Quality on my recordings is still unchecked; that needs the A/B run on the Mac mini.
+
 **What a first step would look like**
 
 1. Cut 30 to 60 seconds of clean solo speech from my class recordings (instructor-only cues from the de-identified transcripts, so no student voice is in the sample).
