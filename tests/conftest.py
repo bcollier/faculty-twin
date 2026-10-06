@@ -27,6 +27,16 @@ KEYS_TO_CLEAR = [
     "LLM_MODEL",
     "DAILY_VOICE_CHAR_CAP",
     "VERCEL",
+    "VERCEL_ENV",
+    "VERCEL_REGION",
+    "VERCEL_URL",
+    "FT_ENV",
+    "FT_LOCAL_DEV",
+    "DAILY_LLM_CALL_CAP",
+    "DAILY_EMBED_CAP",
+    "LLM_MAX_PROMPT_PRICE_PER_MTOK",
+    "LLM_MAX_COMPLETION_PRICE_PER_MTOK",
+    "PUBLIC_SITE_URL",
 ]
 
 
@@ -39,8 +49,8 @@ def content_dir(tmp_path: Path) -> Path:
 def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     for key in KEYS_TO_CLEAR:
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
-    monkeypatch.setenv("AUDIO_SIGNING_SECRET", "test-audio-secret")
+    monkeypatch.setenv("SESSION_SECRET", "test-session-secret-0123456789abcdef")
+    monkeypatch.setenv("AUDIO_SIGNING_SECRET", "test-audio-secret-0123456789abcdef")
     monkeypatch.setenv("STUDENT_PASSCODE", "student-pass")
     monkeypatch.setenv("ADMIN_PASSCODE", "admin-pass")
     monkeypatch.delenv("CONTENT_DIR", raising=False)
