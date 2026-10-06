@@ -14,7 +14,9 @@ Reads, per session:
   the session's video.mp4 (+ video_part2.mp4, same timeline as align.py)
 
 Writes:
-  _build/clips/<slide_id>.mp4     H.264 720p CRF 26, AAC 96k mono, +faststart, 15-90 s
+  _build/clips/<slide_id>.mp4     H.264 720p CRF 26, AAC 96k mono, +faststart, 15-90 s;
+                                  video and audio only (the recording's caption track and
+                                  metadata are dropped)
   _build/clips/manifest.json      [{slide_id, course, session, start, end, reason_kept, ...}]
   _build/clips/rejected.json      {"counts": {reason: n}, "rejected": [{slide_id, start, end, reason}]}
                                   (slide ids, times and reason codes only)
@@ -51,12 +53,13 @@ import argparse
 import subprocess
 import sys
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
 from indexer import align as A
 
-CLIPS_VERSION = 1
+CLIPS_VERSION = 2
 
 MIN_S, MAX_S = 15.0, 90.0
 MERGE_GAP_S = 5.0
@@ -277,8 +280,11 @@ def encode(src: Path, local_start: float, dur: float, out: Path, extra: list[str
     if extra:
         i = args.index("-crf")
         args[i + 1] = extra[1]
+    # Map only the first video and audio stream: Zoom recordings carry a caption text track
+    # (raw, not de-identified) that must never reach a clip. Metadata is dropped too.
     cmd = ["ffmpeg", "-v", "error", "-nostdin", "-y", "-ss", f"{local_start:.3f}", "-i", str(src),
-           "-t", f"{dur:.3f}", *args, str(tmp)]
+           "-t", f"{dur:.3f}", "-map", "0:v:0", "-map", "0:a:0", "-sn", "-dn",
+           "-map_metadata", "-1", "-map_chapters", "-1", *args, str(tmp)]
     subprocess.run(cmd, check=True, capture_output=True)
     tmp.replace(out)
 
@@ -302,8 +308,14 @@ def reason_kept(c: Candidate) -> str:
             f"no [student]/[person] within 5 s, slide not flagged")
 
 
+def encode_clip(src: Path, local_start: float, dur: float, out: Path) -> None:
+    encode(src, local_start, dur, out)
+    if out.stat().st_size > TARGET_BYTES:
+        encode(src, local_start, dur, out, ENCODE_SMALL)
+
+
 def clips_for_session(s: A.Session, dry_run: bool = False, force: bool = False,
-                      verbose: bool = True) -> tuple[list[dict], list[dict]]:
+                      verbose: bool = True, jobs: int = 1) -> tuple[list[dict], list[dict]]:
     p = A.session_paths(s)
     b = A.build_dir()
     recs = A.load_json(p["out"], None)
@@ -319,6 +331,7 @@ def clips_for_session(s: A.Session, dry_run: bool = False, force: bool = False,
     pulled = read_pulled(s)
     durations = meta.get("parts") or []
     kept, rejected = [], []
+    jobs_todo: list[tuple] = []
     for sl in slides:
         rec = by_id.get(sl["slide_id"], {"windows": [], "methods": []})
         clip, rej = decide_slide(sl, rec, cues, meta, (s.course, s.session), pulled)
@@ -352,12 +365,13 @@ def clips_for_session(s: A.Session, dry_run: bool = False, force: bool = False,
             prev = _previous.get(clip.slide_id)
             same = prev and all(prev.get(k) == row[k] for k in ("start", "end", "source", "version"))
             if force or not (same and out.exists()):
-                encode(src, local, clip.end - clip.start, out)
-                if out.stat().st_size > TARGET_BYTES:
-                    encode(src, local, clip.end - clip.start, out, ENCODE_SMALL)
-            row["bytes"] = out.stat().st_size
+                jobs_todo.append((src, local, clip.end - clip.start, out))
         kept.append(row)
     if not dry_run:
+        with ThreadPoolExecutor(max(1, jobs)) as pool:
+            list(pool.map(lambda j: encode_clip(*j), jobs_todo))
+        for row in kept:
+            row["bytes"] = (b / "clips" / f"{row['slide_id']}.mp4").stat().st_size
         keep_ids = {r["slide_id"] for r in kept}
         for f in (b / "clips").glob(f"{s.course}-{s.key}-*.mp4"):
             if f.stem not in keep_ids:
@@ -402,6 +416,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--all", action="store_true", help="every session (default when no --session)")
     ap.add_argument("--dry-run", action="store_true", help="decide and report, write nothing")
     ap.add_argument("--force", action="store_true", help="re-encode clips that already exist")
+    ap.add_argument("--jobs", type=int, default=3, help="clips encoded in parallel")
     args = ap.parse_args(argv)
     sessions = A.discover_sessions(args.course, args.session)
     if not sessions:
@@ -416,7 +431,7 @@ def main(argv: list[str] | None = None) -> int:
     manifest = [r for r in manifest if (r["course"], int(r["session"])) not in done]
     rejected = [r for r in old_rej if (r["course"], int(r["session"])) not in done]
     for s in sessions:
-        k, r = clips_for_session(s, dry_run=args.dry_run, force=args.force)
+        k, r = clips_for_session(s, dry_run=args.dry_run, force=args.force, jobs=args.jobs)
         manifest += k
         rejected += r
     manifest.sort(key=lambda r: r["slide_id"])

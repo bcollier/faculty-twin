@@ -134,9 +134,14 @@ def test_end_to_end_cuts_clip_and_writes_manifest(tmp_path, monkeypatch):
     archive, build = tmp_path / "archive", tmp_path / "build"
     folder = archive / "70-445 Test Course" / "2026 Fall" / "01 2026-01-01 Test"
     folder.mkdir(parents=True)
+    # Like a Zoom recording, the source carries a caption track and a title; neither may reach the clip.
+    srt = tmp_path / "captions.srt"
+    srt.write_text("1\n00:00:01,000 --> 00:00:50,000\nA made-up caption line\n")
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=640x360:rate=25:duration=60",
-                    "-f", "lavfi", "-i", "sine=frequency=440:duration=60", "-shortest",
-                    "-c:v", "libx264", "-c:a", "aac", str(folder / "video.mp4")], check=True)
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=60", "-i", str(srt),
+                    "-map", "0", "-map", "1", "-map", "2", "-shortest", "-c:v", "libx264", "-c:a", "aac",
+                    "-c:s", "mov_text", "-metadata", "title=made-up title", str(folder / "video.mp4")],
+                   check=True)
     monkeypatch.setattr(A, "ARCHIVE", archive)
     monkeypatch.setenv("FT_BUILD_DIR", str(build))
     sid = "70445-s01-001"
@@ -152,10 +157,13 @@ def test_end_to_end_cuts_clip_and_writes_manifest(tmp_path, monkeypatch):
     out = build / "clips" / f"{sid}.mp4"
     assert out.exists()
     probe = json.loads(subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,height:format=duration",
+        ["ffprobe", "-v", "error", "-show_entries",
+         "stream=codec_name,codec_type,height:format=duration:format_tags",
          "-of", "json", str(out)], capture_output=True, text=True, check=True).stdout)
+    assert sorted(s["codec_type"] for s in probe["streams"]) == ["audio", "video"]  # no caption track
     codecs = {s["codec_name"] for s in probe["streams"]}
     assert codecs == {"h264", "aac"}
+    assert "title" not in probe["format"].get("tags", {})
     assert 720 in {s.get("height") for s in probe["streams"]}
     assert 15 <= float(probe["format"]["duration"]) <= 90
     manifest = json.loads((build / "clips" / "manifest.json").read_text())

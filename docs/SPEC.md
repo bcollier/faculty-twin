@@ -508,7 +508,7 @@ Added Oct 5. This is the part that did not exist when the app was one deck. Ever
 > - When a whole window fails the speech rules, the longest stretch inside it that passes every rule (whole cues, 15 to 90 seconds, 5 seconds clear of any student, unclear, or masked cue) is used instead. One clip per slide: the longest passing candidate.
 > - Slides flagged `student_names_possible`, `in_the_news`, `student_presentation_possible`, or `no_clips_private_case` by the slide stage get no clip, and neither does a slide whose stored text or notes carry a `[student]` mask.
 > - An embedded video is detected from the frames: if more than 35% of consecutive frame pairs in the window change, the window is skipped.
-> - Encoding: H.264 CRF 26 with `-tune stillimage`, 720p, AAC 96 kbps mono, `+faststart`; a clip over 3 MB is re-encoded at CRF 30. A clip that would cross from `video.mp4` into `video_part2.mp4` is skipped.
+> - Encoding: H.264 CRF 26 with `-tune stillimage`, 720p, AAC 96 kbps mono, `+faststart`; a clip over 3 MB is re-encoded at CRF 30. Only the video and audio streams are kept: Zoom recordings carry an embedded caption text track (raw captions, not de-identified) and metadata, and both are dropped. A clip that would cross from `video.mp4` into `video_part2.mp4` is skipped.
 > - The override file is `_build/overrides/<course>/s<NN>.json` with `{"no_clips": ["<slide_id>", ...]}`; a `no_clips` key in the de-identification override file for the session works too.
 > - `clips/manifest.json` stays a list. Rejections go to `clips/rejected.json`: per-window reasons (slide ids, times, and reason codes only), counts per reason, and the count of slides left without a clip by reason. It is a local report: upload only the `.mp4` files and `manifest.json`.
 
