@@ -123,3 +123,44 @@ def test_notebook_extraction_strips_outputs(tmp_path, monkeypatch):
     assert cells[1]["markdown_above"] == ""
     assert "outputs" not in cells[0]
     assert cells[0]["cell_id"] == "70445-s01-nb1-c001"
+
+
+def test_extract_deck_applies_pg_filter(tmp_path, monkeypatch):
+    """Text, title, notes and OCR text are smoothed; the slide gets pg_language; images are not touched."""
+    monkeypatch.setattr(slides, "ARCHIVE", tmp_path)
+    pages = ["What the Hell Is Overfitting\nThe model memorises the training set and fails on new data points",
+             "Assessing a classic classifier\nWe assess precision and recall on the held out set"]
+    monkeypatch.setattr(slides, "pdf_page_texts", lambda pdf, n: pages)
+    sess = slides.Session("70445", 3, "2026-09-01", "Demo", tmp_path / "s")
+    deck = slides.Deck(sess, tmp_path / "slides.pdf", None, "slides.pdf")
+    deck.pages = 2
+    ocr = {str(deck.image(1)): "confusing the hell out of regulators"}
+    slides.extract_deck(deck, NameScrubber([], set()), ocr)
+    recs = json.loads((deck.out / "slides.json").read_text())
+    assert recs[0]["title"] == "What the Heck Is Overfitting"
+    assert recs[0]["text"].startswith("What the Heck Is Overfitting")
+    assert "pg_language" in recs[0]["flags"]
+    assert recs[1]["text"] == pages[1] and "pg_language" not in recs[1]["flags"]
+    meta = json.loads((deck.out / "deck.json").read_text())
+    assert meta["flag_counts"]["pg_language"] == 1 and meta["pg_changes"] == {"hell -> heck": 3}
+    assert not list(deck.out.glob("*.webp"))
+
+
+def test_new_roster_invalidates_extraction_cache(tmp_path, monkeypatch):
+    """A roster added after extraction must re-run the name scrub (the cache key covers the rosters)."""
+    monkeypatch.setattr(slides, "ARCHIVE", tmp_path)
+    rosters = tmp_path / "_private" / "rosters"
+    rosters.mkdir(parents=True)
+    (rosters / "a.csv").write_text("Last Name,Preferred/First Name\nQuenwick,Zorblat\n")
+    monkeypatch.setattr(slides, "pdf_page_texts", lambda pdf, n: ["Team: Ilsabet Brightwater-Xu"])
+    sess = slides.Session("70445", 3, "2026-09-01", "Demo", tmp_path / "s")
+    deck = slides.Deck(sess, tmp_path / "slides.pdf", None, "slides.pdf")
+    deck.pages = 1
+    slides.extract_deck(deck, NameScrubber.from_dir(rosters), {})
+    assert slides.extraction_current(deck)
+    (rosters / "b.csv").write_text("Last Name,Preferred/First Name\nBrightwater-Xu,Ilsabet\n")
+    assert not slides.extraction_current(deck)  # re-extract: the new roster names someone on this slide
+    slides.extract_deck(deck, NameScrubber.from_dir(rosters), {})
+    rec = json.loads((deck.out / "slides.json").read_text())[0]
+    assert "Ilsabet" not in rec["text"] and "student_names_possible" in rec["flags"]
+    assert slides.extraction_current(deck)

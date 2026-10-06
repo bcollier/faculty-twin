@@ -13,6 +13,11 @@ de-identified except Ben Collier himself.
 Every cue is also labelled ``instructor``, ``student`` or ``unclear``. Only
 ``instructor`` cues may be used for narration material or video clips.
 
+PG rule (Ben, Oct 5 2026): after de-identification, cursing in cue text and in
+the Drive transcript is swapped for a mild word (``indexer/pg_filter.py``).
+A changed cue carries ``"pg": true``; the clip stage rejects any window that
+holds one, because audio cannot be cleaned. The review file counts the swaps.
+
 Nothing in this file names a real student. The student scrub list is built at
 run time from the private roster CSVs, plus an optional private overrides folder
 written during the review pass. Neither is ever committed.
@@ -70,6 +75,11 @@ try:  # optional: public nickname <-> given-name pairs (no student data)
     from nicknames import NickNamer
 except ImportError:  # pragma: no cover - degrade gracefully
     NickNamer = None
+
+try:  # imported as a package (tests, worker)
+    from indexer.pg_filter import smooth as pg_smooth
+except ImportError:  # run as a script: python indexer/deidentify.py
+    from pg_filter import smooth as pg_smooth
 
 STUDENT = "[student]"
 PERSON = "[person]"
@@ -1047,6 +1057,7 @@ def process_all(archive: Path = ARCHIVE, out_dir: Path | None = None, verbose: b
             continue
         ov = per_session[(s.course, s.key)]
         counts: Counter = Counter()
+        pg_counts: Counter = Counter()
         for c in cues:
             c["text"] = scrubber.scrub(c["text"], counts)
         labels = label_speakers(cues)
@@ -1054,6 +1065,7 @@ def process_all(archive: Path = ARCHIVE, out_dir: Path | None = None, verbose: b
         n_over = apply_label_overrides(cues, labels, ov.get("labels", []))
         for c, lab in zip(cues, labels):
             c["speaker"] = lab
+        pg_cues = apply_pg(cues, pg_counts)
         dest = out_dir / s.course
         dest.mkdir(parents=True, exist_ok=True)
         doc = {"course": s.course, "session": s.session, "date": s.date, "title": s.title, "source": source,
@@ -1061,8 +1073,10 @@ def process_all(archive: Path = ARCHIVE, out_dir: Path | None = None, verbose: b
         _write_private(dest / f"{s.key}.json", json.dumps(doc, ensure_ascii=False, indent=1))
 
         drive_counts: Counter = Counter()
+        drive_pg: Counter = Counter()
         if s.drive.exists():
-            lines = [scrubber.scrub(l, drive_counts) for l in s.drive.read_text(errors="ignore").splitlines()]
+            lines = [pg_smooth(scrubber.scrub(l, drive_counts), drive_pg)[0]
+                     for l in s.drive.read_text(errors="ignore").splitlines()]
             _write_private(dest / f"{s.key}.drive.md", "\n".join(lines) + "\n")
 
         mins = Counter()
@@ -1076,10 +1090,12 @@ def process_all(archive: Path = ARCHIVE, out_dir: Path | None = None, verbose: b
             "drive_replacements": sum(drive_counts.values()),
             "labels": dict(Counter(labels)), "minutes": {k: round(v, 1) for k, v in mins.items()},
             "overridden": n_over,
+            "pg_cues": pg_cues, "pg_changes": sum(pg_counts.values()), "pg_by_word": dict(pg_counts),
+            "drive_pg_changes": sum(drive_pg.values()),
         }
         summary.append(row)
         review = dest / f"{s.key}.review.md"
-        write_review(review, s, source, cues, counts, drive_counts, heur, n_over, ov)
+        write_review(review, s, source, cues, counts, drive_counts, heur, n_over, ov, pg_counts, drive_pg)
         # the spec's review location (never uploaded): _build/review/<course>-s<NN>.txt
         review_dir = out_dir.parent / "review"
         review_dir.mkdir(parents=True, exist_ok=True)
@@ -1088,10 +1104,29 @@ def process_all(archive: Path = ARCHIVE, out_dir: Path | None = None, verbose: b
             print(f"{s.course} {s.key}: src={source} cues={len(cues)} student={n_student} "
                   f"person={row['person_masks']} drive={row['drive_replacements']} "
                   f"min instr={row['minutes'].get('instructor', 0)} stud={row['minutes'].get('student', 0)} "
-                  f"uncl={row['minutes'].get('unclear', 0)} overrides={n_over}")
+                  f"uncl={row['minutes'].get('unclear', 0)} overrides={n_over} "
+                  f"pg={row['pg_changes']} ({pg_cues} cues) drive_pg={row['drive_pg_changes']}")
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=1))
     return summary
+
+
+def apply_pg(cues: list[dict], counts: Counter | None = None) -> int:
+    """PG rule (Ben, Oct 5): after de-identification, swap cursing for a mild word in each cue.
+
+    A changed cue gets ``pg: true`` (the clip stage rejects any window holding one, since
+    audio cannot be cleaned). Returns the number of changed cues; ``counts`` gets
+    "damn -> darn" style labels only, never cue text.
+    """
+    changed = 0
+    for c in cues:
+        c["text"], n = pg_smooth(c["text"], counts)
+        if n:
+            c["pg"] = True
+            changed += 1
+        else:
+            c.pop("pg", None)
+    return changed
 
 
 def _write_private(path: Path, text: str) -> None:
@@ -1100,7 +1135,8 @@ def _write_private(path: Path, text: str) -> None:
     os.chmod(path, 0o600)
 
 
-def write_review(path: Path, s: Session, source, cues, counts, drive_counts, heur, n_over, ov) -> None:
+def write_review(path: Path, s: Session, source, cues, counts, drive_counts, heur, n_over, ov,
+                 pg_counts: Counter | None = None, drive_pg: Counter | None = None) -> None:
     lab = Counter(c["speaker"] for c in cues)
     mins = Counter()
     for c in cues:
@@ -1117,6 +1153,11 @@ def write_review(path: Path, s: Session, source, cues, counts, drive_counts, heu
           "| label | cues | minutes | heuristic-only cues |", "|---|---|---|---|"]
     for k in SPEAKERS:
         L.append(f"| {k} | {lab.get(k, 0)} | {mins.get(k, 0):.1f} | {heur.get(k, 0)} |")
+    pg_counts, drive_pg = pg_counts or Counter(), drive_pg or Counter()
+    L += ["", "## PG language (counts only)", "",
+          f"Cues changed: {sum(1 for c in cues if c.get('pg'))} (marked pg: true; no clip may contain one). "
+          f"Substitutions: {sum(pg_counts.values())}; Drive transcript: {sum(drive_pg.values())}.", ""]
+    L += [f"- {k}: {v}" for k, v in sorted(pg_counts.items())] or ["- none"]
     L += ["", f"Cues changed by the review pass: {n_over}", "", "## Review-pass label ranges", ""]
     for o in ov.get("labels", []):
         L.append(f"- {_fmt(o['from'])} to {_fmt(o['to'])}: {o['speaker']} ({o.get('note', '')})")
@@ -1221,15 +1262,18 @@ def sweep(archive: Path = ARCHIVE, out_dir: Path | None = None, verbose: bool = 
         loaded.append((f, texts))
     frequent = {w for w in lowercase_vocab(t for _, ts in loaded for t in ts) if w in english}
     given = given - lowercase_vocab((t for _, ts in loaded for t in ts), 5)
+    result["pg_language"] = 0  # texts the PG filter would still change (0 after a run)
     for f, texts in loaded:
         result["files"] += 1
         for kind, ctx in sweep_texts(texts, scrub, english, given, keep, frequent):
             result[kind] += 1
             result["details"].append({"file": f"{f.parent.name}/{f.name}", "kind": kind, "context": ctx})
+        result["pg_language"] += sum(1 for t in texts if pg_smooth(t)[1])
     if verbose:
         print(f"files swept: {result['files']}")
         for k in SWEEP_KINDS:
             print(f"{k}: {result[k]}")
+        print(f"pg_language: {result['pg_language']}")
     return result
 
 
@@ -1261,7 +1305,7 @@ def main(argv=None) -> int:
         if a.details:
             for d_ in r["details"]:
                 print(f"{d_['kind']}\t{d_['file']}\t{d_['context']}")
-        return 1 if any(r[k] for k in SWEEP_KINDS if k not in REVIEW_ONLY_KINDS) else 0
+        return 1 if any(r[k] for k in SWEEP_KINDS if k not in REVIEW_ONLY_KINDS) or r["pg_language"] else 0
     elif a.cmd == "dump":
         dump(a.archive, a.course, a.session, a.start, a.count)
     return 0
