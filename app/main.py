@@ -124,6 +124,7 @@ def answer(
         return _replay_topic(content, question, stored, voice), info
 
     records, matrix = playlist.searchable(content, course)
+    _check_retrieval_ready(retriever, matrix.shape[1])
     if not records:
         return playlist.not_covered(question), info
     try:
@@ -148,6 +149,19 @@ def answer(
     info["narration"] = result.source
     info["errors"] = result.errors
     return playlist.build_playlist(content, question, chosen, result.narrations, result.follow_ups, voice), info
+
+
+def _check_retrieval_ready(retriever: Retriever, dim: int) -> None:
+    """Fail fast with "retrieval not implemented yet" before spending an embedding call.
+
+    Runs the ranking function on an empty matrix: no math happens, but the stub raises.
+    """
+    try:
+        retriever.rank(np.ones(dim, dtype=np.float32), np.zeros((0, dim), dtype=np.float32))
+    except NotImplementedError as exc:
+        raise RetrievalNotReady() from exc
+    except Exception:  # an empty matrix is an odd input; the real call will tell
+        pass
 
 
 def _stored_topic(content: Content, question: str, course: Optional[str]) -> Optional[dict[str, Any]]:

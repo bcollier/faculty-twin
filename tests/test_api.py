@@ -64,7 +64,7 @@ def test_health(client):
 
 
 def test_ask_returns_503_until_retrieval_is_written(student):
-    app.dependency_overrides[get_embedder] = lambda: TEST_FAKE_embedder
+    # No Voyage key and no overrides: the stub is reported before any embedding call.
     r = student.post("/api/ask", json={"question": "what is an apple"})
     assert r.status_code == 503
     assert r.json()["detail"] == "retrieval not implemented yet"
