@@ -24,7 +24,7 @@ const CAPTION_MIN_SEC = 4;
 const COPY = {
   loading: ['Finding where I cover this in class...', 'Pulling up the slides and writing the walkthrough.'],
   notCovered: ['I don\'t have course material on that.',
-    'I only answer from my slides and what I said in class for 70-445 and 45-884. Try one of these instead:'],
+    'I only answer from my slides and what I said in class for 70\u2011445 and 45\u2011884. Try one of these instead:'],
   unreachable: ['I can\'t reach the server right now.', 'It may be waking up. That usually takes a few seconds.'],
   rateLimited: ['That\'s a lot of questions in a short time.',
     'I cap questions per minute and per day to keep costs down. Give it a minute and try again.'],
@@ -98,12 +98,6 @@ function fmtDate(iso) {
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
-function fmtClock(sec) {
-  if (sec == null || isNaN(sec)) return '';
-  const s = Math.max(0, Math.round(sec));
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
-  return h ? `${h}:${pad2(m)}:${pad2(r)}` : `${m}:${pad2(r)}`;
-}
 function splitSentences(text) {
   const parts = String(text || '').match(/[^.!?]+(?:[.!?]+["')\]]*|$)\s*/g) || [];
   const out = parts.map(p => p.trim()).filter(Boolean);
@@ -149,7 +143,18 @@ const app = {
   pendingQuestion: null, // asked when the session ran out; asked again after the passcode
   requestId: 0,          // ignores stale /api/ask responses
   sourceCount: 0,
+  sourcesBlock: null,    // the newest answer's "Slides used in this answer" list
+  refreshedFor: 0,       // requestId whose expired links were already refreshed once
 };
+
+/* The course filter is remembered on this device (spec). Storage can be blocked, so never rely on it. */
+const COURSE_KEY = 'ft.course';
+function loadCourseChoice() {
+  try { const v = localStorage.getItem(COURSE_KEY); return v && COURSES[v] ? v : ''; } catch { return ''; }
+}
+function saveCourseChoice(v) {
+  try { if (v) localStorage.setItem(COURSE_KEY, v); else localStorage.removeItem(COURSE_KEY); } catch { /* ignore */ }
+}
 
 /* =====================================================================
    Screens
@@ -162,7 +167,14 @@ function showScreen(name) {
 function setView(view) {
   const node = ui.screens.app;
   if (node.dataset.view === view) return;
-  const apply = () => { node.dataset.view = view; };
+  const apply = () => {
+    node.dataset.view = view;
+    const presenting = view === 'presenting';
+    $('#main').hidden = presenting;
+    $('#stage').hidden = !presenting;
+    ui.dock.hidden = !presenting;
+    $('.skip-link').setAttribute('href', presenting ? '#stage' : '#main');
+  };
   // The idle -> presenting change is the signature moment: animate it where the browser supports it.
   if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     document.startViewTransition(apply);
@@ -209,8 +221,8 @@ ui.loginForm.addEventListener('submit', async (e) => {
   ui.loginError.textContent = '';
   try {
     const res = await api('/api/login', { method: 'POST', body: { passcode } });
-    if (res.status === 401) { ui.loginError.textContent = 'That passcode didn\'t work. Check it and try again.'; ui.passcode.select(); return; }
-    if (res.status === 429) { ui.loginError.textContent = 'Too many tries. Wait a minute and try again.'; return; }
+    if (res.status === 401) { ui.loginError.textContent = 'That passcode did not work. Check the course announcement and try again.'; ui.passcode.select(); return; }
+    if (res.status === 429) { ui.loginError.textContent = 'Too many tries. Wait a few minutes and try again.'; return; }
     if (!res.ok) { ui.loginError.textContent = COPY.generic[0] + ' ' + COPY.generic[1]; return; }
     const topics = await api('/api/topics');
     app.topics = topics.ok ? normalizeTopics(topics.data) : [];
@@ -228,7 +240,7 @@ document.addEventListener('click', (e) => {
 
 function enterApp() {
   showScreen('app');
-  renderIdleChips();
+  setCourse(loadCourseChoice());
   if (app.pendingQuestion) {
     const q = app.pendingQuestion;
     app.pendingQuestion = null;
@@ -244,6 +256,7 @@ function enterApp() {
 
 function setCourse(value) {
   app.course = value || null;
+  saveCourseChoice(value || '');
   ui.dockCourse.value = value || '';
   const radio = ui.idleCourse.querySelector(`input[value="${value || ''}"]`);
   if (radio) radio.checked = true;
@@ -348,8 +361,7 @@ function summarize(answer) {
 }
 
 function renderSourcesList(container, answer) {
-  // Only the newest answer keeps working jump-to links.
-  document.querySelectorAll('.sources-block').forEach(n => n.remove());
+  // Only the newest answer's list jumps within the walkthrough; older lists open the slide in a dialog.
   const sources = (answer.sources && answer.sources.length) ? answer.sources : answer.segments;
   const list = el('ol', { class: 'sources' });
   for (const src of sources) {
@@ -359,14 +371,16 @@ function renderSourcesList(container, answer) {
     const btn = el('button', {
       type: 'button', class: 'source-btn', 'data-slide': src.slide_id,
       'aria-label': `${l1}. ${l2}. ${segIndex >= 0 ? 'Jump to it' : 'Open the slide'}`,
-      onclick: () => (segIndex >= 0 ? jumpTo(segIndex) : openSlideDialog(src)),
+      onclick: () => (segIndex >= 0 && player.answer === answer && !ui.player.hidden ? jumpTo(segIndex) : openSlideDialog(src)),
     },
     el('img', { src: src.image, alt: '', loading: 'lazy' }),
     el('span', {}, el('span', { class: 'src-l1', text: l1 }), el('span', { class: 'src-l2', text: l2 })));
     list.append(el('li', {}, btn));
   }
-  container.append(el('div', { class: 'sources-block' },
-    el('h3', { class: 'sources-h', text: 'Slides used in this answer' }), list));
+  const block = el('div', { class: 'sources-block' },
+    el('h3', { class: 'sources-h', text: 'Slides used in this answer' }), list);
+  container.append(block);
+  app.sourcesBlock = block;
   app.sourceCount = sources.length;
   if (!ui.dock.classList.contains('expanded')) ui.dockToggle.textContent = `Sources (${sources.length})`;
 }
@@ -401,7 +415,7 @@ function makeSilentWav(seconds) {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
-async function ask(raw) {
+async function ask(raw, { resumeAt = 0, quiet = false } = {}) {
   const question = String(raw || '').trim().slice(0, 300);
   if (!question) {
     (ui.screens.app.dataset.view === 'idle' ? ui.idleQ : ui.dockQ).focus();
@@ -414,7 +428,7 @@ async function ask(raw) {
   ui.idleQ.value = ''; ui.idleCount.textContent = '0 / 300'; ui.dockQ.value = '';
   ui.followups.hidden = true;
   setView('presenting');
-  addUserMessage(question);
+  if (!quiet) addUserMessage(question);
   showStageMessage({ title: COPY.loading[0], text: COPY.loading[1], spinner: true });
 
   let res;
@@ -436,9 +450,24 @@ async function ask(raw) {
   if (!answer.covered || !Array.isArray(answer.segments) || answer.segments.length === 0) {
     return showStageError('notCovered', question);
   }
-  const msg = addTwinMessage(summarize(answer));
-  renderSourcesList(msg, answer);
-  loadAnswer(answer);
+  if (quiet && app.sourcesBlock) {
+    // Fresh links for the same answer: swap the old list instead of adding another message.
+    const parent = app.sourcesBlock.parentElement;
+    app.sourcesBlock.remove();
+    renderSourcesList(parent, answer);
+  } else {
+    const msg = addTwinMessage(summarize(answer));
+    renderSourcesList(msg, answer);
+  }
+  loadAnswer(answer, resumeAt);
+}
+
+/* Signed slide and clip links expire after an hour. If the slide image fails to load, ask the
+   same question again (once per answer) for fresh links and pick up at the same segment. */
+function refreshExpiredLinks() {
+  if (!player.answer || app.refreshedFor === app.requestId) return;
+  app.refreshedFor = app.requestId + 1; // the id the refresh request will get
+  ask(app.lastQuestion, { resumeAt: player.index, quiet: true });
 }
 
 /* =====================================================================
@@ -467,24 +496,26 @@ const player = {
   sentences: [],
   sentenceIdx: -1,
   inClip: false,
-  resumeAfterClip: false,
+  clipFailed: new Set(), // segment indexes whose class clip would not load: the button stays hidden
 };
 
-/** Load a new answer and start at segment 1. */
-function loadAnswer(answer) {
+/** Load a new answer and start at segment 1 (or `start`, after refreshing expired links). */
+function loadAnswer(answer, start = 0) {
   stopPlayback();
   player.answer = answer;
   player.segments = answer.segments.slice().sort((a, b) => (a.n ?? 0) - (b.n ?? 0));
+  player.clipFailed.clear();
+  start = Math.min(Math.max(0, start), player.segments.length - 1);
   player.captionsOnly = player.segments.every(s => !s.audio);
   player.finished = false;
   ui.audioNote.hidden = !player.captionsOnly;
   buildDots();
   ui.stageMsg.hidden = true;
   ui.player.hidden = false;
-  showSegment(0);
+  showSegment(start);
   player.playing = true;
   playCurrent();
-  preloadAudio(1);
+  preloadAudio(start + 1);
 }
 
 /** Render segment i on the stage. Does not start or stop narration. */
@@ -501,7 +532,7 @@ function showSegment(i) {
 
   renderCode(seg.code);
 
-  ui.clipBtn.hidden = !(seg.clip && seg.clip.url);
+  ui.clipBtn.hidden = !(seg.clip && seg.clip.url) || player.clipFailed.has(i);
   ui.clipBack.hidden = true;
   ui.clipNote.hidden = true;
 
@@ -518,7 +549,7 @@ function showSegment(i) {
 
   updateDots();
   updateControls();
-  document.querySelectorAll('.source-btn').forEach(b => b.setAttribute('aria-current', String(b.dataset.slide === seg.slide_id)));
+  app.sourcesBlock?.querySelectorAll('.source-btn').forEach(b => b.setAttribute('aria-current', String(b.dataset.slide === seg.slide_id)));
 }
 
 function renderCode(code) {
@@ -792,7 +823,6 @@ ui.btnMute.addEventListener('click', toggleMute);
 function enterClip() {
   const seg = player.segments[player.index];
   if (!seg?.clip?.url) return;
-  player.resumeAfterClip = player.playing;
   if (player.playing) pausePlayback();
   player.inClip = true;
   ui.slideImg.hidden = true;
@@ -801,14 +831,14 @@ function enterClip() {
   ui.clipVideo.src = seg.clip.url;
   ui.clipBtn.hidden = true;
   ui.clipBack.hidden = false;
-  const when = seg.clip.start != null ? ` at ${fmtClock(seg.clip.start)}` : '';
-  ui.clipNote.textContent = `From class on ${fmtDate(seg.date)}${when}`;
+  ui.clipNote.textContent = `Recorded in class on ${fmtDate(seg.date)} (my real voice, not the AI voice).`;
   ui.clipNote.hidden = false;
   ui.clipVideo.play().catch(() => {});
   ui.clipBack.focus();
 }
 
-function exitClip(resume = true) {
+/** Back to the slide. The walkthrough stays paused until the student presses play (spec). */
+function exitClip(returnFocus = true) {
   if (!player.inClip) return;
   player.inClip = false;
   ui.clipVideo.pause();
@@ -817,12 +847,11 @@ function exitClip(resume = true) {
   ui.clipVideo.hidden = true;
   ui.slideImg.hidden = false;
   const seg = player.segments[player.index];
-  ui.clipBtn.hidden = !(seg?.clip?.url);
+  ui.clipBtn.hidden = !(seg?.clip?.url) || player.clipFailed.has(player.index);
   ui.clipBack.hidden = true;
   ui.clipNote.hidden = true;
-  if (resume && player.resumeAfterClip) resumePlayback();
-  player.resumeAfterClip = false;
-  if (resume) ui.clipBtn.focus();
+  updateControls();
+  if (returnFocus) (ui.clipBtn.hidden ? ui.btnPlay : ui.clipBtn).focus();
 }
 
 ui.clipBtn.addEventListener('click', enterClip);
@@ -830,10 +859,23 @@ ui.clipBack.addEventListener('click', () => exitClip(true));
 ui.clipVideo.addEventListener('ended', () => exitClip(true));
 ui.clipVideo.addEventListener('error', () => {
   if (!player.inClip || !ui.clipVideo.getAttribute('src')) return;
+  player.clipFailed.add(player.index); // spec: the button disappears for that segment, the slide stays
   exitClip(true);
-  ui.clipNote.textContent = 'That class clip won\'t load right now.';
+  ui.clipNote.textContent = 'That class clip won\'t load right now, so here is the slide.';
   ui.clipNote.hidden = false;
 });
+
+ui.slideImg.addEventListener('error', () => {
+  if (ui.slideImg.getAttribute('src')) refreshExpiredLinks();
+});
+
+/* ---- phone: keep the stage clear of the fixed bottom bar, whatever its height ---- */
+if ('ResizeObserver' in window) {
+  new ResizeObserver(([entry]) => {
+    const h = Math.ceil(entry.borderBoxSize?.[0]?.blockSize ?? entry.target.offsetHeight);
+    document.documentElement.style.setProperty('--dock-h', `${h}px`);
+  }).observe(ui.dock);
+}
 
 /* ---- keyboard: space = play/pause, arrows = prev/next, m = mute ---- */
 

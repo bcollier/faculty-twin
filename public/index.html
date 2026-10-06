@@ -13,27 +13,27 @@
   <a class="skip-link" href="#main">Skip to content</a>
 
   <!-- Boot: shown until the first API call settles -->
-  <section id="screen-boot" class="screen screen-center" aria-live="polite">
+  <main id="screen-boot" class="screen screen-center" aria-live="polite">
     <p class="muted">Loading...</p>
-  </section>
+  </main>
 
   <!-- Unreachable at boot -->
-  <section id="screen-offline" class="screen screen-center" hidden>
+  <main id="screen-offline" class="screen screen-center" hidden>
     <div class="card narrow">
       <h1 class="title-sm">I can't reach the server right now.</h1>
       <p>It may be waking up. That usually takes a few seconds.</p>
       <button type="button" class="btn btn-primary" data-action="boot-retry">Try again</button>
     </div>
-  </section>
+  </main>
 
   <!-- Passcode -->
-  <section id="screen-login" class="screen screen-center" hidden>
+  <main id="screen-login" class="screen screen-center" hidden>
     <form id="login-form" class="card narrow" novalidate>
       <p class="eyebrow">Faculty Twin</p>
       <h1 class="title">Ask me about the course</h1>
       <p class="lede">An AI version of Prof. Collier that teaches from his own slides</p>
       <p id="login-note" class="note" hidden></p>
-      <label for="passcode" class="field-label">Course passcode</label>
+      <label for="passcode" class="field-label">Enter the course passcode</label>
       <p class="hint" id="passcode-hint">This is for students in my courses. Use the passcode I shared in class.</p>
       <div class="row">
         <input id="passcode" name="passcode" type="password" autocomplete="current-password"
@@ -42,7 +42,7 @@
       </div>
       <p id="login-error" class="error-text" role="alert"></p>
     </form>
-  </section>
+  </main>
 
   <!-- Main app -->
   <div id="screen-app" class="screen app" data-view="idle" hidden>
@@ -57,8 +57,8 @@
         <fieldset class="course-filter" id="idle-course">
           <legend class="visually-hidden">Which course</legend>
           <label><input type="radio" name="course" value="" checked><span>All courses</span></label>
-          <label><input type="radio" name="course" value="70445"><span>70-445 AI for Business Leaders</span></label>
-          <label><input type="radio" name="course" value="45884"><span>45-884 AI Methods</span></label>
+          <label><input type="radio" name="course" value="70445"><span>70-445<span class="cf-title"> AI for Business Leaders</span></span></label>
+          <label><input type="radio" name="course" value="45884"><span>45-884<span class="cf-title"> AI Methods</span></span></label>
         </fieldset>
 
         <form id="idle-form" class="ask-form" novalidate>
@@ -84,8 +84,9 @@
     </main>
 
     <!-- Presenting: stage -->
-    <section class="stage" id="stage" aria-label="Walkthrough">
+    <main class="stage" id="stage" tabindex="-1" hidden>
       <div class="stage-inner">
+        <h1 class="visually-hidden">Walkthrough of your answer</h1>
 
         <!-- Messages that replace the slide area (loading, errors, not covered) -->
         <div id="stage-message" class="stage-message" hidden>
@@ -158,10 +159,10 @@
           </section>
         </div>
       </div>
-    </section>
+    </main>
 
     <!-- Presenting: chat dock -->
-    <aside class="dock" id="dock" aria-label="Questions">
+    <aside class="dock" id="dock" aria-label="Questions" hidden>
       <div class="dock-head">
         <label for="dock-course" class="visually-hidden">Course</label>
         <select id="dock-course">
@@ -180,7 +181,7 @@
       </div>
       <form id="dock-form" class="dock-form" novalidate>
         <label for="dock-q" class="visually-hidden">Ask another question</label>
-        <input id="dock-q" type="text" maxlength="300" placeholder="Ask a follow-up or a new question" autocomplete="off">
+        <input id="dock-q" type="text" maxlength="300" placeholder="Ask another question" autocomplete="off">
         <button type="submit" class="btn btn-primary">Ask</button>
       </form>
       <p class="ai-label ai-label-dock">AI voice made from my recordings.</p>
