@@ -92,3 +92,8 @@ Needs [uv](https://docs.astral.sh/uv/). Nothing is installed into the repo (no `
 Tests: `uv run --with-requirements requirements.txt --with pytest pytest -q`. The three tests in `tests/test_retrieval.py` fail until the retrieval functions are written by hand; everything else should pass.
 
 Supabase: run `supabase/schema.sql` once in the SQL editor, and create a private Storage bucket named `twin-content`.
+
+### More docs
+
+- [docs/ROADMAP.md](docs/ROADMAP.md): ideas for after submission, starting with free open-source voice models on the Mac mini
+- [docs/SECURITY.md](docs/SECURITY.md): threat model, findings, and the pre-launch checklist
