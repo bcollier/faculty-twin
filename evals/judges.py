@@ -95,3 +95,12 @@ class Judge:
                 if attempt + 1 < RETRIES:
                     sleep(2.0 * (attempt + 1))
         return {"judge": self.name, "error": last}
+
+
+def make_judge(spec: str):
+    """A judge from a CLI spec: `provider:model` for an LLM, or `jev` / `jev:<model>` for Jev."""
+    if spec == "jev" or spec.startswith("jev:"):
+        from .jev_judge import JevJudge
+
+        return JevJudge(spec.partition(":")[2] or None)
+    return Judge.parse_spec(spec)

@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .judges import Judge, JudgeError
+from .judges import Judge, JudgeError, make_judge
 from .run import PRIVATE, load_dotenv
 
 CASES = Path(__file__).resolve().parent / "calibration.jsonl"
@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     load_dotenv()
     try:
-        judges = [Judge.parse_spec(s) for s in args.judge]
+        judges = [make_judge(s) for s in args.judge]
     except JudgeError as exc:
         print(exc, file=sys.stderr)
         return 2

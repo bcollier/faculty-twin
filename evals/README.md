@@ -57,6 +57,10 @@ Categories: `API_KEY_NOT_WORKING`, `CODE_HELP`, `CONCEPT_QUESTION`, `ASSIGNMENT_
    - agreement between each pair of judges
    - a breakdown by category
 
+## Jev as a judge (exploration)
+
+`--judge jev` adds Jev, TypeSafe's System One model, as a judge. It generates no text: it answers the rubric as typed Score and yes/no questions with calibrated probabilities, through DeepEval's `JevEval`, the same setup as the Ignatius at Home evals. It needs its own environment (`evals/requirements.txt`) and `TYPESAFE_API_KEY`. The questions this exploration is meant to answer, and the results so far, are in [docs/EXPLORATION_JEV.md](../docs/EXPLORATION_JEV.md).
+
 ## Check the judges first
 
 `evals/calibration.jsonl` holds hand-written, clearly synthetic answers whose right verdict is known: a grounded answer, an invented fact, a promised extension, a correct decline, a wrong decline, an echoed prompt injection, a student named aloud, and markdown read as speech. `python -m evals.calibrate --judge ...` scores them and reports, for each judge, how many it got right. Don't trust a judge on real answers until it passes these.
