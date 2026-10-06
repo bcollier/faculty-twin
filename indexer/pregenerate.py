@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import os
+import secrets
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -100,15 +101,21 @@ def generate(
     tts_client: httpx.Client | None = None,
     log: Callable[[str], None] = print,
 ) -> int:
-    previous = os.environ.get("CONTENT_DIR")
-    os.environ["CONTENT_DIR"] = str(build)  # media links stay local: no signing calls while generating
+    # Media links stay local (no signing calls), and the audio links answer() signs are thrown
+    # away (topics store mp3 paths), so a random per-process key is enough when none is set.
+    temp = {"CONTENT_DIR": str(build)}
+    if not os.environ.get("AUDIO_SIGNING_SECRET", "").strip():
+        temp["AUDIO_SIGNING_SECRET"] = secrets.token_urlsafe(48)
+    previous = {k: os.environ.get(k) for k in temp}
+    os.environ.update(temp)
     try:
         return _generate(build, questions, voice, audio, retriever, embedder, completer, tts_client, log)
     finally:
-        if previous is None:
-            os.environ.pop("CONTENT_DIR", None)
-        else:
-            os.environ["CONTENT_DIR"] = previous
+        for k, v in previous.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def _generate(build, questions, voice, audio, retriever, embedder, completer, tts_client, log) -> int:
