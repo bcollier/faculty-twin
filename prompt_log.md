@@ -188,3 +188,41 @@ Prompts below are verbatim. Responses are summarized.
 > push this and all prompts to github
 
 **Response summary.** Committed the citation and this log update on a branch, opened a pull request, and squash-merged it to `main`.
+
+### Prompt 6 (8:51 PM)
+
+> write the rest of the code for those sections shown missing
+
+(Sent with a screenshot of another Claude session's message listing the three retrieval tests in `tests/test_retrieval.py` and where to open `app/retrieval.py`.)
+
+**Response summary.** Did not write the code. The missing pieces were the four parts `AGENTS.md` and the spec reserve for me to write by hand: `rank`, `select_segments`, `NOT_COVERED_THRESHOLD`, and `onClipEnded()` in `public/app.js`. The AI explained that writing them would make them no longer my code for the assignment, and offered three options: coach me through writing them, write them only if the course allows it and label them as AI-written everywhere, or give pseudocode.
+
+### Prompt 7 (8:55 PM)
+
+> can we build out the rest of the app without these parts or does development have to stop while I build them
+
+**Response summary.** Development does not have to stop. Typed questions return a clear "retrieval not implemented yet" (503) before any paid call; suggested questions replay stored playlists without retrieval; `?mock=1` serves a fake API for frontend work; previous, next, pause, and captions work without `onClipEnded`. Listed what can continue (content, voice, phone pass, security checklist, README, demo script, hand-picked suggested questions) and what waits for my code (live answers, the threshold, auto-advance, the retrieval tests).
+
+### Prompt 8 (9:09 PM)
+
+> /goal continue working on every aspect of the code that is completable until I do my coding part that you are blocked on. finish all items in "What can keep growing now" and even work on tasks in the roadmap until I stop you manually or you finish all the work. I also want work on evals, having LLM's rate the responses of real student questions from my email (top 25)
+>
+> go through my email and find the most common student questions, and group them by category such as "API_KEY_NOT_WORKING " or "Question about missing class" or "reschedule presentation" or code help.  pull de-identified student questions, the last 100 you can find in my connected email. record a textual variation written by AI so the student cannot be identified by style or handwriting. Meaning the same meaning while keeping the style somewhat anonymous.
+
+### Prompt 9 (9:09 PM, sent while Prompt 8 was running)
+
+> gently smooth over any cursing in the text with a simple word substitue since there may be cursing and we want to keep this PG
+
+**Response summary (Prompts 8 and 9).** Tool: Claude Code on the laptop, Claude Opus 5.5, with read-only Gmail access and background subagents.
+
+- **Coordination.** Another Claude session on the Mac mini was merging pull requests at the same time. They agreed to split the work: that session owns `indexer/`, suggested-question playlists, and deploys. This session took `evals/` and the demo script.
+- **Email questions.** Four read-only subagents, each covering a date range, read student emails and wrote each question back as a rewritten, de-identified, PG version. The rewrites have no names, IDs, exact dates, or personal details, and avoid the original writing style. Each got a category, a paraphrase of Ben's or the TA's reply, and whether the course materials could answer it.
+  - Claude Code's permission check blocked two of the four subagents, the ones for August 15 to September 14, 2026 and January to August 2026. Those ranges were not read, so the set has 22 questions, not 100.
+  - The questions are in the git-ignored `evals/private/` and are not reproduced here.
+  - Category counts: MEETING_REQUEST 9, CONCEPT_QUESTION 3, ASSIGNMENT_CLARIFICATION 3, MISSED_CLASS 2, and one each of RESCHEDULE_PRESENTATION, GRADING_QUESTION, CAREER_OR_ADVISING, CANVAS_OR_COURSE_ACCESS, TEAM_OR_GROUP_ISSUE.
+- **Evals harness** (`evals/`):
+  - Picks the top 25 questions round-robin by category frequency.
+  - Asks the twin in-process (real index and retriever, with the slide material each narration came from) or over HTTP.
+  - Has LLM judges from several providers score six rubric dimensions and give a pass or fail verdict.
+  - Writes a private question-by-question report plus a shareable summary with no question text.
+  - 24 tests use fake judges and the test-fake retriever. The real run waits on my retrieval code and the content upload.
