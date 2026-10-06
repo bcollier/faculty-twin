@@ -1078,7 +1078,12 @@ def process_all(archive: Path = ARCHIVE, out_dir: Path | None = None, verbose: b
             "overridden": n_over,
         }
         summary.append(row)
-        write_review(dest / f"{s.key}.review.md", s, source, cues, counts, drive_counts, heur, n_over, ov)
+        review = dest / f"{s.key}.review.md"
+        write_review(review, s, source, cues, counts, drive_counts, heur, n_over, ov)
+        # the spec's review location (never uploaded): _build/review/<course>-s<NN>.txt
+        review_dir = out_dir.parent / "review"
+        review_dir.mkdir(parents=True, exist_ok=True)
+        _write_private(review_dir / f"{s.course}-{s.key}.txt", review.read_text())
         if verbose:
             print(f"{s.course} {s.key}: src={source} cues={len(cues)} student={n_student} "
                   f"person={row['person_masks']} drive={row['drive_replacements']} "
@@ -1103,6 +1108,8 @@ def write_review(path: Path, s: Session, source, cues, counts, drive_counts, heu
     L = [f"# De-identification review: {s.course} {s.key} ({s.date})", "",
          f"Source: {source}. PRIVATE. Counts only; quoted words already have names masked.", "",
          "## Replacements by rule (transcript cues)", ""]
+    n_st = sum(v for k, v in counts.items() if k in STUDENT_RULES)
+    L += [f"Totals: {STUDENT} {n_st}, {PERSON} {sum(counts.values()) - n_st}", ""]
     L += [f"- {k} -> {STUDENT if k in STUDENT_RULES else PERSON}: {v}" for k, v in sorted(counts.items())] or ["- none"]
     L += ["", f"Drive transcript replacements: {sum(drive_counts.values())} "
               f"({', '.join(f'{k} {v}' for k, v in sorted(drive_counts.items())) or 'none'})", "",
