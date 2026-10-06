@@ -1,0 +1,14 @@
+# The evals environment, used on its own (not combined with the root requirements.txt):
+#   uv run --no-project --python 3.12 --with-requirements evals/requirements.txt python -m evals.run ...
+# The app's direct dependencies are repeated here at the same versions, but their
+# transitive pins are left to the resolver: the root file pins tabulate==0.10.0
+# (pulled in by edge-tts), and deepeval 4.2.6 needs tabulate < 0.10.
+# Never merge deepeval or typesafe-sdk into the root requirements.txt (Vercel bundles that file).
+fastapi==0.142.2
+httpx==0.28.1
+numpy==2.5.3
+pydantic==2.13.5
+edge-tts==7.2.8
+# The Jev judge (same pins as the Ignatius at Home evals)
+deepeval==4.2.6
+typesafe-sdk==0.7.2

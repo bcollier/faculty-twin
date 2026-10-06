@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from . import dataset, report
-from .judges import Judge, JudgeError
+from .judges import Judge, JudgeError, make_judge
 from .targets import BaselineTarget, HttpTarget, InProcessTarget, _result
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {cat}: {n}")
 
     try:
-        judges = [Judge.parse_spec(s) for s in args.judge]
+        judges = [make_judge(s) for s in args.judge]
     except JudgeError as exc:
         print(exc, file=sys.stderr)
         return 2
