@@ -246,3 +246,210 @@ Prompts below are verbatim. Responses are summarized.
 > this needs to be moved out of the gaimdev folder it isn't associated iwth gaim
 
 **Response summary.** Moved the laptop clone from `~/Code/gaim_claude_dev/faculty_twin` to `~/Code/faculty-twin`, matching the repo name and the Mac mini path. Git history, the remote, my branch, and the git-ignored eval data moved with it. Updated `AGENTS.md` so it no longer says the repo sits inside the GAIM folder.
+
+---
+
+## Build session on the Mac mini, Monday October 5 into Tuesday October 6, 2026
+
+**Tool:** Claude Code (CLI agent in the terminal on my Mac mini, driven from my laptop). Model: Claude Opus 5.5. It ran a team of sub-agents in parallel: spec, backend, frontend, slide pipeline, transcript de-identification, alignment and clips, index and upload, security review, frontend QA, voice tiers, PG filter, avatar research, and a multi-course lecture archive. A second Claude Code session on my laptop wrote `evals/`, `localvoice/`, and the demo script (its prompts are logged in the section above).
+
+**What this tool was used for:** everything in the app except the four pieces I write by hand. The agents left signatures, docstrings, and failing tests for `rank`, `select_segments`, `NOT_COVERED_THRESHOLD`, and `onClipEnded()`, and did not write their bodies.
+
+Prompts below are verbatim, except that passcodes and secrets are redacted (per the `AGENTS.md` rule added in PR #12). Times are approximate. Prompts that were only a screenshot are noted as such. Responses are summarized.
+
+### Prompt 1 (about 6:15 PM)
+
+> get the digital twin faculty twin repo from my github. start a deep session on building this out read the spec and build out the app. ask for credentials or secrets as needed. launch a whole team of agents to work on designing, building, testing, and doing a security analysis of the MVP of this working. as sources go through my two current teaching courses from Google cloud and get the transcripts for every day of class from the Zoom recordings. de-identify the names of any students mentioned as you import . take the most current slide deck PDF from all the slides and do whatever you need to do in pre-processing so students can ask a question and be pointed to the current slides from the semester based on the course transcripts and the slides. if claude code can process the video from the courses you may build a version that cuts up class video and shows it to illustrate a point
+
+**Response summary.** Cloned the repo, read the spec and `AGENTS.md`, found both Fall 2026 courses in Google Drive (70-445 and 45-884), and pulled all 22 sessions (video, Zoom captions, slide PDFs, notebooks) into a private archive on the Mac mini, outside the repo. Asked four questions before building:
+
+- Content: **private, behind a course passcode** (repo holds code only).
+- Class video clips: **build them and publish automatically**, behind the passcode.
+- Missing Zoom files: **use my Chrome**.
+- Providers: **Claude, Voyage AI embeddings, ElevenLabs**.
+
+Then wrote a shared team brief and launched agents for the spec, backend, frontend, slides, and de-identification.
+
+### Prompt 2 (about 6:35 PM, sent while the agents were starting)
+
+> as part of the build of this the administrator needs to be able to chain the model from Claude native, OpenAI Native, and OpenRouter -> Choose Model with an OpenRouter Key
+
+### Prompt 3
+
+> choose the model
+
+**Response summary (2 and 3).** Added an admin-switchable narration model to the brief: Claude native, OpenAI native, or any OpenRouter model from its live list, with keys held server-side. Chose Claude Sonnet 5.5 as the default.
+
+### Prompt 4
+
+> there should be a settings page, choose the voice, the model, add source material to a course, etc.
+
+**Response summary.** The admin page became a full Settings page: model, voice, courses and source-material uploads, limits and access, and activity. Uploads go straight from the browser to private storage (Vercel caps request bodies at 4.5 MB) and a worker on my Mac processes them.
+
+### Prompt 5
+
+> /Users/bcollier/Code/FacultyTwinContent. check out the data in here for formats available in previous step. de-identify anyone named except Benjamin (Ben) Collier
+
+**Response summary.** The folder was on my laptop, so it pulled the Drive copy. It holds an earlier archive of 45-884 with ASR-corrected transcripts (`.cleaned.timed.jsonl`, `.cleaned.vtt`, `.cleaned.md`) and RAG chunks, none de-identified. Switched 45-884 to the corrected text and made the rule strict: every person named in a transcript is replaced (`[student]` or `[person]`) except me, public figures included.
+
+### Prompt 6 (with a screenshot of CMU's LinkedIn post about Jordan Usdan's AI clone)
+
+> is there lessons from this we could learn cite the source and story and look at the detail. what would the next version be like to get the virtual avatar like in the image
+
+**Response summary.** A research agent found the sources (CMU News, the Heinz reel and YouTube Short, April to June 2025). His clone was built on Delphi.ai, which runs on Tavus, from his resume, syllabus, and readings, with no published results. Lessons: keep grounding and citations, keep slides as the main stage, let the avatar only lip-sync text the backend signed, keep student data away from the vendor, and disclose. Recommended HeyGen LiveAvatar for a later avatar pilot.
+
+### Prompt 7
+
+> you do not need to de-identify Ben Collier, or Benjamin Collier, he can stay identified. that is the person we are going to build a twin of
+
+**Response summary.** Confirmed that was already the rule.
+
+### Prompt 8 (with a screenshot of my Canvas bookmarks folder)
+
+> go through all of my courses content from the last few years, organize clearly all the data and downloads. i want the code, slides, recordings, recommended readings etc. these are in bookmarks . go through the same process of cleaning up as with ai methods course
+
+**Response summary.** Started a separate lecture-archive agent in `~/Lecture Archive` on the Mac mini, read-only on Drive, and asked me for a Canvas token and a Zoom login. Flagged four bookmarks named after other people as possibly not mine.
+
+### Prompt 9
+
+> go over this The CMU guide (Waddell, Digital Twin GPT) adds a framework for choosing what goes into a twin, plus ethics rules: redact, no FERPA data, keep it internal, use version control.
+
+**Response summary.** Read the whole guide and mapped its FRED framework and ethics list onto the twin. Gaps found: no "who am I" material, student-typed names in the question log, no versioning of the document set, no fixed test set. The last three were later addressed (security PR, versioned index builds, the evals harness).
+
+### Prompt 10
+
+> go through and get a pdf text of the syllabus for every course for every version of the course. be clear on file naming and structure etc.
+
+**Response summary.** The archive agent made this its first deliverable: `~/Lecture Archive/_syllabi/<course>/<course>_<year>-<term>-<section>_syllabus[_vN].pdf` plus `.txt`, with an index CSV. Result: 61 syllabi for 24 offerings I taught, other instructors' syllabi excluded.
+
+### Prompt 11
+
+> i don't see how to do this ~/Code/ft-data/set_canvas_token.sh
+
+**Response summary.** The script was on the Mac mini, not my laptop. Gave step-by-step SSH instructions: make the token, connect, run the script, and what I would see.
+
+### Prompt 12 (pasted terminal output: the Canvas token was saved and verified)
+
+**Response summary.** Started the Canvas phase of the archive, read-only, never requesting submissions, grades, or student data.
+
+### Prompt 13 (with a screenshot of the key prompt)
+
+> I don't have voyage what is that?
+
+**Response summary.** Explained embeddings and why Voyage (Anthropic does not offer embeddings), how to get a key, and the OpenAI alternative.
+
+### Prompt 14 (screenshot of the Voyage "Create new secret key" dialog, no text)
+
+**Response summary.** Told me to click Create, and flagged that a "ChatGPT started debugging this browser" bar meant another tool could read the page while the key was on screen.
+
+### Prompt 15 (with a screenshot of the voice ID prompt)
+
+> what is this
+
+**Response summary.** Explained the ElevenLabs voice ID and where to copy it.
+
+### Prompt 16 (with screenshots of the Supabase dashboard and the URL prompt)
+
+> where do i get this
+
+**Response summary.** Pointed to the Project URL, and noted the project is shared with my Ignatius app (its tables do not clash with the twin's).
+
+### Prompt 17 (screenshot of the Supabase copy menu, no text)
+
+**Response summary.** Use "Project URL", not the publishable key.
+
+### Prompt 18 (with a screenshot of the service key prompt)
+
+> where
+
+**Response summary.** Gave the direct link to the legacy API keys page and the service_role key.
+
+### Prompt 19 (screenshot of the student passcode prompt, no text)
+
+**Response summary.** Explained the student and admin passcodes.
+
+### Prompt 20 (pasted terminal output of the key script)
+
+The paste included the student passcode, shown here as `[student passcode redacted]`. Other keys were entered silently and never appeared.
+
+**Response summary.** Checked the Supabase project read-only (no table name clashes), reviewed `schema.sql` before I ran it, and created the private `twin-content` bucket.
+
+### Prompt 21
+
+> when we save teh chat prompt history hide the student password
+
+**Response summary.** Added the redaction rule to `AGENTS.md` (PR #12) and confirmed the passcode was not in this log.
+
+### Prompts 22 to 24 (screenshots: Vercel login success, "Success. No rows returned" in the SQL editor, and the live site saying "This part isn't finished yet")
+
+**Response summary.** Linked the Vercel project, copied the keys into Vercel without printing them, deployed, and verified health, login, and security headers. The live page showed "still writing the code" for a different reason (content not uploaded yet), so it fixed the message (PR #14).
+
+### Prompt 25
+
+> make options for me to use one of the free Microsoft TTS packages see ignatius for details. allow free voice, elevenlabs voices, and then my voice clone
+
+**Response summary.** Built voice tiers (PR #16): my clone, ElevenLabs stock voices, free Microsoft voices through edge-tts, or captions only, each with a preview on the Settings page. The on-screen label matches the voice actually speaking.
+
+### Prompt 26
+
+> are there other options for a voice outside of those options?
+
+**Response summary.** Listed OpenAI TTS, the browser's built-in voice, Cartesia, Azure, Google, Hume, and local open-source models (Kokoro, Chatterbox, F5-TTS, XTTS-v2).
+
+### Prompt 27
+
+> where are these files locally Your hand-written code. Until you write rank, select_segments and NOT_COVERED_THRESHOLD in app/retrieval.py, questions get the "still writing the code" message, which is correct at that point. The three tests in tests/test_retrieval.py show what each one needs to do. Choose the threshold by asking five on-topic and five off-topic questions and looking at the top scores.
+
+**Response summary.** Gave the file and line locations on the Mac mini, on GitHub, and how to pull them to my laptop.
+
+### Prompt 28
+
+> put that in the roadmap
+>
+> Free and open source, running on the Mac mini:
+>
+> Option	Your voice?	License
+> Kokoro	No, stock voices	Apache 2.0. Excellent quality for its size, and fast on the Mac mini's CPU.
+> Chatterbox (Resemble AI)	Yes, from about 10 seconds of audio	MIT. Free cloning of your own voice.
+> F5-TTS, XTTS-v2	Yes	The weights are non-commercial only. Fine for a class project, not for anything you'd sell.
+
+**Response summary.** Added `docs/ROADMAP.md` (PR #15).
+
+### Prompts 29 and 30 (screenshots of a Codex session that ran out of usage)
+
+> codex has somethings to hand off file importing from other courses
+
+**Response summary.** Found Codex's `FacultyCourseArchive` folder in Drive (Canvas metadata, Zoom links, notebooks for 23 offerings) and had the archive agent build on it.
+
+### Prompt 31
+
+> gently smooth over any cursing in the text with a simple word substitue since there may be cursing and we want to keep this PG
+
+**Response summary.** Added a PG filter (PR #21) to transcripts, slide text, and the narration prompt, and clips now skip any stretch with cursing.
+
+### Prompt 32
+
+> For 1,2,3,4 you are correct those aren’t my course, and for guest speaker just note that and don’t show the recording
+
+**Response summary.** Excluded those four items from the archive, and added a rule: guest-speaker sessions are flagged and their recordings are never shown, clipped, indexed, or uploaded.
+
+### Prompt 33
+
+> Go upload go deploy
+
+**Response summary.** Checked that neither current course had a guest speaker, uploaded 2,283 files (392 MB) after a clean leak check, deployed, and verified the live site: courses load, the voice label is correct, and asking returns "retrieval not implemented yet" until my code lands.
+
+### Prompt 34
+
+> Make progress all night Bible
+
+**Response summary.** In progress: overnight work on things that do not touch my four hand-written pieces.
+
+### Places the AI got something wrong in this session (facts only)
+
+- The first archive download script broke because it used `path` as a variable name, which zsh ties to `PATH`.
+- Whisper on 70-445 session 11 produced 155 lines of "Thank you." The audio is digital silence, so the session has no transcript.
+- The slide pipeline cached slide text before the rosters were added, so one full student name in a slide survived the name scrub. The upload leak check caught it before anything was uploaded, and the cache now includes a roster fingerprint (PR #21).
+- The first clip encode copied Zoom's embedded raw caption track (not de-identified) into every clip. The clips agent caught it before upload and re-encoded all clips with video and audio only.
+- The live page told visitors "I'm still writing the code" when the real cause was content not yet uploaded (fixed in PR #14).
+- The security review found that a question could make the cloned voice read a sentence the asker wrote, and that missing signing secrets fell back to development keys in the public repo. Both were fixed in PR #11 before any content was live.
