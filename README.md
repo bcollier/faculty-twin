@@ -62,3 +62,33 @@ Setup instructions will be added once the skeleton is in place (Block 0 of the b
 ## References
 
 - Stan Waddell, *Creating a Digital Twin GPT: A Higher Education Practitioner's Guide*, Carnegie Mellon University Computing Services. [Guide page](https://www.cmu.edu/computing/services/ai/tools/chatgpt/digital_twin_gpt.html) · [PDF](https://www.cmu.edu/computing/services/ai/tools/chatgpt/how-to/gpt-digital-twin-guide.pdf). Background reading on faculty digital twins; this repo links to it rather than hosting a copy.
+
+## AI-generated documentation
+
+*Written by Claude Code (Claude Opus 5.5) with the backend PR. Ben's own sections are above.*
+
+### Running the backend locally
+
+Needs [uv](https://docs.astral.sh/uv/). Nothing is installed into the repo (no `.venv`).
+
+1. Copy `.env.example` to `.env` and fill in what you have. With no keys at all, the passcode gate, courses, topics, signed image links, and the Settings page still work; `/api/ask` answers 503 until there is a Voyage key and the hand-written retrieval in `app/retrieval.py`.
+2. Point `CONTENT_DIR` at a folder holding `content/index.json`, `content/embeddings.npy`, `slides/`, `clips/`, and `topics/` (for example `~/Lecture Archive/_build`). Without `CONTENT_DIR` the backend reads the private Supabase bucket instead. For a fake folder with no course material: `uv run --with numpy python tests/fixtures/build_fixture.py /tmp/ft-fixture`.
+3. Start the server:
+
+   ```bash
+   set -a; source .env; set +a
+   uv run --with-requirements requirements.txt --with uvicorn uvicorn app.main:app --reload --port 8000
+   ```
+
+4. Try it:
+
+   ```bash
+   curl localhost:8000/api/health
+   curl -c jar -X POST localhost:8000/api/login -H 'content-type: application/json' -d '{"passcode":"<STUDENT_PASSCODE>"}'
+   curl -b jar localhost:8000/api/courses
+   curl -b jar -X POST localhost:8000/api/ask -H 'content-type: application/json' -d '{"question":"how does a neural network learn?","course":"70445"}'
+   ```
+
+Tests: `uv run --with-requirements requirements.txt --with pytest pytest -q`. The three tests in `tests/test_retrieval.py` fail until the retrieval functions are written by hand; everything else should pass.
+
+Supabase: run `supabase/schema.sql` once in the SQL editor, and create a private Storage bucket named `twin-content`.

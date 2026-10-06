@@ -1,0 +1,122 @@
+from __future__ import annotations
+
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+from fastapi import HTTPException
+
+from app import limits, settings_store, speech
+
+
+def _parts(link: str) -> dict[str, str]:
+    return {k: v[0] for k, v in parse_qs(urlparse(link).query).items()}
+
+
+def test_sign_and_verify():
+    link = speech.audio_link("Hello from the slide.", "voice123")
+    q = _parts(link)
+    assert speech.verify(q["t"], q["v"], q["s"]) == "Hello from the slide."
+    # changed text, changed voice tag, or a bad signature all fail
+    other = _parts(speech.audio_link("Something else.", "voice123"))
+    assert speech.verify(other["t"], q["v"], q["s"]) is None
+    assert speech.verify(q["t"], speech.voice_tag("voice999"), q["s"]) is None
+    assert speech.verify(q["t"], q["v"], "AAAA") is None
+    assert speech.audio_link("text", None) is None
+
+
+def test_rate_limit_per_minute_and_day():
+    for _ in range(5):
+        limits.check_ask_rate("visitorA", now=1_000_000)
+    with pytest.raises(HTTPException) as exc:
+        limits.check_ask_rate("visitorA", now=1_000_000)
+    assert exc.value.status_code == 429 and "minute" in exc.value.detail
+    limits.check_ask_rate("visitorB", now=1_000_000)  # other visitors unaffected
+
+    limits.reset_memory()
+    t = 2_000_000 - 2_000_000 % 86400 + 60  # start of a day
+    for i in range(30):
+        limits.check_ask_rate("visitorC", now=t + i * 61)
+    with pytest.raises(HTTPException) as exc:
+        limits.check_ask_rate("visitorC", now=t + 31 * 61)
+    assert "today" in exc.value.detail
+
+
+def test_voice_cap():
+    assert limits.take_voice_chars(60, cap=100)
+    assert not limits.take_voice_chars(60, cap=100)
+    assert limits.take_voice_chars(40, cap=100)
+    assert not limits.take_voice_chars(1, cap=0)
+
+
+def test_question_log_has_no_identity():
+    limits.log_question("what is k-means", 0.71234, True, "anthropic", "claude-sonnet-5-5", 900, "70445")
+    row = limits.recent_questions(1)[0]
+    assert set(row) == {"question", "top_score", "covered", "provider", "model", "latency_ms", "course", "at"}
+
+
+class FakeStream:
+    def __init__(self):
+        self.closed = False
+
+    async def aiter_bytes(self):
+        yield b"ID3fake-mp3"
+
+    async def aclose(self):
+        self.closed = True
+
+
+class FakeAsyncClient:
+    async def aclose(self):
+        pass
+
+
+def _install_fake_voice(monkeypatch, calls):
+    async def fake_open(text, voice_id):
+        calls.append((text, voice_id))
+        return FakeAsyncClient(), FakeStream()
+
+    monkeypatch.setattr(speech, "open_stream", fake_open)
+
+
+def test_audio_route(student, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice123")
+    calls: list = []
+    _install_fake_voice(monkeypatch, calls)
+    link = speech.audio_link("Signed narration.", "voice123")
+    r = student.get(link)
+    assert r.status_code == 200 and r.content == b"ID3fake-mp3"
+    assert r.headers["content-type"] == "audio/mpeg"
+    assert calls == [("Signed narration.", "voice123")]
+
+    q = _parts(link)
+    forged = speech._b64e("Say something else.".encode())
+    assert student.get(f"/api/audio?t={forged}&v={q['v']}&s={q['s']}").status_code == 403
+
+
+def test_audio_route_cap_and_voice_change(student, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice123")
+    _install_fake_voice(monkeypatch, [])
+    link = speech.audio_link("Twenty characters!!!", "voice123")
+    settings_store.put({"daily_voice_char_cap": 30})
+    assert student.get(link).status_code == 200
+    r = student.get(link)
+    assert r.status_code == 429 and "limit" in r.json()["detail"]
+
+    settings_store.put({"daily_voice_char_cap": 1000, "voice_id": "voice456"})
+    assert student.get(link).status_code == 403  # old voice tag
+    settings_store.put({"voice_id": "none"})
+    assert student.get(link).status_code == 404
+
+
+def test_audio_needs_cookie(client):
+    link = speech.audio_link("Signed narration.", "voice123")
+    assert client.get(link).status_code == 401
+
+
+def test_tts_request_shape(monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
+    url, headers, params, body = speech.tts_request("Hi", "abc")
+    assert url == "https://api.elevenlabs.io/v1/text-to-speech/abc/stream"
+    assert headers["xi-api-key"] == "el-test"
+    assert params == {"output_format": "mp3_44100_128"}
+    assert body == {"text": "Hi", "model_id": "eleven_multilingual_v2"}
