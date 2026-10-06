@@ -31,6 +31,8 @@ Rules (docs/SPEC.md, Preprocessing pipeline, stage 4, plus the team brief's upda
     90 s. Clips shorter than 15 s are dropped.
   * Every cue overlapping the clip padded by 5 s on each side is "instructor" and contains
     no "[student]" and no "[person]" token (audio cannot be de-identified).
+  * PG (brief UPDATE 6): no cue in the padded window is marked `pg: true` by the PG filter
+    or matches the basic profanity list in PROFANITY (audio cannot be cleaned).
     If the whole window fails, the longest clean stretch inside it that still satisfies
     every rule is used instead.
   * No clip for slides flagged student_names_possible, in_the_news,
@@ -50,6 +52,7 @@ The script never prints transcript text.
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from collections import Counter
@@ -59,13 +62,30 @@ from pathlib import Path
 
 from indexer import align as A
 
-CLIPS_VERSION = 2
+CLIPS_VERSION = 2  # bump only when the encoding changes
 
 MIN_S, MAX_S = 15.0, 90.0
 MERGE_GAP_S = 5.0
 PAD_S = 5.0
 MOTION_MAX = 0.35  # share of changing frame pairs above which an embedded video is assumed
 NAME_TOKENS = ("[student]", "[person]")
+
+# PG rule (team brief UPDATE 6): audio cannot be cleaned, so a clip window may not contain a
+# cue the PG filter changed (`pg: true`). Until every transcript carries that flag, the cue
+# text is also checked against this basic list (whole words, any case).
+PROFANITY = re.compile(
+    r"\b(?:f+u+c+k\w*|motherf\w*|shit\w*|bullshit\w*|horseshit|"
+    r"damn\w*|dammit|goddam\w*|god\s+damn\w*|hell|hellish|crap\w*|piss\w*|bitch\w*|bastard\w*|"
+    r"ass|asses|asshole\w*|jackass\w*|badass\w*|dumbass\w*|dick|dicks|cock|cocks|prick|pricks|"
+    r"wtf|omfg|oh\s+my\s+god|my\s+god|jesus|christ|jeez|geez|holy\s+(?:god|christ))\b"
+    # a censored or cut-off f-word ("f---", "f-ing"), but not "F-score" or "F-test"
+    r"|\bf[\-*]+(?:ing|ed|er|in)?(?![\w\-*])",
+    re.IGNORECASE)
+
+
+def pg_problem(c: dict) -> bool:
+    """True when a cue was softened by the PG filter or still contains a listed word."""
+    return bool(c.get("pg")) or bool(PROFANITY.search(c.get("text") or ""))
 
 NO_CLIP_SESSIONS = {("45884", 11), ("45884", 12)}
 NO_CLIP_FLAGS = ("student_names_possible", "in_the_news", "student_presentation_possible",
@@ -82,9 +102,10 @@ TARGET_BYTES = 3_000_000
 
 
 def clean_cue(c: dict) -> bool:
-    """A cue that may be heard in a clip: instructor speech with no name mask."""
+    """A cue that may be heard in a clip: instructor speech, no name mask, PG language."""
     text = c.get("text") or ""
-    return c.get("speaker") == "instructor" and not any(t in text for t in NAME_TOKENS)
+    return (c.get("speaker") == "instructor" and not any(t in text for t in NAME_TOKENS)
+            and not pg_problem(c))
 
 
 def overlapping(cues: list[dict], a: float, b: float) -> list[dict]:
@@ -104,6 +125,8 @@ def window_problem(cues: list[dict], a: float, b: float, pad: float = PAD_S) -> 
             return "unclear_speech"
         if any(t in (c.get("text") or "") for t in NAME_TOKENS):
             return "name_in_window"
+        if pg_problem(c):
+            return "pg_language"
     return None
 
 

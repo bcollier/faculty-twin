@@ -179,3 +179,16 @@ def test_bridged_frames_split_the_usable_span():
     assert spans == [(100.0, 148.0), (152.0, 200.0)]
     clip, _ = decide(slide(), rec([[99.0, 201.0]]), steady_cues(0, 300), meta=meta)
     assert clip is not None and (clip.end <= 148.0 or clip.start >= 152.0)
+
+
+def test_pg_rule_rejects_flagged_or_listed_language_in_padded_window():
+    cues = steady_cues(0, 60)
+    flagged = cues + [cue(42, 43, "a softened word") | {"pg": True}]
+    assert C.window_problem(flagged, 10, 40) == "pg_language"  # inside the 5 s pad
+    listed = [cue(20, 25, "oh jeez, that one again")] + cues
+    assert C.window_problem(listed, 10, 40) == "pg_language"
+    harmless = [cue(20, 25, "hello, this shell class will assess the passage with an F-score, "
+                                "an F-test and a cocktail of cockpit data at Christmas")] + cues
+    assert C.window_problem(harmless, 10, 40) is None
+    clip, rej = decide(slide(), rec([[100.0, 160.0]]), steady_cues(0, 300, text="jeez"))
+    assert clip is None and rej[0].reason == "pg_language"
