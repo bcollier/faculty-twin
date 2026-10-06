@@ -174,3 +174,52 @@ class HttpTarget:
             follow_ups=playlist.get("follow_ups") or [],
             latency_ms=latency,
         )
+
+
+BASELINE_SYSTEM = (
+    "You are an AI teaching assistant for a university business analytics and AI course. A student "
+    "emailed the question below. Answer helpfully and concisely, in under 150 words, in plain sentences "
+    "that read well aloud. Reply with JSON only: {\"answer\": \"...\"}"
+)
+
+
+class BaselineTarget:
+    """A generic chatbot with no course material: the bar the twin has to clear.
+
+    One model call per question, no retrieval, no grounding check, no decline
+    rule. Its answer comes back as a single segment with no evidence, so judges
+    score groundedness as null and everything else as usual. Comparing this run
+    with an in-process run on the same questions shows what the twin's slides,
+    grounding, and refusals add (or cost).
+    """
+
+    def __init__(self, spec: str, judge_cls=None):
+        from .judges import Judge
+
+        self._llm = (judge_cls or Judge).parse_spec(spec)
+        self.name = f"baseline {self._llm.name}"
+
+    def ready(self) -> str | None:
+        return self._llm.ready()
+
+    def ask(self, question: str) -> dict[str, Any]:
+        import json as _json
+
+        from .judges import JudgeError
+        from . import rubric
+
+        started = time.monotonic()
+        try:
+            raw = self._llm._send(BASELINE_SYSTEM, f"Student question: {question}")
+            answer = str(rubric._extract_json(raw).get("answer") or "").strip()
+        except (JudgeError, rubric.JudgementError, AttributeError, _json.JSONDecodeError) as exc:
+            return _result("error", f"baseline failed: {str(exc)[:120]}")
+        latency = int((time.monotonic() - started) * 1000)
+        if not answer:
+            return _result("error", "baseline returned an empty answer", latency_ms=latency)
+        return _result(
+            "ok",
+            segments=[{"n": 1, "slide_id": "baseline", "narration": answer, "evidence": None}],
+            narration_source="baseline",
+            latency_ms=latency,
+        )

@@ -8,6 +8,9 @@
     # Against a running site:
     FT_EVAL_PASSCODE=... python -m evals.run --target http --base-url https://<site> ...
 
+    # Baseline: a generic chatbot with no course material answers the same questions:
+    python -m evals.run --target baseline --baseline-model openai:gpt-6.1-sol --judge ...
+
     # Dry run with invented questions and no keys (checks wiring only):
     python -m evals.run --questions evals/questions.example.jsonl --target none
 
@@ -29,7 +32,7 @@ from typing import Any
 
 from . import dataset, report
 from .judges import Judge, JudgeError
-from .targets import HttpTarget, InProcessTarget, _result
+from .targets import BaselineTarget, HttpTarget, InProcessTarget, _result
 
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = ROOT / "evals" / "private"
@@ -96,7 +99,9 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--questions", default=str(PRIVATE / "questions.jsonl"))
     p.add_argument("--top", type=int, default=25)
-    p.add_argument("--target", choices=("in-process", "http", "none"), default="in-process")
+    p.add_argument("--target", choices=("in-process", "http", "baseline", "none"), default="in-process")
+    p.add_argument("--baseline-model", default="openai:gpt-6.1-sol", metavar="PROVIDER:MODEL",
+                   help="model for --target baseline (a generic chatbot with no course material)")
     p.add_argument("--base-url", help="site for --target http")
     p.add_argument("--judge", action="append", default=[], metavar="PROVIDER:MODEL")
     p.add_argument("--out", help="run folder (default evals/private/runs/<UTC time>)")
@@ -128,6 +133,11 @@ def main(argv: list[str] | None = None) -> int:
             print("--target http needs --base-url", file=sys.stderr)
             return 2
         target = HttpTarget(args.base_url)
+    elif args.target == "baseline":
+        target = BaselineTarget(args.baseline_model)
+        if why := target.ready():
+            print(f"Baseline model not ready: {why}", file=sys.stderr)
+            return 3
     elif args.target == "none":
         target = NoTarget()
     else:

@@ -30,6 +30,7 @@ Categories: `API_KEY_NOT_WORKING`, `CODE_HELP`, `CONCEPT_QUESTION`, `ASSIGNMENT_
 2. **Ask the twin.**
    - `--target in-process` calls `app.main.answer`, the same function behind `/api/ask`. It runs with the real index and the real retriever, and it also records the slide material each narration came from. Run it on the Mac mini, where the index and keys are.
    - `--target http --base-url <site>` asks a running site instead. Judges can't see slide material that way, so groundedness is scored as N/A.
+   - `--target baseline --baseline-model openai:gpt-6.1-sol` has a generic chatbot with no course material answer instead, as a comparison.
    - `--target none` is a dry run that checks the wiring only.
 3. **Judge each answer.** Each `--judge provider:model` scores six dimensions from 1 to 5:
    - **grounded:** every claim comes from the slides
@@ -72,6 +73,26 @@ Synthetic cases only; no student data. Run twice for `gpt-6.1-sol`, once for `gp
 | `anthropic:*` | not run | No Anthropic key on the laptop. It is on the Mac mini. |
 
 Every bad case scored 1 or 2 on the dimension it targets, and the good cases scored 5. A judge from a second provider (Anthropic on the Mac mini, or OpenRouter once its key is replaced) would guard against one model family grading its own style.
+
+### Baseline results, October 5, 2026
+
+A generic chatbot with no course material (`--target baseline`, `gpt-6.1-sol`) answered the 22 real, de-identified email questions. This is the bar the twin has to clear. Aggregates only:
+
+| Judge | Pass rate | answers_question | correct_scope | matches_reference | speech_quality | safety_tone |
+| --- | --- | --- | --- | --- | --- | --- |
+| `gpt-6.1-sol` (judging its own answers) | 0.68 | 3.77 | 3.68 | 2.00 | 3.67 | 4.45 |
+| `gpt-6-luna` | 0.27 | 3.00 | 2.59 | 1.08 | 3.11 | 3.14 |
+
+The two judges gave the same verdict on 59% of questions. What they flagged:
+- **Logistics:** the baseline rarely declines. On meetings, grades, career advice and missed classes it asked for details, offered to review work, or implied it could reschedule, scoring 1 on scope from at least one judge.
+- **Invented policy:** in one case it contradicted the real answer about how quizzes work.
+- **Concept questions:** it gave generic textbook advice and missed the specific diagnosis in Ben's real reply (`matches_reference` 1 to 2).
+- **Judge bias:** `gpt-6.1-sol` was far more lenient grading answers it wrote itself. On calibration it was the stricter judge. This is why the real run should include a judge from another model family.
+
+What the twin should beat:
+- decline every logistics question cleanly (the twin's not-covered path)
+- never invent policy (the grounding check)
+- match Ben's own explanations on concept questions (his slides, notes and class transcript)
 
 ## Commands
 

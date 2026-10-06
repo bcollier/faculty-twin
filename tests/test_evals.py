@@ -331,3 +331,31 @@ def test_judge_does_not_retry_a_rejected_key():
     finally:
         del os.environ["OPENAI_API_KEY"]
     assert "401" in out["error"] and len(calls) == 1
+
+
+# ---------------------------------------------------------------- baseline target
+
+def test_baseline_target_wraps_one_answer_without_evidence():
+    from evals.targets import BaselineTarget
+
+    class FakeLLM(Judge):
+        def _send(self, system, user):
+            assert "Student question: Can I get an extension?" in user
+            return json.dumps({"answer": "Sure, ask your professor."})
+
+    t = BaselineTarget("openai:m", judge_cls=FakeLLM)
+    out = t.ask("Can I get an extension?")
+    assert out["status"] == "ok" and out["narration_source"] == "baseline"
+    assert out["segments"] == [{"n": 1, "slide_id": "baseline", "narration": "Sure, ask your professor.", "evidence": None}]
+    assert "not available to the evaluator" in rubric.build_user_prompt(
+        {"question": "q", "category": "EXTENSION_REQUEST", "answerable": False, "reference_answer": None, "response": out})
+
+
+def test_baseline_target_reports_errors():
+    from evals.targets import BaselineTarget
+
+    class BrokenLLM(Judge):
+        def _send(self, system, user):
+            return "not json"
+
+    assert BaselineTarget("openai:m", judge_cls=BrokenLLM).ask("q")["status"] == "error"
