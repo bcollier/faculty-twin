@@ -446,11 +446,11 @@ The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded 
 | Table | Columns | Notes |
 | --- | --- | --- |
 | `settings` | `key`, `value` (jsonb), `updated_at` | Keys: `provider`, `model`, `voice_id`, `daily_voice_char_cap`, `student_passcode_hash`, `index_version`. Env vars are the defaults when a key is missing |
-| `counters` | `key`, `day`, `count` | Rate limits per visitor id, login attempts, daily voice characters |
+| `counters` | `key`, `day`, `count`, `expires_at` | Rate limits per visitor id, login attempts, daily voice characters, daily question counts. Bumped only through the `ft_increment` function, which adds atomically and refuses an add that would pass a cap |
 | `question_log` | `id`, `at`, `question`, `course`, `covered`, `top_score`, `provider`, `model`, `latency_ms` | Question text and scores only: no names, accounts, cookies, or IP addresses |
 | `courses` | `code`, `title`, `term` | Seeded with 70445 and 45884 |
 | `sessions` | `id`, `course`, `session`, `date`, `title`, `visible` | `visible` false hides the session from students and from retrieval |
-| `sources` | `id`, `course`, `session`, `kind`, `path`, `status`, `message`, `updated_at` | `kind` is `slides_pdf`, `slides_pptx`, `vtt`, `video`, or `notebook`. `status` is `uploaded`, `processing`, `ready`, or `error`. `message` never contains a student name |
+| `sources` | `id`, `course`, `session`, `kind`, `path`, `status`, `message`, `updated_at` | `kind` is `slides` (PDF or pptx), `transcript` (VTT), `video`, or `notebook`, matching the Settings form. `status` is `pending_upload` (link minted, file not confirmed), `uploaded`, `processing`, `ready`, or `error`; the worker only takes `uploaded`. `message` never contains a student name |
 
 ## Preprocessing pipeline
 
@@ -525,29 +525,30 @@ Four routes. The frontend never talks to a model or voice provider directly.
 | `GET /api/health` | none | `{"ok": true}` | No cookie needed. Warms the function on page load |
 | `POST /api/login` | `{"passcode": "..."}` | 204 and the `ft_session` cookie, or 401 | Constant-time compare against the current student passcode. Rate-limited per address (salted daily hash): 10 tries per 15 minutes, then 429 |
 | `GET /api/courses` | none | `[{course, title, sessions: [{session, date, title}]}]` | Visible sessions only |
-| `GET /api/topics` | none | Suggested questions, each with its course and stored playlist | Read from `topics/topics.json`; links signed on the way out |
+| `GET /api/topics` | none | `[{question, course}]` | Read from `topics/topics.json`. Asking a topic's exact question returns its stored playlist, with links signed on the way out |
 | `POST /api/ask` | `{"question": "...", "course": "70445" \| "45884" \| null}`, question 300 characters max | A playlist (see Data) | Retrieval, then one LLM call that writes all segment narrations as JSON. No speech is generated here |
-| `GET /api/audio?t=&s=` | the narration text (base64url) and its signature | An mp3, streamed | 403 on a bad signature, 429 past the daily cap (the frontend falls back to captions). Calls ElevenLabs with the current voice. Nothing is saved on the server |
+| `GET /api/audio?t=&v=&s=` | the narration text (base64url), a short tag of the voice id, and their signature | An mp3, streamed | The voice tag makes every link change when the voice changes, so the browser never replays the old voice; a link from an old voice gets 403. 404 when the voice is set to captions only. 403 on a bad signature, 429 past the daily cap (the frontend falls back to captions). Calls ElevenLabs with the current voice. Nothing is saved on the server |
 
 **Settings routes** (all need `ft_admin` except login)
 
 | Route | Input | Returns | Notes |
 | --- | --- | --- | --- |
 | `POST /api/admin/login` | `{"passcode": "..."}` | 204 and the `ft_admin` cookie, or 401 | Against `ADMIN_PASSCODE`. 5 tries per 15 minutes |
-| `GET /api/admin/settings` | none | `{provider, model, voice_id, daily_voice_char_cap}` | Never returns a key or a passcode hash |
+| `GET /api/admin/settings` | none | `{provider, model, voice_id, daily_voice_char_cap, ...}` | Never returns a key or a passcode hash. `voice_id` is null when the server default (`ELEVENLABS_VOICE_ID`) applies, `"none"` for captions only |
 | `PUT /api/admin/settings` | any of `{provider, model, voice_id, daily_voice_char_cap, student_passcode}` | the saved settings | A new student passcode is stored as a hash and bumps the passcode version, signing students out |
-| `GET /api/admin/models?provider=anthropic\|openai\|openrouter` | provider | `[{id, name}]` | Curated lists for Anthropic and OpenAI; OpenRouter's live list from `https://openrouter.ai/api/v1/models` |
+| `GET /api/admin/models?provider=anthropic\|openai\|openrouter` | provider | `{provider, models: [{id, name}], source}` | Curated lists for Anthropic and OpenAI; OpenRouter's live list from `https://openrouter.ai/api/v1/models` |
 | `POST /api/admin/test` | `{"question": "...", "provider"?, "model"?}` | a playlist plus latency | Runs the full ask pipeline with the given or saved model; not logged, but counted against limits |
 | `GET /api/admin/status` | none | which keys are configured (booleans only), today's counters, index version and record count | |
-| `GET /api/admin/voices` | none | `[{voice_id, name, category, preview_url}]` | Proxied from ElevenLabs with the server-side key |
-| `GET /api/admin/courses` | none | courses with sessions and what exists for each (slides, transcript, video, clips, indexed) | |
-| `POST /api/admin/courses` | `{code, title, term}` | the course | |
+| `GET /api/admin/voices` | none | `{voices: [{voice_id, name, category, preview_url}]}` | Proxied from ElevenLabs with the server-side key |
+| `GET /api/admin/courses` | none | `{courses: [...]}`, each with sessions and what exists for each (`has: {slides, transcript, video, clips, indexed}`) | Merges the `courses`, `sessions`, and `sources` tables with what the loaded index holds |
+| `POST /api/admin/courses` | `{course, title, term}` (`code` also accepted) | the course | |
 | `POST /api/admin/sessions` | `{course, session, date, title}` | the session | Starts visible |
 | `PATCH /api/admin/sessions/{id}` | any of `{date, title, visible}` | the session | Hiding takes effect on the next question |
-| `POST /api/admin/uploads` | `{course, session, kind, filename, size}` | `{upload_url, path, source_id}` | Mints a signed upload URL for `inbox/<course>/s<NN>/<kind>/<filename>` and creates a `sources` row. Rejects unknown kinds and files over the plan's limit. The browser uploads straight to Supabase |
-| `GET /api/admin/sources` | optional `course`, `session` | `sources` rows | Settings polls this to show status |
+| `POST /api/admin/uploads` | `{course, session, kind, filename, size}` | `{upload_url, method, headers, path, source_id}` | Mints a signed upload URL for `inbox/<course>/s<NN>/<kind>/<filename>` and creates a `sources` row with status `pending_upload`. When the PUT finishes, the page calls `rerun` (or `complete`, which first checks the file is in the bucket) to mark it `uploaded`; listing sources also promotes a `pending_upload` row whose file has arrived. Rejects unknown kinds and files over the plan's limit. The browser uploads straight to Supabase |
+| `GET /api/admin/sources` | optional `course`, `session` | `{sources: [...]}` | Settings polls this to show status |
+| `POST /api/admin/sources/{id}/complete` | none | the row, status `uploaded` | 409 if the file is not in the bucket yet |
 | `POST /api/admin/sources/{id}/rerun` | none | the row, status `uploaded` | The worker picks it up again |
-| `GET /api/admin/log` | none | the last 50 question-log rows | |
+| `GET /api/admin/log` | none | `{rows: [...]}`, the last 50 question-log rows | |
 
 **Inside `/api/ask`, step by step**
 
