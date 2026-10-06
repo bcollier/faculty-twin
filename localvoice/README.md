@@ -42,15 +42,33 @@ This is roadmap steps 1 and 2 from [docs/ROADMAP.md](../docs/ROADMAP.md): free, 
    ```
 
    - `segments.json` is a list of narration strings or a stored playlist.
-   - To include the ElevenLabs clone, copy its mp3s for the same narrations into the run folder as `elevenlabs_<n>.mp3`. This tool never calls ElevenLabs.
-   - Open the run folder's `index.html`. Versions are shuffled and unlabeled until you press Reveal.
+   - To include the ElevenLabs clone, put its mp3s for the same narrations in a folder as `elevenlabs_<n>.mp3` and pass `--add <folder>` (or drop them into `--out` before running). They are loudness-matched with ffmpeg, renamed, and shuffled in. This tool never calls ElevenLabs.
+   - Open the run folder's `index.html`. Versions are shuffled with random file names, and the page has no voice names. After listening, open `answer_key.json` in the same folder.
 
 3. **Wire in the winner** (roadmap step 3, owned by the indexer pipeline). Add it as a pre-generation option in `indexer/pregenerate.py`, and as a voice tier on the Settings page that applies to suggested questions only.
 
 ## Measured
 
-On the laptop's CPU with Kokoro `am_michael` (warm, after the first model download):
-- 7.8 seconds of audio rendered in 1.2 seconds, a real-time factor of 0.16
-- the first call took about 40 seconds, including the model and spaCy downloads
+Warm real-time factor is render time divided by audio length; lower is faster.
 
-Chatterbox hasn't been run yet. It needs the reference clip, which exists only on the Mac mini.
+| Engine | Where | Warm real-time factor |
+| --- | --- | --- |
+| Kokoro `am_michael` | laptop CPU | 0.16 |
+| Kokoro | Mac mini (Apple GPU) | 0.11 |
+| Chatterbox (clone) | Mac mini (Apple GPU) | 2.0 |
+| edge-tts (free Microsoft) | Mac mini | 0.44 |
+| ElevenLabs (hosted) | Mac mini | 0.18 |
+
+Notes:
+- The first call loads the model: about 25 seconds for Kokoro, against 3 seconds warm. `ab.py` now renders a throwaway sentence per engine before timing.
+- Chatterbox uses only about the first 6 to 10 seconds of the reference clip, so pick a window whose opening is clean (`--rank N` cuts the Nth candidate).
+
+## Fixed after the first real run (October 5)
+
+The Mac mini session's A/B run found six problems, all fixed:
+- **Missing pin:** `setuptools<81` was missing from `localvoice/requirements.txt`, so Chatterbox failed with `TypeError: 'NoneType' object is not callable`.
+- **Crashes:** one engine crashing stopped the whole run.
+- **Hand-made clips:** ElevenLabs clips dropped into the run folder never appeared on the page and weren't loudness-matched.
+- **Not truly blind:** file names and hidden labels gave the answer away, and the order never changed. Files now get random names, the answer key is a separate `answer_key.json`, and the shuffle is seeded (`--seed`).
+- **Timing:** model loading was counted in segment 1.
+- **Permissions:** the reference clip was readable by every account on the Mac. It's now mode 600, and folders under `_private/` are 700.
