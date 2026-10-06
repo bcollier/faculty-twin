@@ -24,6 +24,7 @@ const asList = (d, ...keys) => {
   return [];
 };
 const pad2 = (n) => String(n).padStart(2, '0');
+const courseCode = (c) => (/^\d{5}$/.test(String(c)) ? `${String(c).slice(0, 2)}-${String(c).slice(2)}` : String(c ?? ''));
 const fmtWhen = (iso) => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -207,7 +208,7 @@ function renderModels() {
   const shown = list.slice(0, 200);
   $('#model-list').replaceChildren(...shown.map(m => el('li', {},
     el('button', {
-      type: 'button', class: 'model-opt', role: 'option', 'aria-selected': String(m.id === current),
+      type: 'button', class: 'model-opt', 'aria-pressed': String(m.id === current),
       onclick: () => { $('#model-id').value = m.id; renderModels(); say($('#save-model-status'), 'Not saved yet.'); },
     }, el('span', { class: 'm-id', text: m.id }), el('span', { class: 'm-meta', text: modelMeta(m) })))));
   say($('#models-status'), S.models.length
@@ -359,22 +360,23 @@ function renderCourses() {
       return el('tr', { class: visible ? '' : 'is-hidden' },
         el('td', { class: 'num', text: pad2(s.session) }),
         el('td', { text: s.date || '' }),
-        el('td', { text: s.title || '' }),
-        el('td', {}, el('div', { class: 'pills' },
+        el('td', { class: 'full', text: s.title || '' }),
+        el('td', { class: 'full' }, el('div', { class: 'pills' },
           ...HAS_KEYS.map(([k, label]) => el('span', { class: `pill ${has[k] ? 'ok' : 'off'}`, title: `${label}: ${has[k] ? 'yes' : 'no'}` }, `${has[k] ? '✓' : '·'} ${label}`)),
           worst ? el('span', { class: `pill ${STATUS_PILL[worst]}` }, worst === 'error' ? 'Has an error' : humanize(worst)) : null,
           visible ? null : el('span', { class: 'pill off' }, 'Hidden'))),
-        el('td', {}, el('div', { class: 'actions' },
-          el('button', { type: 'button', class: 'btn btn-small', onclick: () => pickUpload(c.course, s.session) }, 'Upload'),
+        el('td', { class: 'full' }, el('div', { class: 'actions' },
+          el('button', { type: 'button', class: 'btn btn-small', 'aria-label': `Upload files for session ${s.session}`, onclick: () => pickUpload(c.course, s.session) }, 'Upload'),
           el('button', {
-            type: 'button', class: 'btn btn-small btn-ghost', 'aria-pressed': String(!visible),
+            type: 'button', class: 'btn btn-small btn-ghost', 'aria-label': `${visible ? 'Hide' : 'Show'} session ${s.session} ${visible ? 'from' : 'to'} students`,
             onclick: (e) => toggleVisible(e.currentTarget, c.course, s),
           }, visible ? 'Hide' : 'Show'))));
     });
     return el('div', { class: 'course-block' },
-      el('h3', {}, `${String(c.course).slice(0, 2)}-${String(c.course).slice(2)} ${c.title || ''}`, el('span', { class: 'muted small', text: c.term || '' })),
-      el('div', { class: 'table-wrap' }, el('table', { class: 'data' },
-        el('thead', {}, el('tr', {}, ...['#', 'Date', 'Title', 'What exists', ''].map(h => el('th', { scope: 'col', text: h })))),
+      el('h3', {}, `${courseCode(c.course)} ${c.title || ''}`, el('span', { class: 'muted small', text: c.term || '' })),
+      el('div', { class: 'table-wrap' }, el('table', { class: 'data stack' },
+        el('thead', {}, el('tr', {}, ...['#', 'Date', 'Title', 'What exists'].map(h => el('th', { scope: 'col', text: h })),
+          el('th', { scope: 'col' }, el('span', { class: 'visually-hidden', text: 'Actions' })))),
         el('tbody', {}, ...rows.length ? rows : [el('tr', {}, el('td', { colspan: '5', class: 'muted', text: 'No sessions yet.' }))]))));
   }));
 }
@@ -397,14 +399,14 @@ function renderSources() {
   if (!S.sources.length) { body.replaceChildren(el('tr', {}, el('td', { colspan: '7', class: 'muted', text: 'Nothing uploaded yet.' }))); return; }
   const sorted = S.sources.slice().sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
   body.replaceChildren(...sorted.map(x => el('tr', {},
-    el('td', { text: String(x.course) }),
-    el('td', { class: 'num', text: pad2(x.session) }),
+    el('td', { text: courseCode(x.course) }),
+    el('td', { 'data-label': 'Session', text: pad2(x.session) }),
     el('td', { text: humanize(x.kind) }),
-    el('td', {}, el('span', { class: 'src-path', text: String(x.path || '').split('/').pop() || '' })),
-    el('td', {}, el('span', { class: `pill ${STATUS_PILL[x.status] || ''}`, text: humanize(x.status || 'unknown') }),
+    el('td', { class: 'full' }, el('span', { class: 'src-path', text: String(x.path || '').split('/').pop() || '' })),
+    el('td', { class: 'full' }, el('span', { class: `pill ${STATUS_PILL[x.status] || ''}`, text: humanize(x.status || 'unknown') }),
       x.message ? el('div', { class: 'small muted', text: x.message }) : null),
-    el('td', { text: fmtWhen(x.updated_at) }),
-    el('td', {}, el('button', {
+    el('td', { class: 'full', 'data-label': 'Updated', text: fmtWhen(x.updated_at) }),
+    el('td', { class: 'full' }, el('button', {
       type: 'button', class: 'btn btn-small', disabled: x.status === 'uploaded' || x.status === 'processing',
       'aria-label': `Re-run ${x.kind} for ${x.course} session ${x.session}`, onclick: () => rerun(x.id),
     }, 'Re-run')))));
@@ -437,7 +439,7 @@ function schedulePoll() {
 function fillCourseSelects() {
   for (const sel of [$('#up-course'), $('#ns-course')]) {
     const prev = sel.value;
-    sel.replaceChildren(...S.courses.map(c => el('option', { value: c.course, text: `${c.course} ${c.title || ''}` })));
+    sel.replaceChildren(...S.courses.map(c => el('option', { value: c.course, text: `${courseCode(c.course)} ${c.title || ''}` })));
     if (prev && S.courses.some(c => c.course === prev)) sel.value = prev;
   }
   fillSessionSelect();
@@ -597,12 +599,12 @@ async function loadActivity() {
     if (st.ok) renderStatus(st.data);
     const rows = lg.ok ? asList(lg.data, 'rows', 'log', 'items').slice(0, 50) : [];
     $('#log-body').replaceChildren(...(rows.length ? rows.map(x => el('tr', {},
-      el('td', { text: fmtWhen(x.created_at || x.at || x.time) }),
-      el('td', { text: x.question || '' }),
-      el('td', {}, el('span', { class: `pill ${x.covered ? 'ok' : 'warn'}`, text: x.covered ? 'Yes' : 'No' })),
-      el('td', { class: 'num', text: x.top_score != null ? Number(x.top_score).toFixed(3) : '' }),
-      el('td', { class: 'small', text: [x.provider, x.model].filter(Boolean).join(' / ') }),
-      el('td', { class: 'num', text: x.latency_ms != null ? `${fmtNum(x.latency_ms)} ms` : '' }),
+      el('td', { class: 'small muted', text: fmtWhen(x.created_at || x.at || x.time) }),
+      el('td', {}, el('span', { class: `pill ${x.covered ? 'ok' : 'warn'}`, text: x.covered ? 'Covered' : 'Not covered' })),
+      el('td', { class: 'full', text: x.question || '' }),
+      el('td', { class: 'num', 'data-label': 'Top score', text: x.top_score != null ? Number(x.top_score).toFixed(3) : '' }),
+      el('td', { class: 'num', 'data-label': 'Latency', text: x.latency_ms != null ? `${fmtNum(x.latency_ms)} ms` : '' }),
+      el('td', { class: 'small full', text: [x.provider, x.model].filter(Boolean).join(' / ') }),
     )) : [el('tr', {}, el('td', { colspan: '6', class: 'muted', text: lg.ok ? 'No questions logged yet.' : detail(lg, 'Couldn\'t load the log.') }))]));
   } catch (e) { /* auth handled in api(); network shows on next refresh */ }
 }

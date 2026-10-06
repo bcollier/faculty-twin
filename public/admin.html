@@ -12,17 +12,17 @@
 <body>
   <a class="skip-link" href="#admin-main">Skip to content</a>
 
-  <section id="a-boot" class="screen-center"><p class="muted">Loading...</p></section>
+  <main id="a-boot" class="screen-center"><p class="muted">Loading...</p></main>
 
-  <section id="a-offline" class="screen-center" hidden>
+  <main id="a-offline" class="screen-center" hidden>
     <div class="card narrow">
       <h1 class="title-sm">Can't reach the server.</h1>
       <p>It may be waking up.</p>
       <button type="button" class="btn btn-primary" id="a-retry">Try again</button>
     </div>
-  </section>
+  </main>
 
-  <section id="a-login" class="screen-center" hidden>
+  <main id="a-login" class="screen-center" hidden>
     <form id="a-login-form" class="card narrow" novalidate>
       <p class="eyebrow">Faculty Twin</p>
       <h1 class="title-sm">Settings</h1>
@@ -34,7 +34,7 @@
       </div>
       <p id="a-login-error" class="error-text" role="alert"></p>
     </form>
-  </section>
+  </main>
 
   <div id="a-app" class="admin" hidden>
     <header class="admin-head">
@@ -82,7 +82,7 @@
             <div class="field">
               <label for="model-search">Pick a model</label>
               <input id="model-search" type="search" placeholder="Search models" autocomplete="off" aria-controls="model-list">
-              <ul class="model-list" id="model-list" role="listbox" aria-label="Models"></ul>
+              <ul class="model-list" id="model-list" aria-label="Models"></ul>
               <p class="status-line" id="models-status" aria-live="polite"></p>
             </div>
             <div class="field">
@@ -133,7 +133,7 @@
         </div>
         <div id="course-blocks"></div>
 
-        <div class="grid-2">
+        <div class="grid-2 top">
           <form class="subform" id="upload-form" novalidate>
             <fieldset class="bare">
               <legend>Upload source material</legend>
@@ -193,7 +193,7 @@
 
         <h3 style="margin-top:1.25rem">Uploaded files</h3>
         <div class="table-wrap">
-          <table class="data">
+          <table class="data stack">
             <thead><tr><th scope="col">Course</th><th scope="col">Session</th><th scope="col">Kind</th><th scope="col">File</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
             <tbody id="sources-body"></tbody>
           </table>
@@ -240,9 +240,9 @@
         <h3 class="h-sub">Today</h3>
         <dl class="kv" id="today-kv"></dl>
         <h3 class="h-sub">Last 50 questions</h3>
-        <div class="table-wrap" style="max-height:480px;overflow:auto">
-          <table class="data">
-            <thead><tr><th scope="col">When</th><th scope="col">Question</th><th scope="col">Covered</th><th scope="col">Top score</th><th scope="col">Model</th><th scope="col">Latency</th></tr></thead>
+        <div class="table-wrap" style="max-height:480px;overflow:auto" tabindex="0" role="region" aria-label="Last 50 questions">
+          <table class="data stack">
+            <thead><tr><th scope="col">When</th><th scope="col">Covered</th><th scope="col">Question</th><th scope="col">Top score</th><th scope="col">Latency</th><th scope="col">Model</th></tr></thead>
             <tbody id="log-body"></tbody>
           </table>
         </div>
