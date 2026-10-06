@@ -55,7 +55,6 @@ unless ``--force`` is given.
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import os
 import re
@@ -71,10 +70,16 @@ from pathlib import Path
 
 try:  # run as a script (python indexer/slides.py) or with indexer/ on sys.path
     from pg_filter import smooth as pg_smooth
+    from roster import person as roster_person
+    from roster import read_people
 except ImportError:  # imported as a package module
     from indexer.pg_filter import smooth as pg_smooth
+    from indexer.roster import person as roster_person
+    from indexer.roster import read_people
 
-PIPELINE_VERSION = 8  # 8: PG filter on text, title, notes and OCR text (re-extracts text, never re-renders)
+# 8: PG filter on text, title, notes and OCR text (re-extracts text, never re-renders)
+# 9: rosters with other column names (name/login_id, Student, SIS Login ID) join the name scrub
+PIPELINE_VERSION = 9
 
 ARCHIVE = Path(os.environ.get("LECTURE_ARCHIVE", "~/Lecture Archive")).expanduser()
 TERM = "2026 Fall"
@@ -182,10 +187,10 @@ class NameScrubber:
         self.surnames: set[str] = set()
         self.firsts: set[str] = set()
         for r in rows:
-            last = (r.get("Last Name") or "").strip()
-            first = (r.get("Preferred/First Name") or "").strip()
-            aid = (r.get("Andrew ID") or "").strip().lower()
-            email = (r.get("Email") or "").strip().lower()
+            p = roster_person(r)  # any roster header layout (indexer/roster.py)
+            if p is None:
+                continue
+            last, first, aid, email = p["last"], p["first"], p["andrew_id"], p["email"]
             if first and last:
                 self.full.add(_norm_name(f"{first} {last}"))
                 self.full.add(_norm_name(f"{first.split()[0]} {last}"))
@@ -205,10 +210,7 @@ class NameScrubber:
 
     @classmethod
     def from_dir(cls, roster_dir: Path) -> "NameScrubber":
-        rows = []
-        for p in sorted(roster_dir.glob("*.csv")):
-            with open(p, newline="", encoding="utf-8-sig") as fh:
-                rows.extend(csv.DictReader(fh))
+        rows = read_people(roster_dir)
         dictionary = set()
         words = Path("/usr/share/dict/words")
         if words.exists():

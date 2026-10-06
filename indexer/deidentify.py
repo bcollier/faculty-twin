@@ -58,7 +58,6 @@ Usage (from the repo root):
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import os
 import re
@@ -78,8 +77,10 @@ except ImportError:  # pragma: no cover - degrade gracefully
 
 try:  # imported as a package (tests, worker)
     from indexer.pg_filter import smooth as pg_smooth
+    from indexer.roster import read_people
 except ImportError:  # run as a script: python indexer/deidentify.py
     from pg_filter import smooth as pg_smooth
+    from roster import read_people
 
 STUDENT = "[student]"
 PERSON = "[person]"
@@ -373,9 +374,6 @@ def load_given_names() -> set[str]:
 # ---------------------------------------------------------------------------
 # Roster -> scrub list
 # ---------------------------------------------------------------------------
-FIRST_COLS = ("Preferred/First Name", "Preferred Name", "First Name", "first", "preferred")
-LAST_COLS = ("Last Name", "last")
-ID_COLS = ("Andrew ID", "andrew_id", "Email", "email")
 PARTICLES = {"de", "da", "di", "la", "le", "van", "von", "der", "del", "du", "st", "bin", "al", "el"}
 
 
@@ -413,17 +411,15 @@ def _name_parts(value: str) -> list[str]:
 
 
 def read_rosters(roster_dir: Path) -> list[dict]:
-    """Return [{first:[...], last:[...], ids:[...]}] from every CSV in roster_dir."""
+    """Return [{first:[...], last:[...], ids:[...]}] from every CSV in roster_dir.
+
+    Column names vary by export (course roster, Canvas groups, gradebook);
+    `indexer/roster.py` reads them all the same way for every stage.
+    """
     people = []
-    for f in sorted(Path(roster_dir).glob("*.csv")):
-        with open(f, encoding="utf-8-sig", newline="") as fh:
-            for row in csv.DictReader(fh):
-                row = {(k or "").strip(): (v or "").strip() for k, v in row.items()}
-                first = next((row[c] for c in FIRST_COLS if row.get(c)), "")
-                last = next((row[c] for c in LAST_COLS if row.get(c)), "")
-                ids = [row[c].split("@")[0] for c in ID_COLS if row.get(c)]
-                if first or last:
-                    people.append({"first": _name_parts(first), "last": _name_parts(last), "ids": ids})
+    for p in read_people(Path(roster_dir)):
+        ids = [v for v in (p["andrew_id"], p["email"].split("@")[0]) if v]
+        people.append({"first": _name_parts(p["first"]), "last": _name_parts(p["last"]), "ids": ids})
     return people
 
 
