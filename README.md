@@ -92,3 +92,24 @@ Needs [uv](https://docs.astral.sh/uv/). Nothing is installed into the repo (no `
 Tests: `uv run --with-requirements requirements.txt --with pytest pytest -q`. The three tests in `tests/test_retrieval.py` fail until the retrieval functions are written by hand; everything else should pass.
 
 Supabase: run `supabase/schema.sql` once in the SQL editor, and create a private Storage bucket named `twin-content`.
+
+### Building and uploading the index (pipeline stages 5 and 6)
+
+All commands run from the repo root and read keys from the git-ignored `.env`. Outputs go to `~/Lecture Archive/_build/`, never the repo.
+
+```bash
+# 5. Merge slides, alignment, code cells, and clips into content/index.json; embed with Voyage (cached).
+uv run --no-project --with-requirements requirements.txt python -m indexer.build_index
+# Suggested questions: writes _build/topics/draft_questions.json to edit, then (with keys and the
+# hand-written retrieval) stored playlists and mp3s under _build/topics/ and _build/audio/<voice_id>/.
+uv run --no-project --with-requirements requirements.txt python -m indexer.pregenerate
+# 6. See what would go to the bucket, then send it (leak check first; bumps settings.index_version).
+uv run --no-project --with-requirements requirements.txt python -m indexer.upload --dry-run
+uv run --no-project --with-requirements requirements.txt python -m indexer.upload
+```
+
+Without `VOYAGE_API_KEY`, `build_index` writes everything except `embeddings.npy` and exits 3; run it again once the key is in `.env`.
+
+### Running the worker (Settings uploads)
+
+`uv run --no-project --with-requirements requirements.txt python -m indexer.worker` polls the `sources` table every 30 seconds, copies each uploaded file into the archive session folder, runs the stages it affects, and marks it ready or error. `--once` polls a single time. To start it at login, follow the steps at the top of `indexer/com.collier.facultytwin.worker.plist`.

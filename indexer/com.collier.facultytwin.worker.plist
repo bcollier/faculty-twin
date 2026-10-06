@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd template for the Faculty Twin worker (indexer/worker.py). Not installed by anything.
+
+  Install (once):
+    1. Copy this file to ~/Library/LaunchAgents/com.collier.facultytwin.worker.plist
+    2. Replace every __REPO__ with the repo path (for example /Users/jarvis/Code/faculty-twin)
+       and every __HOME__ with your home folder (for example /Users/jarvis).
+    3. launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.collier.facultytwin.worker.plist
+  Check:   launchctl print gui/$(id -u)/com.collier.facultytwin.worker | head
+  Logs:    tail -f ~/Library/Logs/facultytwin-worker.log
+  Stop:    launchctl bootout gui/$(id -u)/com.collier.facultytwin.worker
+
+  Keys come from the repo's git-ignored .env (the worker reads it); nothing secret goes in this file.
+  launchd sends SIGTERM on bootout; the worker finishes its current session, then exits.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.collier.facultytwin.worker</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/uv</string>
+    <string>run</string>
+    <string>--no-project</string>
+    <string>--with-requirements</string>
+    <string>requirements.txt</string>
+    <string>python</string>
+    <string>-m</string>
+    <string>indexer.worker</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- uv, ffmpeg, pdftoppm (Homebrew) and soffice (~/bin) must be on PATH for the stages. -->
+    <key>PATH</key>
+    <string>__HOME__/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LECTURE_ARCHIVE</key>
+    <string>__HOME__/Lecture Archive</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Restart after a crash, but not after a clean stop. -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+  <key>ExitTimeOut</key>
+  <integer>600</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/facultytwin-worker.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/facultytwin-worker.log</string>
+</dict>
+</plist>

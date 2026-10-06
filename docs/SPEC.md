@@ -498,6 +498,16 @@ Added Oct 5. This is the part that did not exist when the app was one deck. Ever
 
 **6. Upload.** Mirror slide images, clips, the manifest, the index, topics, and audio to `twin-content`, skipping files that have not changed. Then set `settings.index_version` to a hash of the new index. Warm backends pick it up within a minute.
 
+> **Changed Oct 5 (stages 5 and 6 as built).** The index and upload stages always work on the whole build (no `--course`/`--session`), because there is one index. Details that differ from the text above:
+>
+> - The embedding text is title, slide text, notes, OCR text of image-only slides, then the transcript passage, each truncated (14,000 characters in all). Code cells embed title, the markdown above, and the source. Records also carry `ocr_text`, `thumb`, `flags`, and `hash` (sha256 of the embedding text); code records carry `notebook`, `cell_number`, and `mark_lines`. Slides flagged `student_names_possible` are left out, and so are their images.
+> - The embedding cache is `_build/content/embed_cache/<model>/<sha256>.npy`, keyed by model, input type, and text.
+> - `index_version` is `<UTC timestamp>-<first 8 hex of the content hash>`, kept unchanged when a re-run produces the same records, so nothing re-uploads. `content/manifest.json` records the version, the sha256 of every source file that went in, and counts per course and session; a copy of each version's manifest stays in `_build/content/versions/` so any answer can be traced back to its inputs.
+> - Without `VOYAGE_API_KEY`, `build_index.py` writes `index.json` and the manifest, removes any stale `embeddings.npy`, and exits 3; the same command finishes once the key is in `.env`.
+> - The upload is an allowlist built from the index (index, embeddings, manifest, each indexed slide's image and thumbnail, its clip, a clip manifest cut to those clips, topics, and the mp3s topics point to), with a denylist on top (transcripts, alignment, review, code JSON, `slides.json`, `deck.json`, PDFs, anything under `_private`). `content/upload_state.json` in the bucket holds each object's sha256 so unchanged objects are skipped, and objects that left the index are deleted.
+> - The leak check has two levels: full roster names, Andrew IDs, and emails are a hit anywhere; a single roster first name or surname (capitalized, not an ordinary English word) is a hit only in transcript passages, because slide text is deliberately not altered and a surname alone often belongs to a cited author. It reports where, never what. Without the rosters the upload refuses to run.
+> - The worker runs the per-session stages for each claimed upload (a notebook re-runs `slides.py`, which extracts notebooks), then `build_index` and `upload` once per poll. A stage whose script is not merged yet fails the row with a clear message; the file is already in the archive, so "Re-run" works later.
+
 **When a new class happens.** Two ways in.
 
 - **On my Mac:** create the session folder in the archive (`<NN> <date> <title>`), drop in `slides.pdf`, `transcript_raw.vtt`, `video.mp4`, and any notebooks, add the session in Settings (or in the `sessions` table), then run `uv run python -m indexer.run --course 70445 --session 12`, which runs stages 1 to 6 for that session and rebuilds the index. If the Zoom VTT is not in Drive, I download it from the Zoom cloud recording in Chrome.

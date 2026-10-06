@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "indexer"))
 
 import slides  # noqa: E402
@@ -102,7 +104,8 @@ def test_titles_and_boilerplate():
 
 
 def test_notebook_extraction_strips_outputs(tmp_path, monkeypatch):
-    import nbformat
+    # nbformat is an indexer-only dependency (not in requirements.txt); run with --with nbformat.
+    nbformat = pytest.importorskip("nbformat")
 
     folder = tmp_path / "70445" / "01 2026-08-25 Demo"
     (folder / "notebooks").mkdir(parents=True)
