@@ -61,7 +61,7 @@ def test_upload_sends_only_what_the_backend_reads(built):
     assert "slides/70445/s01/70445-s01-002.webp" not in sent  # excluded slide: image stays home
     assert "clips/70445-s02-001.mp4" not in sent  # In the News slide: no clip
     assert json.loads(fake.objects["clips/manifest.json"]) == [
-        r for r in json.loads((built / "_build" / "clips" / "manifest.json").read_text()) if r["slide_id"] == "70445-s01-001"
+        {"slide_id": "70445-s01-001", "course": "70445", "session": 1, "start": 10.0, "end": 40.0, "reason_kept": "test"}
     ]
     # Index files go last, manifest very last.
     assert fake.uploads[-4:-1] == ["content/embeddings.npy", "content/index.json", "content/manifest.json"]
@@ -127,6 +127,10 @@ def test_forbidden_paths_never_planned():
         "slides/70445/s01/source_converted.pdf",
         "code/70445/s01.json",
         "content/embed_cache/voyage-3.5/abc.npy",
+        "clips/rejected.json",
+        "align/70445/s01.meta.json",
+        "clips/70445-s01-001.meta.json",
+        ".cache/ocr_vision/x.json",
         "inbox/70445/s01/video/class.mp4",
         "slides/70445/s01/notes.vtt",
     ]:

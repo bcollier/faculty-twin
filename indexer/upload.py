@@ -61,9 +61,10 @@ ALLOWED = [
     re.compile(r"^topics/topics\.json$"),
     re.compile(r"^audio/[A-Za-z0-9_\-]{1,100}/[A-Za-z0-9_\-]{1,100}\.mp3$"),
 ]
+CLIP_FIELDS = ("slide_id", "course", "session", "start", "end", "duration", "reason_kept")
 FORBIDDEN_DIRS = {"transcripts", "align", "review", "overrides", "inbox", "code", "logs", "qa", "embed_cache", "versions"}
-FORBIDDEN_NAMES = {"slides.json", "deck.json", "source_converted.pdf", "missing.json", "summary.json"}
-FORBIDDEN_SUFFIXES = {".vtt", ".pdf", ".pptx", ".csv", ".md", ".txt", ".ipynb", ".jsonl", ".srt", ".xlsx"}
+FORBIDDEN_NAMES = {"slides.json", "deck.json", "source_converted.pdf", "missing.json", "summary.json", "rejected.json"}
+FORBIDDEN_SUFFIXES = {".meta.json", ".vtt", ".pdf", ".pptx", ".csv", ".md", ".txt", ".ipynb", ".jsonl", ".srt", ".xlsx"}
 CONTENT_TYPES = {
     ".json": "application/json",
     ".npy": "application/octet-stream",
@@ -174,7 +175,12 @@ def plan(build: Path) -> tuple[list[Item], dict[str, Any]]:
         if rec.get("clip"):
             add_file(rec["clip"])
             clip_ids.add(rec["id"])
-    rows_kept = [r for r in (common.read_json(build / "clips" / "manifest.json", []) or []) if r.get("slide_id") in clip_ids]
+    # Only the rows for uploaded clips, and only the fields the backend reads (no local source paths).
+    rows_kept = [
+        {k: r[k] for k in CLIP_FIELDS if k in r}
+        for r in (common.read_json(build / "clips" / "manifest.json", []) or [])
+        if r.get("slide_id") in clip_ids
+    ]
     if rows_kept or (build / "clips" / "manifest.json").exists():
         add("clips/manifest.json", common.dump_json(rows_kept))
 
@@ -273,6 +279,15 @@ def run(
             log(f"  {status:8} {it.size:>12,d}  {it.path}")
         for p in stale:
             log(f"  {'delete':8} {'':>12}  {p}")
+        by_top: dict[str, list[int]] = {}
+        for it in items:
+            top = it.path.split("/")[0]
+            by_top.setdefault(top, [0, 0])
+            by_top[top][0] += 1
+            by_top[top][1] += it.size
+        for top, (n, b) in sorted(by_top.items()):
+            log(f"  {top + '/':10} {n:>5} objects  {b / 1e6:8.1f} MB")
+        log(f"  {'total':10} {len(items):>5} objects  {sum(it.size for it in items) / 1e6:8.1f} MB in the bucket after this upload")
         log(
             f"Would upload {len(todo)} of {len(items)} objects ({total / 1e6:.1f} MB), "
             f"skip {len(items) - len(todo)} unchanged, delete {len(stale)}, then set settings.index_version = {version}."

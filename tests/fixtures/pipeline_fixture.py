@@ -95,13 +95,17 @@ def make_archive(root: Path) -> Path:
     (build / "clips" / "manifest.json").write_text(
         json.dumps(
             [
-                {"slide_id": "70445-s01-001", "course": "70445", "session": 1, "start": 10.0, "end": 40.0, "reason_kept": "test"},
+                {"slide_id": "70445-s01-001", "course": "70445", "session": 1, "start": 10.0, "end": 40.0, "reason_kept": "test",
+                 "source": "/local/archive/path/video.mp4"},
                 {"slide_id": "70445-s02-001", "course": "70445", "session": 2, "start": 5.0, "end": 30.0, "reason_kept": "test"},
             ]
         )
     )
     (build / "clips" / "70445-s01-001.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42clip")
     (build / "clips" / "70445-s02-001.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42news")
+    (build / "clips" / "rejected.json").write_text(json.dumps([{"slide_id": "70445-s01-003", "why": "test"}]))
+    (build / "clips" / "70445-s01-001.meta.json").write_text("{}")
+    (build / "align" / "70445" / "s01.meta.json").write_text("{}")
 
     # Private and never-upload files that must stay on the laptop.
     (build / "transcripts" / "70445").mkdir(parents=True)

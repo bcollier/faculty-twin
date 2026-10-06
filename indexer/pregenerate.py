@@ -10,7 +10,9 @@
    ranks or selects slides. If app/retrieval.py still raises
    NotImplementedError, the script stops before spending any API call.
 3. Each narration is spoken once with ElevenLabs (the Settings voice, else
-   ELEVENLABS_VOICE_ID) into `_build/audio/<voice_id>/<hash>.mp3`; existing
+   ELEVENLABS_VOICE_ID) into `_build/audio/<voice tag>/<hash>.mp3` (the tag
+   app/voices.py matches); a free edge voice costs nothing live, so topics
+   stay without stored audio for it; existing
    files are reused, so a re-run only pays for changed narrations.
 4. Writes `_build/topics/topics.json`:
    `[{question, course, playlist: {segments: [{slide_id, narration, audio_path}], follow_ups}, generated}]`.
@@ -78,6 +80,12 @@ def ensure_draft(build: Path, log: Callable[[str], None] = print) -> list[dict[s
 
 def audio_name(narration: str) -> str:
     return common.sha256_bytes(narration.encode("utf-8"))[:24]
+
+
+def voice_tag(voice: str) -> str:
+    from app import speech
+
+    return speech.voice_tag(voice)
 
 
 def speak(text: str, voice: str, client: httpx.Client) -> bytes:
@@ -156,7 +164,7 @@ def _generate(build, questions, voice, audio, retriever, embedder, completer, tt
             for seg in result["segments"]:
                 entry = {"slide_id": seg["slide_id"], "narration": seg["narration"]}
                 if audio and voice and client is not None and seg["narration"]:
-                    rel = f"audio/{voice}/{audio_name(seg['narration'])}.mp3"
+                    rel = f"audio/{voice_tag(voice)}/{audio_name(seg['narration'])}.mp3"
                     dest = build / rel
                     if not dest.exists():
                         common.write_bytes_atomic(dest, speak(seg["narration"], voice, client))
@@ -212,7 +220,19 @@ def main(argv: list[str] | None = None) -> int:
         print(RETRIEVAL_MSG)
         return EXIT_RETRIEVAL
     provider, _model = settings_store.llm_choice()
-    voice = None if a.no_audio else (a.voice or settings_store.voice_id())
+    from app import voices
+
+    voice = None
+    if not a.no_audio:
+        try:
+            parsed = voices.parse(a.voice or settings_store.voice_id())
+        except voices.BadVoice as exc:
+            print(f"Voice setting not usable: {exc}")
+            return EXIT_NEEDS_KEYS
+        if parsed and parsed[0] == voices.ELEVEN:
+            voice = parsed[1]
+        elif parsed and parsed[0] == voices.EDGE:
+            print("The voice is a free edge voice: it is generated live at no cost, so no mp3s are stored.")
     missing = [] if common.env("VOYAGE_API_KEY") else ["VOYAGE_API_KEY"]
     if not llm.key_configured(provider):
         missing.append(llm.KEY_VARS[provider])

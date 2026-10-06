@@ -12,7 +12,7 @@ from pathlib import Path
 import httpx
 import numpy as np
 
-from app import main, storage
+from app import main, speech, storage
 from indexer import pregenerate
 
 
@@ -78,7 +78,8 @@ def test_generates_playlists_and_audio_with_test_fakes(content_dir: Path, monkey
     assert [t["question"] for t in topics] == ["What is an apple?"]
     segs = topics[0]["playlist"]["segments"]
     assert [s["slide_id"] for s in segs] == ["70445-s01-002", "70445-s01-003"]
-    assert all(s["audio_path"].startswith("audio/voice123/") and (content_dir / s["audio_path"]).exists() for s in segs)
+    tag = speech.voice_tag("voice123")
+    assert all(s["audio_path"].startswith(f"audio/{tag}/") and (content_dir / s["audio_path"]).exists() for s in segs)
     assert len(spoken) == 2
 
     # The backend replays it as a stored topic.
