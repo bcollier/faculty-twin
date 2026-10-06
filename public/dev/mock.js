@@ -13,6 +13,8 @@
 //   noaudio          every audio field is null (captions only from the start)
 //   badaudio         audio URLs fail to load (falls back to captions mid-answer)
 //   slow             4 second wait before the answer
+//   badclip          part 3's class clip fails to load (the button should disappear, the slide stays)
+//   stale            the first answer's slide links are expired (the page should re-ask once for fresh links)
 // URL flags:  &boot=offline  (server unreachable on first load)   &fresh=1  (forget mock login)
 // Passcodes:  student "demo", admin "admin".
 
@@ -148,6 +150,7 @@ function segment(n, course, session, slide, extra = {}) {
   };
 }
 
+const staleServed = new Set();
 async function buildAnswer(question, course) {
   const c = course || '70445';
   const clipUrl = await placeholderClip();
@@ -160,6 +163,11 @@ async function buildAnswer(question, course) {
   const q = question.toLowerCase();
   if (q.includes('noaudio')) segments.forEach(s => { s.audio = null; });
   if (q.includes('badaudio')) segments.forEach((s, i) => { if (i > 0) s.audio = '/__mock_missing_audio.mp3'; });
+  if (q.includes('badclip')) segments[2].clip = { url: '/__mock_missing_clip.mp4', start: 1834.5, end: 1872.0 };
+  if (q.includes('stale') && !staleServed.has(q)) {
+    staleServed.add(q);
+    segments.forEach(s => { s.image = '/__mock_expired_slide.webp'; });
+  }
   const sources = segments.map(({ slide_id, course, session, date, slide_number, image }) => ({ slide_id, course, session, date, slide_number, image }));
   sources.push({ slide_id: `${c}-s09-021`, course: c, session: 9, date: DATES[c][8], slide_number: 21,
     image: slideSvg({ course: c, session: 9, slide: 21, title: 'Placeholder slide 21' }) });
