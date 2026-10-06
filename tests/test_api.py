@@ -83,7 +83,7 @@ def test_ask_end_to_end_with_test_fake(student, monkeypatch):
     seg = body["segments"][0]
     assert set(seg) == {
         "n", "slide_id", "course", "course_title", "session", "session_title", "date", "slide_number",
-        "image", "narration", "audio", "code", "clip",
+        "image", "narration", "audio", "voice", "audio_fallback", "voice_fallback", "code", "clip",
     }
     assert seg["n"] == 1 and seg["course"] == "70445" and seg["session"] == 1 and seg["slide_number"] == 2
     assert seg["date"] == "2026-09-01" and seg["course_title"] == "Fake Course A"
@@ -97,6 +97,9 @@ def test_ask_end_to_end_with_test_fake(student, monkeypatch):
     # audio link is signed and plays through the audio route
     q = {k: v[0] for k, v in parse_qs(urlparse(seg["audio"]).query).items()}
     assert speech.verify(q["t"], q["v"], q["s"]) == seg["narration"]
+    # no ElevenLabs key here, so the voice's category cannot be checked: neutral label, never the clone label
+    assert seg["voice"] == {"kind": "unverified", "label": "AI voice."}
+    assert seg["audio_fallback"] is None and seg["voice_fallback"] is None
 
     # signed image link works with the cookie, fails without it or when tampered
     assert student.get(seg["image"]).status_code == 200

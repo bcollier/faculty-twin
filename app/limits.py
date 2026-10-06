@@ -1,4 +1,4 @@
-"""Rate limits, the daily voice cap, and the question log.
+"""Rate limits, the daily voice caps, and the question log.
 
 Counters live in the Supabase `counters` table and are bumped through the
 `ft_increment` RPC (see supabase/schema.sql), which adds atomically and refuses
@@ -212,29 +212,39 @@ def check_login_rate(request: Request, scope: str) -> None:
 
 # ---------------------------------------------------------------- voice cap
 
-def voice_key() -> str:
-    return f"voice_chars:{_today()}"
+VOICE_POOLS = {"voice": "voice", "free": "free_voice"}  # ElevenLabs, free Microsoft voices
+
+
+def voice_key(pool: str = "voice") -> str:
+    return f"{VOICE_POOLS[pool]}_chars:{_today()}"
 
 
 def take_voice_chars(
-    chars: int, cap: int, visitor_hash: str | None = None, address_hash: str | None = None
+    chars: int,
+    cap: int,
+    visitor_hash: str | None = None,
+    address_hash: str | None = None,
+    pool: str = "voice",
 ) -> bool:
-    """Reserve `chars` of today's voice budget. False when a cap would be passed.
+    """Reserve `chars` of today's budget for one voice pool. False when a cap would be passed.
 
-    One visitor, and one address, may use at most VOICE_VISITOR_SHARE of the
-    daily cap, so replaying a signed link in a loop cannot use up the voice for
-    everyone. All three counters fail closed: this guards spending.
+    Two pools with separate caps: "voice" (ElevenLabs, costs money) and
+    "free" (Microsoft voices through edge-tts). In each pool one visitor, and
+    one address, may use at most VOICE_VISITOR_SHARE of the daily cap, so
+    replaying a signed link in a loop cannot use up the voice for everyone.
+    All counters fail closed: this guards spending and a free service.
     """
     if cap <= 0:
         return False
+    prefix = VOICE_POOLS[pool]
     share = max(int(cap * config.VOICE_VISITOR_SHARE), 1)
     day = _today()
     for who in (visitor_hash and f"v:{visitor_hash}", address_hash and f"a:{address_hash}"):
         if who:
-            ok, _ = increment(f"voice_share:{who}:{day}", chars, cap=share, fail_open=False)
+            ok, _ = increment(f"{prefix}_share:{who}:{day}", chars, cap=share, fail_open=False)
             if not ok:
                 return False
-    ok, _ = increment(voice_key(), chars, cap=cap, fail_open=False)
+    ok, _ = increment(voice_key(pool), chars, cap=cap, fail_open=False)
     return ok
 
 
@@ -245,7 +255,8 @@ def today_counters() -> dict[str, int]:
         "covered": read_counter(f"covered:{day}"),
         "not_covered": read_counter(f"not_covered:{day}"),
         "rate_limited": read_counter(f"rate_limited:{day}"),
-        "voice_chars": read_counter(voice_key()),
+        "voice_chars": read_counter(voice_key("voice")),
+        "free_voice_chars": read_counter(voice_key("free")),
         "llm_calls": read_counter(f"llm_calls:{day}"),
         "embeddings": read_counter(f"embeds:{day}"),
     }

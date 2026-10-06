@@ -111,12 +111,27 @@
       <!-- 2. Voice -->
       <section class="panel" id="sec-voice" aria-labelledby="voice-h">
         <h2 id="voice-h">Voice</h2>
-        <p class="panel-intro">Voices from the ElevenLabs account. Changing the voice means each answer's audio is made fresh the next time it plays.</p>
+        <p class="panel-intro">Three kinds of voice. My clone and the other ElevenLabs voices cost ElevenLabs credits per character; the Microsoft voices are free. Students see a label that matches the voice: "AI voice made from my recordings." only for my clone, "AI voice (a stock voice, not mine)." for any other voice, and no voice label for captions only. Changing the voice means each answer's audio is made fresh the next time it plays.</p>
+        <p class="status-line" id="voice-current" role="status"></p>
         <fieldset class="bare">
           <legend class="visually-hidden">Voice</legend>
-          <ul class="voice-list" id="voice-list"></ul>
+          <div id="voice-groups"></div>
         </fieldset>
         <p class="status-line" id="voices-status" aria-live="polite"></p>
+        <div class="grid-2" style="margin-top:.75rem">
+          <div class="field">
+            <label for="voice-fallback">If ElevenLabs fails or hits today's cap</label>
+            <select id="voice-fallback" aria-describedby="voice-fallback-hint">
+              <option value="captions">Captions only</option>
+              <option value="free">Speak with a free Microsoft voice</option>
+            </select>
+            <p class="hint" id="voice-fallback-hint">The fallback voice is labeled "a stock voice, not mine" while it speaks. Only applies when an ElevenLabs voice is chosen.</p>
+          </div>
+          <div class="field" id="voice-fallback-voice-field">
+            <label for="voice-fallback-voice">Fallback voice</label>
+            <select id="voice-fallback-voice"></select>
+          </div>
+        </div>
         <div class="actions" style="margin-top:.75rem">
           <button type="button" class="btn btn-primary" id="save-voice">Save voice</button>
         </div>
@@ -208,9 +223,14 @@
             <div class="field">
               <label for="cap">Daily voice character cap</label>
               <input id="cap" type="number" min="0" step="1000" aria-describedby="cap-hint">
-              <p class="hint" id="cap-hint">Characters sent to ElevenLabs per day. Past the cap, answers continue with captions only. Zero turns the voice off.</p>
+              <p class="hint" id="cap-hint">Characters sent to ElevenLabs per day (this costs money). Past the cap, answers continue with captions only, or with the free fallback voice if it is on. Zero turns ElevenLabs off.</p>
             </div>
-            <button class="btn btn-primary" type="submit">Save cap</button>
+            <div class="field">
+              <label for="free-cap">Daily free voice character cap</label>
+              <input id="free-cap" type="number" min="0" step="10000" aria-describedby="free-cap-hint">
+              <p class="hint" id="free-cap-hint">Characters spoken by the free Microsoft voices per day. They cost nothing, but the service is free, so keep a ceiling. One visitor can use at most a quarter of either cap.</p>
+            </div>
+            <button class="btn btn-primary" type="submit">Save caps</button>
             <p class="status-line" id="cap-status" role="status"></p>
             <h3 class="h-sub">Per-visitor limits</h3>
             <dl class="kv" id="limits-kv"></dl>

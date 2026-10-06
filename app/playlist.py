@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from . import config, speech, storage, supa
 from .storage import Content
+
+if TYPE_CHECKING:
+    from .voices import Plan
 
 _hidden_lock = threading.Lock()
 _hidden: tuple[float, set[tuple[str, int]]] = (0.0, set())
@@ -79,8 +82,16 @@ def build_playlist(
     chosen: list[dict[str, Any]],
     narrations: dict[str, str],
     follow_ups: list[str],
-    voice_id: str | None,
+    voice: "Plan | None",
 ) -> dict[str, Any]:
+    """`voice` is the answer's voice plan (app/voices.py); None or an empty plan means captions only.
+
+    Each segment carries the signed link for the voice that should speak and
+    that voice's label, plus, when the free fallback is on, a second signed
+    link and label the page switches to if the first voice fails.
+    """
+    primary = voice.primary if voice is not None else None
+    fallback = voice.fallback if voice is not None else None
     clips = {r["id"]: r.get("clip") for r in chosen if r.get("clip")}
     urls = storage.media_urls([r.get("image") for r in chosen] + list(clips.values()))
     segments = []
@@ -93,6 +104,8 @@ def build_playlist(
             start, end = content.clip_windows.get(rec["id"], (None, None))
             clip = {"url": urls[clip_path.lstrip("/")], "start": start, "end": end}
         narration = narrations.get(rec["id"], "")
+        audio = speech.audio_link(narration, primary.tag_key) if primary else None
+        audio_fallback = speech.audio_link(narration, fallback.tag_key) if (audio and fallback) else None
         segments.append(
             {
                 "n": n,
@@ -105,7 +118,10 @@ def build_playlist(
                 "slide_number": rec.get("slide_number"),
                 "image": image,
                 "narration": narration,
-                "audio": speech.audio_link(narration, voice_id),
+                "audio": audio,
+                "voice": primary.public() if (audio and primary) else None,
+                "audio_fallback": audio_fallback,
+                "voice_fallback": fallback.public() if (audio_fallback and fallback) else None,
                 "code": related_code(content, rec),
                 "clip": clip,
             }

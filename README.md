@@ -113,3 +113,12 @@ Without `VOYAGE_API_KEY`, `build_index` writes everything except `embeddings.npy
 ### Running the worker (Settings uploads)
 
 `uv run --no-project --with-requirements requirements.txt python -m indexer.worker` polls the `sources` table every 30 seconds, copies each uploaded file into the archive session folder, runs the stages it affects, and marks it ready or error. `--once` polls a single time. To start it at login, follow the steps at the top of `indexer/com.collier.facultytwin.worker.plist`.
+
+### Voice options
+
+Settings > Voice picks who reads the answers: Ben's ElevenLabs voice clone, another ElevenLabs voice, a free Microsoft neural voice (through [edge-tts](https://github.com/rany2/edge-tts), no key and no cost), or captions only. Every voice is AI-generated, and the page labels it to match: "AI voice made from my recordings." only for the clone, "AI voice (a stock voice, not mine)." for any other voice. An optional fallback lets a free voice take over when ElevenLabs fails or hits its daily cap; the label changes with it. Each tier has its own daily character cap (`DAILY_VOICE_CHAR_CAP` for ElevenLabs, `DAILY_FREE_VOICE_CHAR_CAP` for the free voices). Details: [docs/SPEC.md](docs/SPEC.md) (Settings page, `/api/audio`, Safety).
+
+### More docs
+
+- [docs/ROADMAP.md](docs/ROADMAP.md): ideas for after submission, starting with free open-source voice models on the Mac mini
+- [docs/SECURITY.md](docs/SECURITY.md): threat model, findings, and the pre-launch checklist
