@@ -3,7 +3,7 @@
     # On the Mac mini (index and keys there), in-process:
     uv run --no-project --with-requirements requirements.txt python -m evals.run \\
         --questions evals/private/questions.jsonl --top 25 \\
-        --judge anthropic:claude-opus-5-5 --judge openai:gpt-6-astra
+        --judge anthropic:claude-opus-5-5 --judge openai:gpt-6.1-sol
 
     # Against a running site:
     FT_EVAL_PASSCODE=... python -m evals.run --target http --base-url https://<site> ...

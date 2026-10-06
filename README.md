@@ -125,7 +125,7 @@ Settings > Voice picks who reads the answers: Ben's ElevenLabs voice clone, anot
 ```bash
 uv run --no-project --with-requirements requirements.txt python -m evals.run \
   --questions evals/private/questions.jsonl --top 25 \
-  --judge anthropic:claude-opus-5-5 --judge openai:gpt-6-astra
+  --judge anthropic:claude-opus-5-5 --judge openai:gpt-6.1-sol
 ```
 
 ### More docs
