@@ -16,6 +16,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# rapidfuzz is an indexer-only dependency (not in requirements.txt); run with the command above.
+pytest.importorskip("rapidfuzz")
+
 from indexer import deidentify as d  # noqa: E402
 
 SYNTHETIC_ROSTER = [
