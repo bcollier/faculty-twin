@@ -169,7 +169,7 @@ class RosterChecker:
         """
         n, ok = self.strong(text), 0
         for tok in WORD_RE.findall(text or ""):
-            low = tok.lower().strip("'")
+            low = re.sub(r"'s$", "", tok.lower()).strip("'")  # possessive: "Name's" is a hit too
             if tok[0].isupper() and low in self._singles:
                 if low in allow:
                     ok += 1

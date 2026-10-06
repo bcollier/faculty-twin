@@ -107,6 +107,7 @@ def test_leak_check_levels():
     assert checker.strong("email zquenwic@example.edu or zquenwic") == 2
     assert checker.strong(f"Work by {pf.FAKE_SURNAME} et al.") == 0  # slide citations are not altered
     assert checker.strict(f"I asked {pf.FAKE_SURNAME} to explain") == 1  # transcripts are fully scrubbed
+    assert checker.strict(f"I used {pf.FAKE_SURNAME}'s notes") == 1  # a possessive is the name too
     assert checker.strict("Ben Collier explains apples to [student]") == 0
     assert checker.strong("Advisor Person") == 0  # only student columns are read
 
