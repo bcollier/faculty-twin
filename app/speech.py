@@ -29,7 +29,7 @@ from . import config
 TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
 VOICES_URL = "https://api.elevenlabs.io/v2/voices"
 OUTPUT_FORMAT = "mp3_44100_128"
-MAX_TEXT_CHARS = 1500  # 110 words is well under this
+MAX_TEXT_CHARS = 1000  # narration is capped at 900 characters (config.NARRATION_MAX_CHARS)
 
 
 class VoiceError(RuntimeError):
@@ -69,7 +69,7 @@ def verify(t: str, v: str, s: str) -> str | None:
         return None
     if not text or len(text) > MAX_TEXT_CHARS:
         return None
-    if not hmac.compare_digest(sign(text, v), s):
+    if not hmac.compare_digest(sign(text, v).encode(), s.encode("utf-8", "replace")):
         return None
     return text
 

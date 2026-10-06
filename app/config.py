@@ -23,6 +23,17 @@ PER_MINUTE_LIMIT = 5
 PER_DAY_LIMIT = 30
 DEFAULT_DAILY_VOICE_CHAR_CAP = 20000
 
+# Spend guards that do not depend on the visitor id (a student with the
+# passcode can mint new visitor ids by logging in again). See docs/SECURITY.md.
+PER_ADDRESS_MINUTE_LIMIT = 20  # questions per minute from one network address (salted daily hash)
+PER_ADDRESS_DAY_LIMIT = 300  # a classroom behind one NAT stays well under this
+DEFAULT_DAILY_LLM_CALL_CAP = 600  # all narration calls, every visitor, per UTC day (fails closed)
+DEFAULT_DAILY_EMBED_CAP = 1500  # question embeddings, every visitor, per UTC day (fails closed)
+VOICE_VISITOR_SHARE = 0.25  # one visitor (or one address) may use at most this share of the daily voice cap
+NARRATION_MAX_CHARS = 900  # 110 words of normal prose is about 700 characters
+# OpenRouter lets the admin pick any model; refuse ones priced above this (USD per million tokens).
+DEFAULT_MAX_PRICE_PER_MTOK = {"prompt": 15.0, "completion": 60.0}
+
 DEFAULT_LLM_PROVIDER = "anthropic"
 DEFAULT_LLM_MODELS = {
     "anthropic": "claude-sonnet-5-5",
@@ -55,9 +66,18 @@ def env_int(name: str, default: int) -> int:
 
 
 def content_dir() -> Path | None:
-    """Local folder holding `content/`, `slides/`, `clips/` (dev and tests)."""
+    """Local folder holding `content/`, `slides/`, `clips/` (dev and tests).
+
+    Never used in production: the dev-only `/api/files` route must not be
+    switchable on by setting CONTENT_DIR in Vercel.
+    """
     raw = env("CONTENT_DIR")
-    return Path(raw).expanduser() if raw else None
+    if not raw:
+        return None
+    if is_production():
+        log.warning("CONTENT_DIR is ignored in production")
+        return None
+    return Path(raw).expanduser()
 
 
 def supabase_configured() -> bool:
@@ -69,26 +89,47 @@ def bucket() -> str:
 
 
 def is_production() -> bool:
-    """True on Vercel (cookies get the Secure flag)."""
-    return bool(env("VERCEL"))
+    """True on Vercel (cookies get the Secure flag, CONTENT_DIR is ignored).
+
+    VERCEL=1 only appears when the project exposes System Environment
+    Variables, so the other Vercel runtime markers count too, and FT_ENV can
+    force it either way.
+    """
+    forced = (env("FT_ENV") or "").lower()
+    if forced in ("production", "prod"):
+        return True
+    if forced in ("development", "dev", "test"):
+        return False
+    return any(env(name) for name in ("VERCEL", "VERCEL_ENV", "VERCEL_REGION", "VERCEL_URL"))
+
+
+MIN_SECRET_CHARS = 32
+
+
+def _secret(name: str, dev_value: str) -> bytes:
+    """A signing key from the environment.
+
+    There is no silent fallback: a missing key in a deployment would mean
+    signing with a value printed in this public repo, so anyone could forge
+    audio links (making the voice say anything) or cookies. A fixed dev key is
+    used only when FT_LOCAL_DEV=1 is set explicitly, and never in production.
+    """
+    value = env(name)
+    if value:
+        if is_production() and len(value) < MIN_SECRET_CHARS:
+            raise RuntimeError(f"{name} is too short; use at least {MIN_SECRET_CHARS} random characters")
+        return value.encode()
+    if env("FT_LOCAL_DEV") == "1" and not is_production():
+        log.warning("%s not set; using an insecure local-dev key (FT_LOCAL_DEV=1)", name)
+        return dev_value.encode()
+    raise RuntimeError(f"{name} is not set")
 
 
 def session_secret() -> bytes:
-    """Key for signing cookies. Missing in local dev -> a fixed dev key, with a warning."""
-    value = env("SESSION_SECRET")
-    if not value:
-        if is_production():
-            raise RuntimeError("SESSION_SECRET is not set")
-        log.warning("SESSION_SECRET not set; using an insecure local-dev key")
-        value = "local-dev-session-secret"
-    return value.encode()
+    """Key for signing cookies."""
+    return _secret("SESSION_SECRET", "local-dev-session-secret")
 
 
 def audio_secret() -> bytes:
-    value = env("AUDIO_SIGNING_SECRET")
-    if not value:
-        if is_production():
-            raise RuntimeError("AUDIO_SIGNING_SECRET is not set")
-        log.warning("AUDIO_SIGNING_SECRET not set; using an insecure local-dev key")
-        value = "local-dev-audio-secret"
-    return value.encode()
+    """Key for signing audio links."""
+    return _secret("AUDIO_SIGNING_SECRET", "local-dev-audio-secret")

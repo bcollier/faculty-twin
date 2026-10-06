@@ -97,7 +97,7 @@ def test_audio_route_cap_and_voice_change(student, monkeypatch):
     monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice123")
     _install_fake_voice(monkeypatch, [])
     link = speech.audio_link("Twenty characters!!!", "voice123")
-    settings_store.put({"daily_voice_char_cap": 30})
+    settings_store.put({"daily_voice_char_cap": 80})  # per-visitor share is 25% = 20 chars
     assert student.get(link).status_code == 200
     r = student.get(link)
     assert r.status_code == 429 and "limit" in r.json()["detail"]

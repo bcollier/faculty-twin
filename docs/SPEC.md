@@ -618,18 +618,23 @@ Added Oct 5.
 - Suggested-question clips are pre-generated and served as static files, so replaying them costs nothing. Rate-limit and cap counters live in Supabase, because a function keeps no memory between requests. *(Changed Oct 5: pre-generated audio is served from the bucket by signed link; still costs nothing to replay.)*
 - Added Oct 5. The visitor id for rate limits is the random id inside the student cookie. Login attempts are counted per salted hash of the address that rotates daily; that hash lives only in `counters`, never in the question log.
 - Added Oct 5. "Test this model" counts against the same limits.
+- Added Oct 5 (security review, docs/SECURITY.md). Logging in again mints a new visitor id, so questions are also limited per network address (salted daily hash, kept only in `counters`): 20 per minute, 300 per day. Two global daily caps fail closed when the database is unreachable: model calls (`DAILY_LLM_CALL_CAP`, default 600; past it narration falls back to speaker notes) and question embeddings (`DAILY_EMBED_CAP`, default 1,500; past it `/api/ask` returns a readable 503). One visitor or address may use at most a quarter of the daily voice cap. Rate limits fall back to an in-memory counter, not to "unlimited", when the database is down; admin login fails closed.
+- Added Oct 5 (security review). Every narration is checked for grounding before it is signed for the voice: most of its content words must come from the slides sent, it must not repeat a long run of the question, it must be under 900 characters, and it must not contain a web address. A failing reply is retried once, then falls back to the speaker notes.
+- Added Oct 5 (security review). OpenRouter models priced above $15 in / $60 out per million tokens are refused in Settings (adjustable with `LLM_MAX_PROMPT_PRICE_PER_MTOK` and `LLM_MAX_COMPLETION_PRICE_PER_MTOK`).
 
 **Secrets**
 
 - All keys live in the Vercel project's environment variables. `.env` is in `.gitignore` from the first commit. `.env.example` lists the variable names with no values.
 - Before the first push, search the repo for key prefixes. The assignment takes a large deduction for a committed secret.
 - Added Oct 5. The search runs before every push, over the diff, for the prefixes listed in AGENTS.md (including Voyage, ElevenLabs, Supabase, and JWT-shaped tokens). The Settings page shows only whether each key is configured.
+- Added Oct 5 (security review). `SESSION_SECRET` and `AUDIO_SIGNING_SECRET` have no silent fallback: if either is missing the backend refuses to sign, and in production each must be at least 32 random characters. Local dev may opt into fixed dev keys with `FT_LOCAL_DEV=1`, which production ignores.
 
 **Content and privacy**
 
 - No student voices or names. Transcripts are stripped of student questions before indexing.
 - Use a deck Ben is comfortable publishing in full: no textbook figures, no licensed images, no unreleased exam material. *(Changed Oct 5: content is no longer published. It sits behind the passcode for my own students, which is how it is already shared on Canvas. Graded material and answer keys still stay out.)*
 - The question log stores question text and scores only. No names, no accounts, no IP addresses in the stored rows.
+- Added Oct 5 (security review). Before a question is logged, emails, phone numbers, long digit runs, @handles, and names that follow "my name is", a title (Prof., Dr., Ms.), or "classmate"/"partner" are replaced with tokens (`app/privacy.py`). It is a roster-free heuristic, so the question box also asks students not to type names.
 - Voice recordings used for cloning are Ben's own. Check the voice provider's current terms and plan requirements before uploading.
 - Added Oct 5. Every student name is replaced with `[student]` at import, in transcripts and in slide text. In transcripts, every other person named except me is replaced with `[person]`. Rosters stay in `~/Lecture Archive/_private/rosters/` and are never copied, printed, logged, uploaded, or committed. The leak check is the gate before any upload.
 - Added Oct 5. Student turns are marked and never used as narration material or clip audio. Unsure turns are treated as student turns.

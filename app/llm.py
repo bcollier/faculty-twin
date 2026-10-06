@@ -196,6 +196,10 @@ def complete_json(
     if provider not in BUILDERS:
         raise LLMError(f"Unknown provider {provider!r}")
     req = BUILDERS[provider](model, system, user, max_tokens)
+    from . import limits
+
+    if not limits.take_llm_call():  # global daily cap, fails closed; narration falls back to notes
+        raise LLMError("The daily model-call cap is reached (DAILY_LLM_CALL_CAP)")
     own = client is None
     client = client or httpx.Client(timeout=TIMEOUT)
     started = time.monotonic()

@@ -32,7 +32,7 @@ STUDENT_COOKIE = "ft_session"
 ADMIN_COOKIE = "ft_admin"
 STUDENT_TTL = 7 * 24 * 3600
 ADMIN_TTL = 12 * 3600
-PBKDF2_ITERATIONS = 200_000
+PBKDF2_ITERATIONS = 600_000  # OWASP 2023 guidance for PBKDF2-HMAC-SHA256
 
 
 def _b64e(raw: bytes) -> str:
@@ -67,7 +67,13 @@ def verify_passcode_hash(passcode: str, stored: str) -> bool:
 
 
 def _generation(material: str) -> str:
-    return hashlib.sha256(("gen:" + material).encode()).hexdigest()[:12]
+    """Short tag that changes when the passcode changes.
+
+    Keyed with SESSION_SECRET: the cookie payload is readable by whoever holds
+    the cookie, and an unkeyed hash of the passcode there would let anyone with
+    a copied cookie brute-force the passcode offline.
+    """
+    return hmac.new(config.session_secret(), ("gen:" + material).encode(), hashlib.sha256).hexdigest()[:16]
 
 
 def student_generation() -> str | None:

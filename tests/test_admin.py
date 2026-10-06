@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app import settings_store, supa
+from app import llm, settings_store, supa
 from app.main import app, get_completer
 
 
@@ -22,7 +22,10 @@ def test_admin_routes_need_admin_cookie(student):
         assert student.get(path).status_code == 401, path
 
 
-def test_settings_get_and_put(admin):
+def test_settings_get_and_put(admin, monkeypatch):
+    # Saving an OpenRouter model checks its price (docs/SECURITY.md); stub the live list.
+    listing = [{"id": "openai/gpt-6-luna", "name": "Luna", "pricing": {"prompt": "0.000001", "completion": "0.000004"}}]
+    monkeypatch.setattr(llm, "list_models", lambda provider: {"provider": provider, "models": listing, "source": "live"})
     s = admin.get("/api/admin/settings").json()
     assert s["provider"] == "anthropic" and s["model"] == "claude-sonnet-5-5"
     assert s["voice_id"] is None and s["providers"] == ["anthropic", "openai", "openrouter"]

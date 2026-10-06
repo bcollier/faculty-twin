@@ -25,6 +25,10 @@ class EmbeddingError(RuntimeError):
     pass
 
 
+class EmbeddingCapReached(EmbeddingError):
+    """Today's global embedding budget (DAILY_EMBED_CAP) is used up."""
+
+
 def model_name() -> str:
     return config.env("VOYAGE_MODEL", config.DEFAULT_VOYAGE_MODEL) or config.DEFAULT_VOYAGE_MODEL
 
@@ -48,6 +52,10 @@ def parse_response(data: dict) -> np.ndarray:
 
 def embed_question(text: str, client: httpx.Client | None = None) -> np.ndarray:
     url, headers, body = build_request(text)
+    from . import limits
+
+    if not limits.take_embedding():  # global daily cap, fails closed
+        raise EmbeddingCapReached("The daily embedding cap is reached (DAILY_EMBED_CAP)")
     own = client is None
     client = client or httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0))
     try:

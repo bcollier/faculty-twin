@@ -64,12 +64,13 @@
         <form id="idle-form" class="ask-form" novalidate>
           <label for="idle-q" class="visually-hidden">Your question</label>
           <textarea id="idle-q" rows="2" maxlength="300" placeholder="Ask about anything we covered in class"
-                    aria-describedby="idle-count"></textarea>
+                    aria-describedby="idle-count idle-privacy"></textarea>
           <div class="ask-row">
             <span id="idle-count" class="count" aria-live="polite">0 / 300</span>
             <button type="submit" class="btn btn-primary">Ask</button>
           </div>
         </form>
+        <p class="hint" id="idle-privacy">Please leave out names, yours or anyone else's. I keep questions, without names, to improve the twin.</p>
 
         <div class="chips-block">
           <p class="chips-label" id="idle-chips-label">Or start with one of these</p>
@@ -181,8 +182,10 @@
       </div>
       <form id="dock-form" class="dock-form" novalidate>
         <label for="dock-q" class="visually-hidden">Ask another question</label>
-        <input id="dock-q" type="text" maxlength="300" placeholder="Ask another question" autocomplete="off">
+        <input id="dock-q" type="text" maxlength="300" placeholder="Ask another question" autocomplete="off"
+               aria-describedby="dock-privacy">
         <button type="submit" class="btn btn-primary">Ask</button>
+        <span id="dock-privacy" class="visually-hidden">Please leave out names, yours or anyone else's.</span>
       </form>
       <p class="ai-label ai-label-dock">AI voice made from my recordings.</p>
     </aside>
