@@ -31,17 +31,14 @@ Allowed hits are counted and reported (counts only) but do not block.
 
 from __future__ import annotations
 
-import csv
 import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-FIRST_COLS = ("Preferred/First Name", "Preferred Name", "First Name")
-LAST_COLS = ("Last Name",)
-ID_COLS = ("Andrew ID",)
-EMAIL_COLS = ("Email",)
+from indexer.roster import person, read_people, roster_files
+
 BEN = {"ben", "benjamin", "collier"}
 WORD_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*[A-Za-z]|[A-Za-z]")
 TOKEN_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+|[A-Za-z0-9][A-Za-z0-9._\-]*")
@@ -49,14 +46,6 @@ TOKEN_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+|[A-Za-z0-9][A-Za-z0-9
 
 class RosterMissing(RuntimeError):
     pass
-
-
-def _first(row: dict[str, str], cols: Iterable[str]) -> str:
-    for c in cols:
-        v = (row.get(c) or "").strip()
-        if v:
-            return v
-    return ""
 
 
 def _english_words() -> set[str]:
@@ -126,7 +115,10 @@ class RosterChecker:
         self._ids: set[str] = set()
         self._singles: set[str] = set()
         for r in rows:
-            first, last = _first(r, FIRST_COLS), _first(r, LAST_COLS)
+            p = person(r)  # any roster header layout (indexer/roster.py)
+            if p is None:
+                continue
+            first, last = p["first"], p["last"]
             if first and last:
                 full.add(f"{first} {last}".lower())
                 full.add(f"{first.split()[0]} {last}".lower())
@@ -134,10 +126,10 @@ class RosterChecker:
                 tok = tok.strip(".'")
                 if len(tok) >= 3 and tok not in english and tok not in BEN:
                     self._singles.add(tok)
-            aid = _first(r, ID_COLS).lower()
+            aid = p["andrew_id"]
             if len(aid) >= 3:
                 self._ids.add(aid)
-            email = _first(r, EMAIL_COLS).lower()
+            email = p["email"]
             if email:
                 self._ids.add(email)
                 self._ids.add(email.split("@")[0])
@@ -149,13 +141,9 @@ class RosterChecker:
     def from_dir(cls, path: Path, english: set[str] | None = None,
                  allowlist: Path | None = None) -> "RosterChecker":
         """Rosters from `path`; the reviewed allowlist from `path/../leak_allowlist.json` unless given."""
-        files = sorted(Path(path).glob("*.csv")) if Path(path).is_dir() else []
-        if not files:
+        if not roster_files(path):
             raise RosterMissing(f"No roster CSVs in {path}; the leak check cannot run")
-        rows: list[dict[str, str]] = []
-        for p in files:
-            with open(p, newline="", encoding="utf-8-sig") as fh:
-                rows.extend(csv.DictReader(fh))
+        rows = read_people(path)
         allowlist = allowlist if allowlist is not None else Path(path).parent / ALLOWLIST_NAME
         return cls(rows, english, load_allowlist(allowlist))
 
