@@ -21,7 +21,8 @@ QUESTION_MAX_CHARS = 300
 NARRATION_MAX_WORDS = 110
 PER_MINUTE_LIMIT = 5
 PER_DAY_LIMIT = 30
-DEFAULT_DAILY_VOICE_CHAR_CAP = 20000
+DEFAULT_DAILY_VOICE_CHAR_CAP = 20000  # ElevenLabs characters per UTC day (costs money)
+DEFAULT_DAILY_FREE_VOICE_CHAR_CAP = 200000  # free Microsoft voices per UTC day (no cost; be a good citizen)
 
 # Spend guards that do not depend on the visitor id (a student with the
 # passcode can mint new visitor ids by logging in again). See docs/SECURITY.md.
@@ -29,7 +30,7 @@ PER_ADDRESS_MINUTE_LIMIT = 20  # questions per minute from one network address (
 PER_ADDRESS_DAY_LIMIT = 300  # a classroom behind one NAT stays well under this
 DEFAULT_DAILY_LLM_CALL_CAP = 600  # all narration calls, every visitor, per UTC day (fails closed)
 DEFAULT_DAILY_EMBED_CAP = 1500  # question embeddings, every visitor, per UTC day (fails closed)
-VOICE_VISITOR_SHARE = 0.25  # one visitor (or one address) may use at most this share of the daily voice cap
+VOICE_VISITOR_SHARE = 0.25  # one visitor (or one address) may use at most this share of each daily voice cap
 NARRATION_MAX_CHARS = 900  # 110 words of normal prose is about 700 characters
 # OpenRouter lets the admin pick any model; refuse ones priced above this (USD per million tokens).
 DEFAULT_MAX_PRICE_PER_MTOK = {"prompt": 15.0, "completion": 60.0}

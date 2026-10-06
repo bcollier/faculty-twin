@@ -90,6 +90,8 @@ The page has two states, and the change between them is the signature moment of 
 
 **Idle.** A centered question box, a one-line description ("An AI version of Prof. Collier that teaches from his own slides"), and six to eight suggested-question chips. A small label says the voice is AI-generated.
 
+> **Changed Oct 5 (voice tiers).** The label names the voice that actually speaks, read from `GET /api/voice`: "The voice is AI-generated from recordings of me, Ben Collier." only when my clone speaks, "The voice is AI-generated (a stock voice, not mine)." for an ElevenLabs stock voice or a free Microsoft voice, and no voice label when the voice is set to captions only. While an answer plays, the small label in the chat dock shows the segment's voice label ("AI voice made from my recordings." or "AI voice (a stock voice, not mine).") and changes if the fallback voice takes over. Before the page knows the voice it says only "AI voice.", never the clone label.
+
 Above the question box, a course filter with three choices: **All courses**, **70-445**, **45-884**. It defaults to All, remembers the last choice on that device, sends `course` with every question, and filters the suggested chips to that course.
 
 **Presenting.** The chat docks to a narrow panel on the right, about 30% of the width. The stage takes the rest:
@@ -144,8 +146,14 @@ Added Oct 5, for me only. `/admin.html`, behind a separate admin passcode and it
 
 1. **Model.** Provider dropdown (Claude native, OpenAI native, OpenRouter) and a model picker. Claude and OpenAI show a short curated list plus a free-text model id. OpenRouter shows its live model list, searchable. "Test this model" runs one sample question through the full ask pipeline and shows the result and latency. Save writes the choice to the `settings` table.
 2. **Voice.** The voices on the ElevenLabs account, each with a preview I can play, plus a stock voice and a captions-only option. Saving changes `voice_id`. Pre-generated audio is keyed by voice id, so changing the voice never plays the old one.
+   *Changed Oct 5 (voice tiers).* Three groups, each voice with a Preview button, and a pill that says which cost money:
+   - **My voice clone**: ElevenLabs voices with category `cloned` (or a `professional` clone this account owns), the `ELEVENLABS_VOICE_ID` voice first. Costs ElevenLabs credits.
+   - **ElevenLabs voices**: every other voice on the account (`premade`, `generated`, and Voice Library voices, which ElevenLabs also calls `professional` but this account does not own). Costs ElevenLabs credits.
+   - **Free Microsoft voices**: Microsoft neural voices through the `edge-tts` package, no key and no cost. A curated list of teaching voices (Andrew, Ava, Brian, Emma, Christopher, Aria, Ryan, Sonia) plus a field for any other voice's ShortName, checked against Microsoft's voice list.
+   - Plus **Server default** (`ELEVENLABS_VOICE_ID`) and **Captions only**.
+   ElevenLabs previews play the voice's own `preview_url` (no characters spent). Free previews come from `GET /api/admin/voice-preview`, which speaks one fixed sentence set on the server. A second control sets the fallback: when an ElevenLabs voice fails or hits today's cap, answers continue with captions only (the default) or with a chosen free voice. The page shows the label students will see for the saved voice.
 3. **Courses and source material.** Courses, then sessions under each, with date, title, and what exists for that session: slides, transcript, video, clips, indexed or not. I can add a course (code, title, term), add a session, and upload source material for it: a slide PDF or pptx, a Zoom VTT, the class video, a notebook. Files go straight from the browser to the private bucket. Each upload shows its status (uploaded, processing, ready, error with a message) and a "Re-run" button. A switch hides or shows a session for students.
-4. **Limits and access.** The daily voice character cap (editable), the per-visitor limits (shown, not editable), and a field to rotate the student passcode.
+4. **Limits and access.** The daily voice character cap (editable), the per-visitor limits (shown, not editable), and a field to rotate the student passcode. *Added Oct 5 (voice tiers):* a second, higher daily cap for the free voices.
 5. **Activity.** Today's counters, and the last 50 questions: question text, covered or not, top score, provider and model, latency.
 
 The page shows only whether each key is configured, never the key itself.
@@ -235,6 +243,8 @@ The browser only ever talks to the backend, except to fetch a file through a lin
 | `STUDENT_PASSCODE`, `ADMIN_PASSCODE` | Bootstrap passcodes; a rotated student passcode lives as a hash in `settings` |
 | `SESSION_SECRET`, `AUDIO_SIGNING_SECRET` | Cookie signing and audio-link signing |
 | `DAILY_VOICE_CHAR_CAP` | Default daily voice cap, overridable in Settings |
+| `DAILY_FREE_VOICE_CHAR_CAP` | Added Oct 5. Default daily cap for the free Microsoft voices (200,000 characters), overridable in Settings |
+| `EDGE_TTS_RATE`, `EDGE_TTS_PITCH` | Added Oct 5, optional. Speaking rate and pitch for the free voices; defaults `-5%` and `+0Hz` |
 | `CONTENT_DIR` | Local folder used instead of Supabase for local development and tests, for example `~/Lecture Archive/_build` |
 
 With `CONTENT_DIR` set, `app/storage.py` reads the index and files from that folder and signs links to a local-only route, so the app runs and the tests pass without Supabase.
@@ -280,6 +290,8 @@ faculty-twin/
   app/narration.py        grounding prompt, JSON validation, fallback
   app/llm.py              provider interface: Claude, OpenAI, OpenRouter; active choice from settings
   app/speech.py           ElevenLabs call, audio signing, daily cap
+  app/voices.py           voice tiers, labels, fallback, which cap a voice uses (added Oct 5)
+  app/edge_voice.py       free Microsoft voices through edge-tts, previews (added Oct 5)
   app/storage.py          bucket or CONTENT_DIR access, index load and reload, signed URLs
   app/limits.py           rate limits, counters, question log
   public/index.html       passcode, idle, presenting
@@ -369,7 +381,7 @@ Code records use the same shape with `"kind": "code"`, a `source` field holding 
 | `clips/manifest.json` | `[{slide_id, course, session, start, end, reason_kept}]`, times in the original recording | yes |
 | `content/index.json`, `content/embeddings.npy` | The index (see above) | yes |
 | `topics/topics.json` | Suggested questions and their stored playlists | yes |
-| `audio/<voice_id>/<hash>.mp3` | Pre-generated narration for suggested questions, named by voice id and a hash of the narration text | yes |
+| `audio/<voice_id>/<hash>.mp3` | Pre-generated narration for suggested questions, named by voice id and a hash of the narration text. *Changed Oct 5 (voice tiers): new files go under `audio/<voice tag>/`, the same 10-character tag the audio links carry, because free voice ids contain a colon. Older `audio/<ElevenLabs id>/` folders are still read for that voice.* | yes |
 | `review/<course>-s<NN>.txt` | De-identification review notes | no, never |
 
 The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded through Settings. Transcripts and alignment stay on the laptop: the backend only needs what is already folded into the index.
@@ -414,7 +426,10 @@ The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded 
       "slide_number": 14,
       "image": "https://<project>.supabase.co/storage/v1/object/sign/twin-content/slides/70445/s06/70445-s06-014.webp?token=...",
       "narration": "Sixty to ninety words in my teaching voice.",
-      "audio": "/api/audio?t=<base64url narration>&s=<hmac>",
+      "audio": "/api/audio?t=<base64url narration>&v=<voice tag>&s=<hmac>",
+      "voice": { "kind": "clone", "label": "AI voice made from my recordings." },
+      "audio_fallback": "/api/audio?t=<base64url narration>&v=<free voice tag>&s=<hmac>",
+      "voice_fallback": { "kind": "free", "label": "AI voice (a stock voice, not mine)." },
       "code": null,
       "clip": {
         "url": "https://<project>.supabase.co/storage/v1/object/sign/twin-content/clips/70445-s06-014.mp4?token=...",
@@ -430,7 +445,7 @@ The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded 
 }
 ```
 
-`audio` is `null` when the voice is set to captions only. For a suggested question it is a signed link to the stored mp3 instead of the audio route. `clip` is `null` when the slide has no clip. `clip.start` and `clip.end` are positions in the original class recording, used for the label; the clip file itself starts at zero. Signed links expire after an hour.
+`audio` is `null` when the voice is set to captions only. *Added Oct 5 (voice tiers):* `voice` is the label of the voice behind `audio` (`kind` is `clone`, `stock`, `free`, or `unverified` when an ElevenLabs voice's category could not be checked, labeled just "AI voice."), and `null` with no audio. `audio_fallback` and `voice_fallback` are set only when an ElevenLabs voice speaks and the free fallback is on: if `audio` fails to play, the page switches the rest of the answer to `audio_fallback` and shows `voice_fallback.label`. When today's ElevenLabs cap is already spent and the fallback is on, `audio` is the free voice from the start and is labeled as one. For a suggested question it is a signed link to the stored mp3 instead of the audio route. `clip` is `null` when the slide has no clip. `clip.start` and `clip.end` are positions in the original class recording, used for the label; the clip file itself starts at zero. Signed links expire after an hour.
 
 **Segment rules**
 
@@ -445,7 +460,7 @@ The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded 
 
 | Table | Columns | Notes |
 | --- | --- | --- |
-| `settings` | `key`, `value` (jsonb), `updated_at` | Keys: `provider`, `model`, `voice_id`, `daily_voice_char_cap`, `student_passcode_hash`, `index_version`. Env vars are the defaults when a key is missing |
+| `settings` | `key`, `value` (jsonb), `updated_at` | Keys: `provider`, `model`, `voice_id`, `daily_voice_char_cap`, `student_passcode_hash`, `index_version`. Env vars are the defaults when a key is missing. *Added Oct 5 (voice tiers):* `voice_kind` (`{voice_id, kind}`, written by Settings after checking the voice's category on the ElevenLabs account), `voice_fallback` (`captions` or `free`), `voice_fallback_voice` (`edge:<ShortName>`), `daily_free_voice_char_cap` |
 | `counters` | `key`, `day`, `count`, `expires_at` | Rate limits per visitor id, login attempts, daily voice characters, daily question counts. Bumped only through the `ft_increment` function, which adds atomically and refuses an add that would pass a cap |
 | `question_log` | `id`, `at`, `question`, `course`, `covered`, `top_score`, `provider`, `model`, `latency_ms` | Question text and scores only: no names, accounts, cookies, or IP addresses |
 | `courses` | `code`, `title`, `term` | Seeded with 70445 and 45884 |
@@ -546,19 +561,21 @@ Four routes. The frontend never talks to a model or voice provider directly.
 | `GET /api/courses` | none | `[{course, title, sessions: [{session, date, title}]}]` | Visible sessions only |
 | `GET /api/topics` | none | `[{question, course}]` | Read from `topics/topics.json`. Asking a topic's exact question returns its stored playlist, with links signed on the way out |
 | `POST /api/ask` | `{"question": "...", "course": "70445" \| "45884" \| null}`, question 300 characters max | A playlist (see Data) | Retrieval, then one LLM call that writes all segment narrations as JSON. No speech is generated here |
-| `GET /api/audio?t=&v=&s=` | the narration text (base64url), a short tag of the voice id, and their signature | An mp3, streamed | The voice tag makes every link change when the voice changes, so the browser never replays the old voice; a link from an old voice gets 403. 404 when the voice is set to captions only. 403 on a bad signature, 429 past the daily cap (the frontend falls back to captions). Calls ElevenLabs with the current voice. Nothing is saved on the server |
+| `GET /api/audio?t=&v=&s=` | the narration text (base64url), a short tag of the voice id, and their signature | An mp3, streamed | The voice tag makes every link change when the voice changes, so the browser never replays the old voice; a link from an old voice gets 403. 404 when the voice is set to captions only. 403 on a bad signature, 429 past the daily cap (the frontend falls back to captions). Calls ElevenLabs with the current voice. Nothing is saved on the server. *Changed Oct 5 (voice tiers):* the tag picks the voice: the current voice, or the free fallback voice when the fallback is on. ElevenLabs voices stream from ElevenLabs and spend the ElevenLabs cap; free voices stream from `edge-tts` (MP3 in memory, no temp files; pieces of at most 400 characters, at most 6 at once, each retried) and spend the free cap. A free voice that cannot start answers 502 before any audio |
+| `GET /api/voice` | none | `{kind, label, fallback: {kind, label} \| null}` | Added Oct 5. What students are told about the voice right now: `kind` is `clone`, `stock`, `free`, `unverified`, or `none` (captions only, `label` null) |
 
 **Settings routes** (all need `ft_admin` except login)
 
 | Route | Input | Returns | Notes |
 | --- | --- | --- | --- |
 | `POST /api/admin/login` | `{"passcode": "..."}` | 204 and the `ft_admin` cookie, or 401 | Against `ADMIN_PASSCODE`. 5 tries per 15 minutes |
-| `GET /api/admin/settings` | none | `{provider, model, voice_id, daily_voice_char_cap, ...}` | Never returns a key or a passcode hash. `voice_id` is null when the server default (`ELEVENLABS_VOICE_ID`) applies, `"none"` for captions only |
-| `PUT /api/admin/settings` | any of `{provider, model, voice_id, daily_voice_char_cap, student_passcode}` | the saved settings | A new student passcode is stored as a hash and bumps the passcode version, signing students out |
+| `GET /api/admin/settings` | none | `{provider, model, voice_id, daily_voice_char_cap, ...}` | Never returns a key or a passcode hash. `voice_id` is null when the server default (`ELEVENLABS_VOICE_ID`) applies, `"none"` for captions only. *Added Oct 5:* also `voice_kind`, `voice_label` (what students see), `voice_costs_money`, `voice_fallback`, `voice_fallback_voice`, `daily_free_voice_char_cap` |
+| `PUT /api/admin/settings` | any of `{provider, model, voice_id, daily_voice_char_cap, student_passcode}` | the saved settings | A new student passcode is stored as a hash and bumps the passcode version, signing students out. *Added Oct 5:* also `voice_fallback`, `voice_fallback_voice`, `daily_free_voice_char_cap`. `voice_id` is `eleven:<id>` (checked against the account, which records whether it is my clone), `edge:<ShortName>` (checked against Microsoft's list), `"none"`, or null; an older bare ElevenLabs id is still accepted |
 | `GET /api/admin/models?provider=anthropic\|openai\|openrouter` | provider | `{provider, models: [{id, name}], source}` | Curated lists for Anthropic and OpenAI; OpenRouter's live list from `https://openrouter.ai/api/v1/models` |
 | `POST /api/admin/test` | `{"question": "...", "provider"?, "model"?}` | a playlist plus latency | Runs the full ask pipeline with the given or saved model; not logged, but counted against limits |
 | `GET /api/admin/status` | none | which keys are configured (booleans only), today's counters, index version and record count | |
-| `GET /api/admin/voices` | none | `{voices: [{voice_id, name, category, preview_url}]}` | Proxied from ElevenLabs with the server-side key |
+| `GET /api/admin/voices` | none | `{voices: [{voice_id, name, category, preview_url}]}` | Proxied from ElevenLabs with the server-side key. *Changed Oct 5 (voice tiers):* returns `{groups: [{id: "clone" \| "elevenlabs" \| "free", label, cost, costs_money, student_label, voices: [...]}], voices: [all], elevenlabs_error}`. Without an ElevenLabs key it still returns the free group |
+| `GET /api/admin/voice-preview?voice=edge:<ShortName>` | a free voice id | an mp3 | Added Oct 5. Speaks one fixed sentence set on the server (never text from the caller), cached in memory, counted against the free cap. 400 for ElevenLabs voices (they use `preview_url`) and unknown names |
 | `GET /api/admin/courses` | none | `{courses: [...]}`, each with sessions and what exists for each (`has: {slides, transcript, video, clips, indexed}`) | Merges the `courses`, `sessions`, and `sources` tables with what the loaded index holds |
 | `POST /api/admin/courses` | `{course, title, term}` (`code` also accepted) | the course | |
 | `POST /api/admin/sessions` | `{course, session, date, title}` | the session | Starts visible |
@@ -607,6 +624,8 @@ A public page that speaks in a real professor's voice needs firm limits. These a
 - Narration is grounded in indexed content. Off-topic questions get the not-covered response, never an improvised answer.
 - The audio route only speaks text the backend itself wrote. Every audio link carries a signature made with a secret key, and the route refuses text whose signature does not match, so nobody can send it their own words.
 - The page states that the voice is AI-generated from Ben's recordings, on the idle screen and in the README.
+- Added Oct 5 (voice tiers). The disclosure always matches the voice that is speaking. My clone: "AI voice made from my recordings." Any ElevenLabs stock voice or free Microsoft voice: "AI voice (a stock voice, not mine)." Captions only: no voice label. A voice is labeled a clone only when the ElevenLabs account says it is one (category `cloned`, or a `professional` clone the account owns); when that cannot be checked the label is "AI voice." and never the clone label. When the fallback voice takes over mid-answer, the label changes with it.
+- Added Oct 5 (voice tiers). Free voices follow every rule above: the audio route speaks only signed text, the signature covers the voice tag, and the same length caps and grounding checks apply. Voice previews speak a fixed sentence set on the server.
 - Added Oct 5. Switching providers in Settings does not loosen any of this: every provider gets the same grounding prompt and the same validation, and a model that ignores JSON falls back to the speaker notes. "Test this model" exists so I check a model before students get it.
 - Added Oct 5. Class clips are labeled as real class recordings, so no one confuses them with the AI voice.
 
@@ -629,6 +648,7 @@ Added Oct 5.
 - Added Oct 5. "Test this model" counts against the same limits.
 - Added Oct 5 (security review, docs/SECURITY.md). Logging in again mints a new visitor id, so questions are also limited per network address (salted daily hash, kept only in `counters`): 20 per minute, 300 per day. Two global daily caps fail closed when the database is unreachable: model calls (`DAILY_LLM_CALL_CAP`, default 600; past it narration falls back to speaker notes) and question embeddings (`DAILY_EMBED_CAP`, default 1,500; past it `/api/ask` returns a readable 503). One visitor or address may use at most a quarter of the daily voice cap. Rate limits fall back to an in-memory counter, not to "unlimited", when the database is down; admin login fails closed.
 - Added Oct 5 (security review). Every narration is checked for grounding before it is signed for the voice: most of its content words must come from the slides sent, it must not repeat a long run of the question, it must be under 900 characters, and it must not contain a web address. A failing reply is retried once, then falls back to the speaker notes.
+- Added Oct 5 (voice tiers). The free Microsoft voices cost nothing but use a free service, so they have their own daily cap (`DAILY_FREE_VOICE_CHAR_CAP`, default 200,000 characters, editable in Settings) with the same quarter-per-visitor and per-address rule, at most 6 requests at once per function instance, and short timeouts. The ElevenLabs cap applies only to ElevenLabs voices. Both caps fail closed.
 - Added Oct 5 (security review). OpenRouter models priced above $15 in / $60 out per million tokens are refused in Settings (adjustable with `LLM_MAX_PROMPT_PRICE_PER_MTOK` and `LLM_MAX_COMPLETION_PRICE_PER_MTOK`).
 
 **Secrets**
@@ -782,7 +802,7 @@ New Oct 5. Build in this order and stop where the clock says.
 
 1. Admin login, the `ft_admin` cookie, `/api/admin/status`.
 2. Model: OpenAI and OpenRouter providers in `app/llm.py`, `/api/admin/models`, `/api/admin/settings`, `/api/admin/test`.
-3. Voice: `/api/admin/voices`, preview, captions-only option.
+3. Voice: `/api/admin/voices`, preview, captions-only option. *Added Oct 5:* the three voice tiers (my clone, ElevenLabs voices, free Microsoft voices), `/api/admin/voice-preview`, the fallback voice, the free cap, and `/api/voice` for the label.
 4. Limits and access: cap, passcode rotation. Activity: `/api/admin/log`.
 5. Courses and source material: the course and session routes, `/api/admin/uploads` with signed upload URLs, `/api/admin/sources` and rerun, `indexer/worker.py`.
 
@@ -891,7 +911,7 @@ The spec above assumes a default for each of these. Changing one changes the bui
 | Which deck and notebook | The clustering session from Data Mining | Block 1 content, the suggested questions | Settled: both Fall 2026 courses, sessions 01 to 11 each, most current slide PDF per session |
 | Is there a transcript for that session | No, slides and notes only | With one, narration follows Ben's real explanations | Settled: Zoom VTT for every session; the missing 70-445 session 11 VTT gets pulled from Zoom in Chrome |
 | Do the slides have speaker notes | Unknown | Without notes or a transcript, narration is thin and the model has to stretch | Answered: pptx notes for most decks; 45-884 session 6 has none; transcripts cover the gap |
-| Voice | A clone of Ben's voice through ElevenLabs | A stock voice removes the consent and labeling work and about 20 minutes | Settled: ElevenLabs clone, switchable to a stock voice or captions only in Settings |
+| Voice | A clone of Ben's voice through ElevenLabs | A stock voice removes the consent and labeling work and about 20 minutes | Settled: ElevenLabs clone, switchable to a stock voice or captions only in Settings. Oct 5: also switchable to a free Microsoft voice (edge-tts), with a free-voice fallback option |
 | Who can use it | Anyone with the link | A course passcode would cut cost and misuse risk | Settled: content private in a Supabase bucket, course passcode, signed cookies and signed links |
 | LLM and embeddings provider | Whichever key Ben already has set up | Only the two API calls | Settled: Claude (`claude-sonnet-5-5`) writes narration, Voyage AI embeds; the narration model is switchable in Settings (Claude, OpenAI, OpenRouter) |
 | Hosting | Vercel, one project (decided October 5). Fallback: a paid Render instance | Cloudflare is the candidate for the portfolio integration later; a free build there would mean a JavaScript backend | Settled, unchanged; content and database on Supabase |

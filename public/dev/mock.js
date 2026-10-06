@@ -12,6 +12,7 @@
 //   expire           401, back to the passcode screen
 //   noaudio          every audio field is null (captions only from the start)
 //   badaudio         audio URLs fail to load (falls back to captions mid-answer)
+//   fallbackvoice    the clone's audio fails from part 2 on; a free fallback voice takes over (label changes)
 //   slow             4 second wait before the answer
 //   badclip          part 3's class clip fails to load (the button should disappear, the slide stays)
 //   stale            the first answer's slide links are expired (the page should re-ask once for fresh links)
@@ -146,7 +147,8 @@ function segment(n, course, session, slide, extra = {}) {
     session, session_title: sessionTitle(course, session), date: DATES[course][session - 1], slide_number: slide,
     image: slideSvg({ course, session, slide, title: `Placeholder slide ${slide}` }),
     narration: NARRATION[n - 1] || NARRATION[0],
-    audio: audioUrls[n - 1], code: null, clip: null, ...extra,
+    audio: audioUrls[n - 1], voice: { kind: 'clone', label: 'AI voice made from my recordings.' },
+    audio_fallback: null, voice_fallback: null, code: null, clip: null, ...extra,
   };
 }
 
@@ -161,7 +163,12 @@ async function buildAnswer(question, course) {
     segment(4, c, 7, 3),
   ];
   const q = question.toLowerCase();
-  if (q.includes('noaudio')) segments.forEach(s => { s.audio = null; });
+  if (q.includes('noaudio')) segments.forEach(s => { s.audio = null; s.voice = null; });
+  if (q.includes('fallbackvoice')) segments.forEach((s, i) => {
+    s.audio_fallback = s.audio;
+    s.voice_fallback = { kind: 'free', label: 'AI voice (a stock voice, not mine).' };
+    if (i > 0) s.audio = '/__mock_missing_audio.mp3';
+  });
   if (q.includes('badaudio')) segments.forEach((s, i) => { if (i > 0) s.audio = '/__mock_missing_audio.mp3'; });
   if (q.includes('badclip')) segments[2].clip = { url: '/__mock_missing_clip.mp4', start: 1834.5, end: 1872.0 };
   if (q.includes('stale') && !staleServed.has(q)) {
@@ -179,7 +186,9 @@ async function buildAnswer(question, course) {
 
 /* admin state */
 const admin = {
-  settings: { provider: 'anthropic', model: 'claude-sonnet-5-5', voice_id: 'mock-voice-ben', daily_voice_char_cap: 20000, index_version: 7 },
+  settings: { provider: 'anthropic', model: 'claude-sonnet-5-5', voice_id: 'eleven:mock-voice-ben', voice_kind: 'clone',
+    voice_label: 'AI voice made from my recordings.', voice_fallback: 'captions', voice_fallback_voice: 'edge:en-US-AndrewMultilingualNeural',
+    daily_voice_char_cap: 20000, daily_free_voice_char_cap: 200000, index_version: 7 },
   courses: COURSES.map(c => ({
     ...c,
     sessions: DATES[c.course].map((date, i) => ({
@@ -201,12 +210,27 @@ for (const c of admin.courses) for (const s of c.sessions.slice(-3)) {
   }
 }
 
-const VOICES = [
-  { voice_id: 'mock-voice-ben', name: 'Ben (cloned)', category: 'cloned', preview_url: wavBlob(1.2, 220, 0.25) },
-  { voice_id: 'mock-voice-a', name: 'Stock voice A', category: 'premade', preview_url: wavBlob(1.2, 330, 0.25) },
-  { voice_id: 'mock-voice-b', name: 'Stock voice B', category: 'premade', preview_url: wavBlob(1.2, 440, 0.25) },
-  { voice_id: 'mock-voice-c', name: 'Stock voice C', category: 'premade', preview_url: null },
-];
+const STOCK = 'AI voice (a stock voice, not mine).';
+const VOICES = {
+  groups: [
+    { id: 'clone', label: 'My voice clone', cost: 'ElevenLabs: costs credits per character.', costs_money: true,
+      student_label: 'AI voice made from my recordings.', voices: [
+        { voice_id: 'eleven:mock-voice-ben', name: 'Ben (cloned)', category: 'cloned', preview_url: wavBlob(1.2, 220, 0.25), is_default: true },
+      ] },
+    { id: 'elevenlabs', label: 'ElevenLabs voices', cost: 'ElevenLabs: costs credits per character.', costs_money: true,
+      student_label: STOCK, voices: [
+        { voice_id: 'eleven:mock-voice-a', name: 'Stock voice A', category: 'premade', preview_url: wavBlob(1.2, 330, 0.25) },
+        { voice_id: 'eleven:mock-voice-b', name: 'Stock voice B', category: 'premade', preview_url: null },
+      ] },
+    { id: 'free', label: 'Free Microsoft voices', cost: 'Free: no key, no cost (Microsoft neural voices through edge-tts).',
+      costs_money: false, student_label: STOCK, voices: [
+        { voice_id: 'edge:en-US-AndrewMultilingualNeural', name: 'Andrew', description: 'warm, confident, American male', preview_url: wavBlob(1.2, 262, 0.25) },
+        { voice_id: 'edge:en-GB-SoniaNeural', name: 'Sonia', description: 'gentle, British female', preview_url: wavBlob(1.2, 262, 0.25) },
+      ] },
+  ],
+  elevenlabs_error: null,
+  free_voice_default: 'edge:en-US-AndrewMultilingualNeural',
+};
 
 const MODELS = {
   anthropic: [
@@ -266,6 +290,10 @@ async function route(url, method, body) {
     return json(401, { detail: 'Wrong passcode' });
   }
   if (path === '/api/topics') return student ? json(200, TOPICS) : unauthorized();
+  if (path === '/api/voice') {
+    if (!student) return unauthorized();
+    return json(200, { kind: admin.settings.voice_kind || 'clone', label: admin.settings.voice_label ?? 'AI voice made from my recordings.', fallback: null });
+  }
   if (path === '/api/courses') {
     if (!student) return unauthorized();
     return json(200, COURSES.map(c => ({ course: c.course, title: c.title,

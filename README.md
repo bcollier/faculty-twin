@@ -93,6 +93,10 @@ Tests: `uv run --with-requirements requirements.txt --with pytest pytest -q`. Th
 
 Supabase: run `supabase/schema.sql` once in the SQL editor, and create a private Storage bucket named `twin-content`.
 
+### Voice options
+
+Settings > Voice picks who reads the answers: Ben's ElevenLabs voice clone, another ElevenLabs voice, a free Microsoft neural voice (through [edge-tts](https://github.com/rany2/edge-tts), no key and no cost), or captions only. Every voice is AI-generated, and the page labels it to match: "AI voice made from my recordings." only for the clone, "AI voice (a stock voice, not mine)." for any other voice. An optional fallback lets a free voice take over when ElevenLabs fails or hits its daily cap; the label changes with it. Each tier has its own daily character cap (`DAILY_VOICE_CHAR_CAP` for ElevenLabs, `DAILY_FREE_VOICE_CHAR_CAP` for the free voices). Details: [docs/SPEC.md](docs/SPEC.md) (Settings page, `/api/audio`, Safety).
+
 ### More docs
 
 - [docs/ROADMAP.md](docs/ROADMAP.md): ideas for after submission, starting with free open-source voice models on the Mac mini

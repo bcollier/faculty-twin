@@ -98,9 +98,19 @@ The grounding check is a heuristic. A payload written mostly in the slides' own 
 | Model output | 4,000 tokens per call, 2 calls per question at most | | |
 | Narration | 110 words, 900 characters per segment | | |
 | Voice | daily cap from Settings (default 20,000 characters), 25% per visitor and per address | global plus shares | refused, captions only |
+| Free voices (added Oct 5, voice tiers) | separate daily cap (`DAILY_FREE_VOICE_CHAR_CAP`, default 200,000 characters), 25% per visitor and per address; at most 6 requests at once per instance | global plus shares | refused, captions only |
 | Model price | OpenRouter: $15 in / $60 out per million tokens | | refused if the price cannot be read |
 
 The address hash never enters `question_log`; it lives only in `counters` keys, which expire.
+
+### Voice tiers (added Oct 5, PR `feat/voice-tiers`)
+
+Settings can now pick my ElevenLabs clone, an ElevenLabs stock voice, or a free Microsoft voice through `edge-tts`. What changed for the threat model:
+
+- **No new way to make a voice say arbitrary text.** Free voices go through the same `/api/audio` route: signed text only, the HMAC covers the voice tag, the same 1,000-character link cap and grounding checks before signing. A fallback link is a second signed link for the same narration. `test_signature_covers_text_and_voice`, `test_fallback_free_adds_a_second_signed_link_with_its_own_label`.
+- **Previews speak fixed text.** `GET /api/admin/voice-preview` is admin-only and speaks one sentence set on the server; extra query parameters are ignored; results are cached in memory and counted against the free cap. `test_preview_is_admin_only`, `test_preview_speaks_fixed_text_and_is_cached`.
+- **Honest labels (impersonation).** The clone label is shown only when the ElevenLabs account reports the voice as a clone (`cloned`, or a `professional` clone the account owns). Voice Library voices are also `professional` but not owned, so they are labeled stock. If the category cannot be checked the label is the neutral "AI voice." `test_label_matches_the_voice`, `test_unverifiable_voice_gets_neutral_label_not_clone`, `test_saved_kind_for_another_voice_is_never_reused`.
+- **A free third-party service.** `edge-tts` uses the endpoint behind Edge's Read Aloud, with no account or terms of service of its own; Microsoft can change or block it at any time. It receives only narration text (de-identified course material), never student input or identifiers. Its failures degrade to captions (502 before any audio). New dependencies are pinned in `requirements.txt` (`edge-tts` and `aiohttp` with its closure).
 
 ## 6. Frontend changes (follow-up PR after PR #5 merged)
 
