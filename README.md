@@ -93,6 +93,27 @@ Tests: `uv run --with-requirements requirements.txt --with pytest pytest -q`. Th
 
 Supabase: run `supabase/schema.sql` once in the SQL editor, and create a private Storage bucket named `twin-content`.
 
+### Building and uploading the index (pipeline stages 5 and 6)
+
+All commands run from the repo root and read keys from the git-ignored `.env`. Outputs go to `~/Lecture Archive/_build/`, never the repo.
+
+```bash
+# 5. Merge slides, alignment, code cells, and clips into content/index.json; embed with Voyage (cached).
+uv run --no-project --with-requirements requirements.txt python -m indexer.build_index
+# Suggested questions: writes _build/topics/draft_questions.json to edit, then (with keys and the
+# hand-written retrieval) stored playlists and mp3s under _build/topics/ and _build/audio/<voice_id>/.
+uv run --no-project --with-requirements requirements.txt python -m indexer.pregenerate
+# 6. See what would go to the bucket, then send it (leak check first; bumps settings.index_version).
+uv run --no-project --with-requirements requirements.txt python -m indexer.upload --dry-run
+uv run --no-project --with-requirements requirements.txt python -m indexer.upload
+```
+
+Without `VOYAGE_API_KEY`, `build_index` writes everything except `embeddings.npy` and exits 3; run it again once the key is in `.env`.
+
+### Running the worker (Settings uploads)
+
+`uv run --no-project --with-requirements requirements.txt python -m indexer.worker` polls the `sources` table every 30 seconds, copies each uploaded file into the archive session folder, runs the stages it affects, and marks it ready or error. `--once` polls a single time. To start it at login, follow the steps at the top of `indexer/com.collier.facultytwin.worker.plist`.
+
 ### Voice options
 
 Settings > Voice picks who reads the answers: Ben's ElevenLabs voice clone, another ElevenLabs voice, a free Microsoft neural voice (through [edge-tts](https://github.com/rany2/edge-tts), no key and no cost), or captions only. Every voice is AI-generated, and the page labels it to match: "AI voice made from my recordings." only for the clone, "AI voice (a stock voice, not mine)." for any other voice. An optional fallback lets a free voice take over when ElevenLabs fails or hits its daily cap; the label changes with it. Each tier has its own daily character cap (`DAILY_VOICE_CHAR_CAP` for ElevenLabs, `DAILY_FREE_VOICE_CHAR_CAP` for the free voices). Details: [docs/SPEC.md](docs/SPEC.md) (Settings page, `/api/audio`, Safety).
