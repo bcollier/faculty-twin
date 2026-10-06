@@ -1,5 +1,8 @@
 """Signed audio links and the ElevenLabs voice call.
 
+The free Microsoft voices live in app/edge_voice.py; app/voices.py decides
+which voice speaks (tiers, labels, caps).
+
 The voice only speaks text the backend wrote: `/api/ask` signs each narration
 with AUDIO_SIGNING_SECRET and puts the text and signature in the audio link;
 `/api/audio` refuses anything whose signature does not match.
@@ -12,7 +15,9 @@ and old links stop working (403) instead of speaking in a different voice.
 ElevenLabs (checked against elevenlabs.io/docs, Oct 2026):
 POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream?output_format=mp3_44100_128
   header xi-api-key, body {"text", "model_id"}; returns audio/mpeg bytes as a stream.
-GET  https://api.elevenlabs.io/v2/voices?page_size=100 -> {"voices": [{voice_id, name, category, preview_url}], ...}
+GET  https://api.elevenlabs.io/v2/voices?page_size=100 -> {"voices": [{voice_id, name, category, preview_url,
+  is_owner, ...}], has_more, next_page_token}. Category is "cloned" for an instant clone, "professional" for a
+  professional clone or a Voice Library voice (is_owner tells them apart), "premade" or "generated" for stock voices.
 """
 
 from __future__ import annotations
@@ -20,6 +25,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import threading
+import time
 from typing import Any, AsyncIterator
 
 import httpx
@@ -116,12 +123,13 @@ async def stream_bytes(client: httpx.AsyncClient, resp: httpx.Response) -> Async
         await client.aclose()
 
 
-def list_voices(client: httpx.Client | None = None) -> list[dict[str, Any]]:
+def list_voices(client: httpx.Client | None = None, timeout: float = 15.0) -> list[dict[str, Any]]:
+    """Every voice on the account (free to call: no characters are spent). Refreshes the cache."""
     key = config.env("ELEVENLABS_API_KEY")
     if not key:
         raise VoiceError("ELEVENLABS_API_KEY is not set")
     own = client is None
-    client = client or httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0))
+    client = client or httpx.Client(timeout=httpx.Timeout(timeout, connect=min(5.0, timeout)))
     voices: list[dict[str, Any]] = []
     token: str | None = None
     try:
@@ -140,6 +148,7 @@ def list_voices(client: httpx.Client | None = None) -> list[dict[str, Any]]:
                         "name": v.get("name"),
                         "category": v.get("category"),
                         "preview_url": v.get("preview_url"),
+                        "is_owner": bool(v.get("is_owner")),
                     }
                 )
             token = data.get("next_page_token")
@@ -150,4 +159,56 @@ def list_voices(client: httpx.Client | None = None) -> list[dict[str, Any]]:
     finally:
         if own:
             client.close()
+    with _cache_lock:
+        _cache["voices"], _cache["at"] = voices, time.monotonic()
     return voices
+
+
+# ---------------------------------------------------------------- cached lookups (labels)
+
+CACHE_SECONDS = 3600.0  # a good voice list is reused for an hour
+RETRY_SECONDS = 60.0  # after a failed list call, wait this long before asking ElevenLabs again
+_cache_lock = threading.Lock()
+_cache: dict[str, Any] = {"voices": None, "at": 0.0, "failed_at": 0.0}
+
+
+def clear_cache() -> None:
+    with _cache_lock:
+        _cache.update({"voices": None, "at": 0.0, "failed_at": 0.0})
+
+
+def find_voice(voice_id: str, timeout: float = 4.0) -> dict[str, Any] | None:
+    """One voice from the (cached) account list, or None when it is not there or the list is unavailable.
+
+    Used to decide whether a voice is my clone, so the label students see
+    matches the voice. A failure is remembered briefly so a student request
+    never waits on a down ElevenLabs more than once a minute.
+    """
+    now = time.monotonic()
+    with _cache_lock:
+        voices = _cache["voices"]
+        fresh = voices is not None and now - _cache["at"] < CACHE_SECONDS
+        recently_failed = now - _cache["failed_at"] < RETRY_SECONDS if _cache["failed_at"] else False
+    if not fresh and not recently_failed and config.env("ELEVENLABS_API_KEY"):
+        try:
+            voices = list_voices(timeout=timeout)
+            with _cache_lock:
+                _cache["voices"], _cache["at"], _cache["failed_at"] = voices, now, 0.0
+        except VoiceError as exc:  # keep a stale list if there is one
+            config.log.warning("voice list for labels failed: %s", exc)
+            with _cache_lock:
+                _cache["failed_at"] = now
+    if not voices:
+        return None
+    return next((v for v in voices if v.get("voice_id") == voice_id), None)
+
+
+def is_clone(meta: dict[str, Any]) -> bool:
+    """True for a voice cloned from the account owner's own recordings.
+
+    "cloned" is an instant clone made on this account. "professional" is a
+    professional clone, but voices added from the Voice Library also carry it;
+    only the ones this account owns are mine.
+    """
+    category = meta.get("category")
+    return category == "cloned" or (category == "professional" and bool(meta.get("is_owner")))

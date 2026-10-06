@@ -1,6 +1,7 @@
 """Admin-editable settings, stored as key/value rows in the Supabase `settings` table.
 
-Keys used (docs/SPEC.md): provider, model, voice_id, daily_voice_char_cap,
+Keys used (docs/SPEC.md): provider, model, voice_id, voice_kind, voice_fallback,
+voice_fallback_voice, daily_voice_char_cap, daily_free_voice_char_cap,
 student_passcode_hash, index_version. Rows are cached in memory for 30 seconds
 so a busy function does not hit Postgres on every request. When Supabase is not
 configured (local dev, tests) the env-var defaults apply and writes go to an
@@ -85,7 +86,11 @@ def llm_choice() -> tuple[str, str]:
 
 
 def voice_id() -> str | None:
-    """ElevenLabs voice id, or None for captions only ("none" in settings)."""
+    """The raw voice setting (or ELEVENLABS_VOICE_ID), or None for captions only.
+
+    Values look like "eleven:<id>", "edge:<ShortName>", or an older bare
+    ElevenLabs id; app/voices.py parses them and decides the label.
+    """
     value = get("voice_id") or config.env("ELEVENLABS_VOICE_ID")
     if not value or value == "none":
         return None
@@ -100,6 +105,18 @@ def daily_voice_char_cap() -> int:
         except (TypeError, ValueError):
             pass
     return config.env_int("DAILY_VOICE_CHAR_CAP", config.DEFAULT_DAILY_VOICE_CHAR_CAP)
+
+
+def daily_free_voice_char_cap() -> int:
+    """Daily characters for the free Microsoft voices: higher than ElevenLabs (no cost), but still
+    capped to be a good citizen to a free service."""
+    raw = get("daily_free_voice_char_cap")
+    if raw is not None:
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            pass
+    return config.env_int("DAILY_FREE_VOICE_CHAR_CAP", config.DEFAULT_DAILY_FREE_VOICE_CHAR_CAP)
 
 
 def index_version() -> str | None:

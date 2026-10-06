@@ -92,8 +92,13 @@ def test_model_test_needs_key(admin):
     assert r.status_code == 400 and "OPENROUTER_API_KEY" in r.json()["detail"]
 
 
-def test_voices_needs_key(admin):
-    assert admin.get("/api/admin/voices").status_code == 503
+def test_voices_without_elevenlabs_key_still_offers_free_voices(admin):
+    body = admin.get("/api/admin/voices").json()
+    assert [g["id"] for g in body["groups"]] == ["clone", "elevenlabs", "free"]
+    assert "ELEVENLABS_API_KEY" in body["elevenlabs_error"]
+    groups = {g["id"]: g for g in body["groups"]}
+    assert groups["clone"]["voices"] == [] and groups["elevenlabs"]["voices"] == []
+    assert len(groups["free"]["voices"]) == 8 and groups["free"]["costs_money"] is False
 
 
 def test_courses_from_index_without_supabase(admin):

@@ -27,7 +27,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
-from . import auth, config, limits, llm, playlist, settings_store, speech, storage, supa
+from . import auth, config, edge_voice, limits, llm, playlist, settings_store, speech, storage, supa, voices
 from .main import (
     PasscodeBody,
     RetrievalNotReady,
@@ -173,7 +173,10 @@ class SettingsBody(BaseModel):
     provider: Optional[str] = None
     model: Optional[str] = None
     voice_id: Optional[str] = None
+    voice_fallback: Optional[str] = None
+    voice_fallback_voice: Optional[str] = None
     daily_voice_char_cap: Optional[int] = None
+    daily_free_voice_char_cap: Optional[int] = None
     student_passcode: Optional[str] = None
 
 
@@ -196,7 +199,9 @@ def settings_view() -> dict[str, Any]:
         "voice_id": stored_voice or None,  # null = server default, "none" = captions only
         "voice_source": voice_source,
         "voice_default_configured": bool(config.env("ELEVENLABS_VOICE_ID")),
+        **voice_view(),
         "daily_voice_char_cap": settings_store.daily_voice_char_cap(),
+        "daily_free_voice_char_cap": settings_store.daily_free_voice_char_cap(),
         "per_minute_limit": config.PER_MINUTE_LIMIT,
         "per_day_limit": config.PER_DAY_LIMIT,
         "question_max_chars": config.QUESTION_MAX_CHARS,
@@ -205,6 +210,62 @@ def settings_view() -> dict[str, Any]:
         "student_passcode_source": "settings" if settings_store.get("student_passcode_hash") else "env",
         "index_version": settings_store.index_version(),
     }
+
+
+def voice_view() -> dict[str, Any]:
+    """What the voice setting means right now, and the label students see for it."""
+    plan = voices.current()
+    return {
+        "voice_kind": voices.setting_kind(voices.stored_setting()),
+        "voice_label": plan.primary.label if plan.primary else None,
+        "voice_costs_money": bool(plan.primary and plan.primary.costs_money),
+        "voice_fallback": voices.fallback_mode(),
+        "voice_fallback_voice": f"edge:{voices.fallback_voice_name()}",
+        "voice_fallback_label": plan.fallback.label if plan.fallback else None,
+    }
+
+
+def _check_free_voice(name: str) -> None:
+    known = edge_voice.is_known_voice_sync(name)
+    if known is None:
+        raise HTTPException(502, "Could not check that voice name with Microsoft right now. Try again shortly.")
+    if not known:
+        raise HTTPException(
+            400,
+            f"Microsoft has no voice named {name}. Pick one from the list, or check the ShortName "
+            "(for example en-US-AndrewMultilingualNeural).",
+        )
+
+
+def _voice_values(raw: Optional[str]) -> dict[str, Any]:
+    """Validate a voice choice and return the settings rows to write (voice_id and voice_kind)."""
+    try:
+        parsed = voices.parse(raw)
+    except voices.BadVoice as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if parsed is None:
+        return {"voice_id": None, "voice_kind": None}  # server default (ELEVENLABS_VOICE_ID)
+    provider, voice_id = parsed
+    if provider == "none":
+        return {"voice_id": "none", "voice_kind": None}
+    if provider == voices.EDGE:
+        _check_free_voice(voice_id)
+        return {"voice_id": f"edge:{voice_id}", "voice_kind": None}
+    # ElevenLabs: check the voice is on the account and record whether it is my clone, so the
+    # student label is right. Without a key (local dev) it is saved unverified (neutral label).
+    kind = None
+    if config.env("ELEVENLABS_API_KEY"):
+        try:
+            account = speech.list_voices()
+        except speech.VoiceError as exc:
+            raise HTTPException(502, f"Could not check that voice with ElevenLabs: {exc}") from exc
+        meta = next((v for v in account if v.get("voice_id") == voice_id), None)
+        if meta is None:
+            raise HTTPException(400, "That voice is not on the ElevenLabs account.")
+        kind = "clone" if speech.is_clone(meta) else "stock"
+    sent = (raw or "").strip()
+    stored = sent if sent == voice_id else f"eleven:{voice_id}"  # an older bare id stays as it was sent
+    return {"voice_id": stored, "voice_kind": {"voice_id": voice_id, "kind": kind} if kind else None}
 
 
 @router.get("/settings")
@@ -227,14 +288,28 @@ def put_settings(body: SettingsBody, _: auth.Session = Depends(auth.require_admi
         values["model"] = model
         values.setdefault("provider", settings_store.llm_choice()[0])
     if "voice_id" in body.model_fields_set:
-        voice = (body.voice_id or "").strip()
-        if voice and not re.match(r"^[A-Za-z0-9_\-]{1,100}$", voice):
-            raise HTTPException(400, "That voice id does not look right.")
-        values["voice_id"] = voice or None  # null: server default; "none": captions only
+        values.update(_voice_values(body.voice_id))  # null: server default; "none": captions only
+    if body.voice_fallback is not None:
+        if body.voice_fallback not in voices.FALLBACK_MODES:
+            raise HTTPException(400, "voice_fallback must be captions or free.")
+        values["voice_fallback"] = body.voice_fallback
+    if body.voice_fallback_voice is not None:
+        try:
+            parsed = voices.parse(body.voice_fallback_voice)
+        except voices.BadVoice as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if not parsed or parsed[0] != voices.EDGE:
+            raise HTTPException(400, "The fallback must be one of the free Microsoft voices (edge:...).")
+        _check_free_voice(parsed[1])
+        values["voice_fallback_voice"] = f"edge:{parsed[1]}"
     if body.daily_voice_char_cap is not None:
         if not 0 <= body.daily_voice_char_cap <= 10_000_000:
             raise HTTPException(400, "The daily voice cap must be between 0 and 10,000,000 characters.")
         values["daily_voice_char_cap"] = body.daily_voice_char_cap
+    if body.daily_free_voice_char_cap is not None:
+        if not 0 <= body.daily_free_voice_char_cap <= 10_000_000:
+            raise HTTPException(400, "The free voice cap must be between 0 and 10,000,000 characters.")
+        values["daily_free_voice_char_cap"] = body.daily_free_voice_char_cap
     if body.student_passcode is not None:
         code = body.student_passcode.strip()
         if not 6 <= len(code) <= 100:
@@ -349,7 +424,11 @@ def status(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
             "slides": sum(1 for r in loaded.records if r.get("kind", "slide") == "slide") if loaded else 0,
             "index_version": loaded.version if loaded else None,
         },
-        "today": {**limits.today_counters(), "voice_char_cap": settings_store.daily_voice_char_cap()},
+        "today": {
+            **limits.today_counters(),
+            "voice_char_cap": settings_store.daily_voice_char_cap(),
+            "free_voice_char_cap": settings_store.daily_free_voice_char_cap(),
+        },
         "limits": {
             "per_minute": config.PER_MINUTE_LIMIT,
             "per_day": config.PER_DAY_LIMIT,
@@ -369,15 +448,117 @@ def question_log(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any
 
 # ---------------------------------------------------------------- voice
 
+VOICE_GROUPS = {
+    "clone": {
+        "label": "My voice clone",
+        "cost": "ElevenLabs: costs credits per character.",
+        "costs_money": True,
+        "student_label": voices.CLONE_LABEL,
+    },
+    "elevenlabs": {
+        "label": "ElevenLabs voices",
+        "cost": "ElevenLabs: costs credits per character.",
+        "costs_money": True,
+        "student_label": voices.STOCK_LABEL,
+    },
+    "free": {
+        "label": "Free Microsoft voices",
+        "cost": "Free: no key, no cost (Microsoft neural voices through edge-tts).",
+        "costs_money": False,
+        "student_label": voices.STOCK_LABEL,
+    },
+}
+
+
+def preview_path(setting: str) -> str:
+    return f"/api/admin/voice-preview?voice={setting}"
+
+
 @router.get("/voices")
-def voices(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
-    """Voices on the ElevenLabs account. Saving `voice_id: "none"` means captions only."""
+def list_voice_options(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """Every voice Settings can pick, in three groups: my clone, ElevenLabs stock, free Microsoft.
+
+    Ids are what `PUT /api/admin/settings {voice_id}` takes. "none" (captions
+    only) and null (server default) are offered by the page itself.
+    """
+    default_id = config.env("ELEVENLABS_VOICE_ID")
+    clone: list[dict[str, Any]] = []
+    stock: list[dict[str, Any]] = []
+    eleven_error = None
     if not config.env("ELEVENLABS_API_KEY"):
-        raise HTTPException(503, "ELEVENLABS_API_KEY is not set.")
+        eleven_error = "ELEVENLABS_API_KEY is not set, so only the free voices and captions are available."
+    else:
+        try:
+            for v in speech.list_voices():
+                if not v.get("voice_id"):
+                    continue
+                entry = {
+                    "voice_id": f"eleven:{v['voice_id']}",
+                    "name": v.get("name") or v["voice_id"],
+                    "category": v.get("category"),
+                    "preview_url": v.get("preview_url"),
+                    "is_default": v["voice_id"] == default_id,
+                }
+                (clone if speech.is_clone(v) else stock).append(entry)
+        except speech.VoiceError as exc:
+            eleven_error = f"Could not load ElevenLabs voices: {exc}"
+    clone.sort(key=lambda e: (not e["is_default"], str(e["name"]).lower()))
+    stock.sort(key=lambda e: str(e["name"]).lower())
+    free = [
+        {
+            "voice_id": f"edge:{short}",
+            "name": name,
+            "category": "free",
+            "description": desc,
+            "preview_url": preview_path(f"edge:{short}"),
+            "is_default": False,
+        }
+        for short, (name, desc) in edge_voice.FREE_VOICES.items()
+    ]
+    groups = [
+        {"id": gid, **VOICE_GROUPS[gid], "voices": items}
+        for gid, items in (("clone", clone), ("elevenlabs", stock), ("free", free))
+    ]
+    return {
+        "groups": groups,
+        "voices": clone + stock + free,
+        "elevenlabs_error": eleven_error,
+        "free_voice_default": f"edge:{edge_voice.DEFAULT_FREE_VOICE}",
+        "preview_text": edge_voice.PREVIEW_TEXT,
+    }
+
+
+@router.get("/voice-preview")
+async def voice_preview(
+    voice: str = Query(..., max_length=120), _: auth.Session = Depends(auth.require_admin)
+) -> Response:
+    """One fixed sentence (server-side text, never caller-supplied) in a free voice, cached in memory.
+
+    ElevenLabs voices use the `preview_url` from their own voice list instead,
+    which costs no characters.
+    """
     try:
-        return {"voices": speech.list_voices()}
-    except speech.VoiceError as exc:
-        raise HTTPException(502, f"Could not load voices: {exc}") from exc
+        parsed = voices.parse(voice)
+    except voices.BadVoice as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not parsed or parsed[0] != voices.EDGE:
+        raise HTTPException(400, "Previews here are for the free Microsoft voices (edge:...).")
+    name = parsed[1]
+    known = await edge_voice.is_known_voice(name)
+    if known is None:
+        raise HTTPException(502, "Could not check that voice name with Microsoft right now.")
+    if not known:
+        raise HTTPException(400, f"Microsoft has no voice named {name}.")
+    if edge_voice.preview_cached(name) is None and not limits.take_voice_chars(
+        len(edge_voice.PREVIEW_TEXT), settings_store.daily_free_voice_char_cap(), pool="free"
+    ):
+        raise HTTPException(429, "The free voices have reached today's limit.")
+    try:
+        data = await edge_voice.preview(name)
+    except edge_voice.FreeVoiceError as exc:
+        config.log.warning("voice preview failed: %s", exc)
+        raise HTTPException(502, "The free voice service did not respond. Try again.") from exc
+    return Response(data, media_type="audio/mpeg", headers={"Cache-Control": "private, max-age=86400"})
 
 
 # ---------------------------------------------------------------- courses and sessions

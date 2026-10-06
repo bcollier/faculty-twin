@@ -137,6 +137,7 @@ const ui = {
   dock: $('#dock'), dockToggle: $('#dock-toggle'), log: $('#log'), dockLog: $('#dock-log'),
   followups: $('#followups'), followupChips: $('#followup-chips'), dockForm: $('#dock-form'), dockQ: $('#dock-q'),
   dialog: $('#slide-dialog'), dialogTitle: $('#slide-dialog-h'), dialogImg: $('#slide-dialog-img'),
+  idleVoiceLabel: $('#idle-voice-label'), idleVoiceText: $('#idle-voice-text'), voiceLabel: $('#voice-label'),
 };
 
 const app = {
@@ -148,6 +149,7 @@ const app = {
   sourceCount: 0,
   sourcesBlock: null,    // the newest answer's "Slides used in this answer" list
   refreshedFor: 0,       // requestId whose expired links were already refreshed once
+  voice: null,           // /api/voice: { kind, label, fallback } for the voice that will speak
 };
 
 /* The course filter is remembered on this device (spec). Storage can be blocked, so never rely on it. */
@@ -198,6 +200,7 @@ async function boot() {
     if (res.status === 401) return showLogin();
     if (!res.ok) throw new NetworkError(`HTTP ${res.status}`);
     app.topics = normalizeTopics(res.data);
+    loadVoice();
     enterApp();
   } catch (err) {
     showScreen('offline');
@@ -229,6 +232,7 @@ ui.loginForm.addEventListener('submit', async (e) => {
     if (!res.ok) { ui.loginError.textContent = COPY.generic[0] + ' ' + COPY.generic[1]; return; }
     const topics = await api('/api/topics');
     app.topics = topics.ok ? normalizeTopics(topics.data) : [];
+    loadVoice();
     enterApp();
   } catch {
     ui.loginError.textContent = COPY.unreachable.join(' ');
@@ -240,6 +244,48 @@ ui.loginForm.addEventListener('submit', async (e) => {
 document.addEventListener('click', (e) => {
   if (e.target.closest('[data-action="boot-retry"]')) boot();
 });
+
+/* =====================================================================
+   Voice label
+   The label must name the voice that actually speaks: my clone ("made from my
+   recordings"), a stock or free voice ("a stock voice, not mine"), or nothing
+   for captions only. The server decides the kind; the page never assumes the clone.
+   ===================================================================== */
+
+const IDLE_VOICE_TEXT = {
+  clone: 'The voice is AI-generated from recordings of me, Ben Collier. It only explains what is on my slides and what I said in class.',
+  stock: 'The voice is AI-generated (a stock voice, not mine). It only explains what is on my slides and what I said in class.',
+  free: 'The voice is AI-generated (a stock voice, not mine). It only explains what is on my slides and what I said in class.',
+  unverified: 'The voice is AI-generated. It only explains what is on my slides and what I said in class.',
+};
+
+async function loadVoice() {
+  try {
+    const res = await api('/api/voice');
+    if (res.ok && res.data) app.voice = res.data;
+  } catch { /* keep the neutral label already on the page */ }
+  renderIdleVoice();
+  updateVoiceLabel();
+}
+
+function renderIdleVoice() {
+  const kind = app.voice?.kind;
+  if (kind === 'none') { ui.idleVoiceLabel.hidden = true; return; }
+  ui.idleVoiceLabel.hidden = false;
+  ui.idleVoiceText.textContent = IDLE_VOICE_TEXT[kind] || IDLE_VOICE_TEXT.unverified;
+}
+
+/** The dock label follows the voice speaking the current segment (it changes if the fallback voice takes over). */
+function updateVoiceLabel() {
+  let label = app.voice ? app.voice.label : 'AI voice.';
+  const seg = player.segments[player.index];
+  if (player.answer && seg) {
+    const v = player.useFallback ? seg.voice_fallback : seg.voice;
+    label = player.captionsOnly ? null : (v?.label || null);
+  }
+  ui.voiceLabel.textContent = label || '';
+  ui.voiceLabel.hidden = !label;
+}
 
 function enterApp() {
   showScreen('app');
@@ -494,6 +540,7 @@ const player = {
   playing: false,
   muted: false,
   captionsOnly: false,
+  useFallback: false,   // the first voice failed: segments play their audio_fallback (a free voice) instead
   finished: false,
   audio: new Map(),     // index -> HTMLAudioElement (current and preloaded)
   current: null,        // HTMLAudioElement playing now
@@ -512,6 +559,7 @@ function loadAnswer(answer, start = 0) {
   player.clipFailed.clear();
   start = Math.min(Math.max(0, start), player.segments.length - 1);
   player.captionsOnly = player.segments.every(s => !s.audio);
+  player.useFallback = false;
   player.finished = false;
   ui.audioNote.hidden = !player.captionsOnly;
   buildDots();
@@ -554,6 +602,7 @@ function showSegment(i) {
 
   updateDots();
   updateControls();
+  updateVoiceLabel();
   app.sourcesBlock?.querySelectorAll('.source-btn').forEach(b => b.setAttribute('aria-current', String(b.dataset.slide === seg.slide_id)));
 }
 
@@ -596,7 +645,8 @@ function syncCaption(fraction) {
 /** The audio element for segment i, created once and reused (this is also the preload). */
 function audioFor(i) {
   const seg = player.segments[i];
-  if (!seg || !seg.audio || player.captionsOnly) return null;
+  const url = seg && (player.useFallback ? seg.audio_fallback : seg.audio);
+  if (!url || player.captionsOnly) return null;
   if (player.audio.has(i)) return player.audio.get(i);
   const a = new Audio();
   a.preload = 'auto';
@@ -605,8 +655,8 @@ function audioFor(i) {
   a.addEventListener('timeupdate', () => {
     if (a === player.current && a.duration) syncCaption(a.currentTime / a.duration);
   });
-  a.addEventListener('error', () => { if (a === player.current) fallBackToCaptions(); });
-  a.src = seg.audio;
+  a.addEventListener('error', () => { if (a === player.current) voiceFailed(); });
+  a.src = url;
   player.audio.set(i, a);
   return a;
 }
@@ -639,7 +689,7 @@ function playCurrent() {
           player.sentenceIdx = -1;
           updateControls();
         } else if (err && err.name !== 'AbortError') {
-          fallBackToCaptions();
+          voiceFailed();
         }
       });
     }
@@ -679,7 +729,7 @@ function resumePlayback() {
   }
   player.playing = true;
   if (player.current) {
-    player.current.play().catch(() => fallBackToCaptions());
+    player.current.play().catch(() => voiceFailed());
   } else if (player.timer) {
     resumeCaptionTimer();
   } else {
@@ -722,6 +772,25 @@ function finishAnswer() {
   updateControls();
 }
 
+/** The current voice failed (service down, or today's cap). Switch to the free fallback voice
+    if the answer has one, otherwise keep going with captions. */
+function voiceFailed() {
+  const seg = player.segments[player.index];
+  if (!player.useFallback && seg && seg.audio_fallback) switchToFallbackVoice();
+  else fallBackToCaptions();
+}
+
+/** Play the rest of this answer with the fallback voice, and change the label to match it. */
+function switchToFallbackVoice() {
+  player.useFallback = true;
+  for (const a of player.audio.values()) { a.pause(); a.removeAttribute('src'); a.load(); }
+  player.audio.clear();
+  player.current = null;
+  updateVoiceLabel();
+  if (player.playing) { playCurrent(); preloadAudio(player.index + 1); }
+  updateControls();
+}
+
 /** Audio failed or the daily voice cap was hit: keep going with captions and a timer. */
 function fallBackToCaptions() {
   if (player.captionsOnly) return;
@@ -732,6 +801,7 @@ function fallBackToCaptions() {
   player.current = null;
   if (player.playing) startCaptionTimer();
   updateControls();
+  updateVoiceLabel();
 }
 
 /* ---- captions-only timer: paces a segment by word count, then calls onClipEnded() ---- */

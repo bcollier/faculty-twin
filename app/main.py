@@ -19,7 +19,21 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import auth, config, embed, limits, llm, narration, playlist, retrieval, settings_store, speech, storage
+from . import (
+    auth,
+    config,
+    edge_voice,
+    embed,
+    limits,
+    llm,
+    narration,
+    playlist,
+    retrieval,
+    settings_store,
+    speech,
+    storage,
+    voices,
+)
 from .storage import Content
 
 app = FastAPI(title="Faculty Twin", docs_url=None, redoc_url=None, openapi_url=None)
@@ -159,7 +173,7 @@ def answer(
     """Run retrieval + narration. Returns (playlist, info for logging)."""
     if provider is None or model is None:
         provider, model = settings_store.llm_choice()
-    voice = settings_store.voice_id()
+    voice = voices.for_answer()
     info: dict[str, Any] = {"provider": provider, "model": model, "top_score": None, "narration": None}
 
     stored = _stored_topic(content, question, course)
@@ -223,18 +237,20 @@ def _stored_topic(content: Content, question: str, course: Optional[str]) -> Opt
     return None
 
 
-def _replay_topic(content: Content, question: str, topic: dict[str, Any], voice: Optional[str]) -> dict[str, Any]:
+def _replay_topic(content: Content, question: str, topic: dict[str, Any], voice: voices.Plan) -> dict[str, Any]:
     """Rebuild a pre-generated playlist with fresh signed links."""
     stored = topic["playlist"]
     segs = [s for s in stored.get("segments", []) if content.record(s.get("slide_id", ""))]
     chosen = [content.record(s["slide_id"]) for s in segs]
     narrations = {s["slide_id"]: s.get("narration", "") for s in segs}
     result = playlist.build_playlist(content, question, chosen, narrations, stored.get("follow_ups", []), voice)
-    if voice is None:
+    if voice.primary is None:
         return result  # captions only
-    # Stored mp3s live at audio/<voice_id>/<hash>.mp3; only use one made with the current voice.
+    # Stored mp3s live at audio/<voice tag>/<hash>.mp3 (older ElevenLabs ones at audio/<voice id>/);
+    # only use one made with the voice that is speaking, so the label stays true.
+    prefixes = voice.primary.audio_prefixes()
     paths = {s["slide_id"]: str(s.get("audio_path") or "").lstrip("/") for s in segs}
-    usable = {k: p for k, p in paths.items() if p.startswith(f"audio/{voice}/")}
+    usable = {k: p for k, p in paths.items() if p.startswith(prefixes)}
     audio = storage.media_urls(list(usable.values()))
     for seg in result["segments"]:
         path = usable.get(seg["slide_id"])
@@ -268,6 +284,15 @@ def logout(response: Response) -> dict[str, bool]:
 @app.get("/api/courses")
 def courses(_: auth.Session = Depends(auth.require_student), content: Content = Depends(get_content)) -> list:
     return playlist.courses(content)
+
+
+@app.get("/api/voice")
+def voice_info(_: auth.Session = Depends(auth.require_student)) -> dict[str, Any]:
+    """What students are told about the voice: `{kind, label, fallback: {kind, label} | null}`.
+
+    kind is "clone", "stock", "free", "unverified", or "none" (captions only, label null).
+    """
+    return voices.for_answer().public()
 
 
 @app.get("/api/topics")
@@ -312,28 +337,34 @@ async def audio(
     v: str = Query("", max_length=40),
     session: auth.Session = Depends(auth.require_student),
 ):
-    text = speech.verify(t, v, s)
+    text = speech.verify(t, v, s)  # the signature covers the text and the voice tag
     if text is None:
         raise HTTPException(403, "This audio link is not valid.")
-    voice = settings_store.voice_id()
-    if voice is None:
+    plan = voices.current(resolve_kind=False)
+    if plan.primary is None:
         raise HTTPException(404, "The voice is turned off. Captions only.")
-    if speech.voice_tag(voice) != v:
+    voice = plan.match(v)
+    if voice is None:
         raise HTTPException(403, "This audio link is from an older voice setting. Please ask again.")
+    # Each tier has its own daily cap (ElevenLabs costs money; the free voices are capped higher).
     if not limits.take_voice_chars(
-        len(text), settings_store.daily_voice_char_cap(), auth.visitor_key(session), limits.client_hash(request)
+        len(text), voices.daily_cap(voice), auth.visitor_key(session), limits.client_hash(request), pool=voice.pool
     ):
         raise HTTPException(429, "The voice has reached today's limit. Captions only for now.")
+    headers = {"Cache-Control": "private, max-age=86400"}
+    if voice.provider == voices.EDGE:
+        try:
+            stream = await edge_voice.open_stream(text, voice.voice_id)
+        except edge_voice.FreeVoiceError as exc:
+            config.log.warning("free voice failed: %s", exc)
+            raise HTTPException(502, "The voice service is not available right now. Captions only.") from exc
+        return StreamingResponse(stream, media_type="audio/mpeg", headers=headers)
     try:
-        client, resp = await speech.open_stream(text, voice)
+        client, resp = await speech.open_stream(text, voice.voice_id)
     except speech.VoiceError as exc:
         config.log.warning("voice failed: %s", exc)
         raise HTTPException(502, "The voice service is not available right now. Captions only.") from exc
-    return StreamingResponse(
-        speech.stream_bytes(client, resp),
-        media_type="audio/mpeg",
-        headers={"Cache-Control": "private, max-age=86400"},
-    )
+    return StreamingResponse(speech.stream_bytes(client, resp), media_type="audio/mpeg", headers=headers)
 
 
 @app.get("/api/files/{path:path}")
