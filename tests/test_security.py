@@ -456,3 +456,30 @@ def test_anthropic_fallbacks_shape(monkeypatch):
     assert req.body["fallbacks"] == "default"
     req = llm.build_anthropic("claude-haiku-4-5", "s", "u", 100)
     assert "fallbacks" not in req.body and "anthropic-beta" not in req.headers
+
+
+# ---------------------------------------------------------------- frontend guards (public/)
+
+def test_frontend_has_no_html_sinks():
+    """Model output, captions, titles, follow-ups, and log rows must be set as text, never parsed as HTML."""
+    sinks = ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function")
+    for js in (ROOT / "public").rglob("*.js"):
+        text = js.read_text()
+        for sink in sinks:
+            assert sink not in text, f"{sink} in {js.relative_to(ROOT)}"
+
+
+def test_mock_api_loads_only_on_local_hosts():
+    for name in ("app.js", "admin.js"):
+        text = (ROOT / "public" / name).read_text()
+        assert "DEV_HOSTS.includes(location.hostname) && new URLSearchParams" in text, name
+
+
+def test_upload_is_confirmed_with_complete():
+    text = (ROOT / "public" / "admin.js").read_text()
+    assert "/complete`" in text
+
+
+def test_student_page_asks_for_no_names():
+    html = (ROOT / "public" / "index.html").read_text()
+    assert "leave out names" in html

@@ -3,8 +3,9 @@
 // Screens: boot -> (offline | login | app). The app has two views: idle and presenting.
 // The player is a small state machine; see the "Player" section below.
 
-if (new URLSearchParams(location.search).get('mock') === '1') {
-  // Development only: canned responses that match the API contract. Never loaded otherwise.
+const DEV_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+if (DEV_HOSTS.includes(location.hostname) && new URLSearchParams(location.search).get('mock') === '1') {
+  // Development only (local hosts only): canned responses that match the API contract. Never loaded otherwise.
   await import('./dev/mock.js');
 }
 
