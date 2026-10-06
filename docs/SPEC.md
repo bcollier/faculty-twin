@@ -309,7 +309,7 @@ faculty-twin/
 >
 > 1. The most current slide PDF per session. It gives the images and the slide numbers students see on Canvas, so citations match.
 > 2. The pptx speaker notes, matched to PDF pages by position.
-> 3. The Zoom VTT transcript per session, de-identified, with student turns marked and excluded. No longer optional: it is what lets the twin say what I actually said in class, and it drives alignment and clips.
+> 3. The Zoom VTT transcript per session, de-identified (for 45-884 Fall 2026, the ASR-corrected cue files in my FacultyTwinContent folder, `*.cleaned.timed.jsonl`, same Zoom timings; for 70-445 session 11, which has no Zoom captions in Drive, a local Whisper transcript until the Zoom file is pulled), with student turns marked and excluded. No longer optional: it is what lets the twin say what I actually said in class, and it drives alignment and clips.
 > 4. Notebooks, when a session has them.
 > 5. The class video. Used only to align slides and cut clips. Never indexed as text.
 
@@ -472,6 +472,7 @@ Added Oct 5. This is the part that did not exist when the app was one deck. Ever
 - Parse the VTT into cues with start and end times in seconds.
 - **Roster scrub.** Load the rosters from `~/Lecture Archive/_private/rosters/` into memory only. Build a list of first names, last names, preferred names, and full names, and replace every match in cue text with `[student]`. Names that are also ordinary English words are replaced only in name-like positions (start of a sentence followed by a comma, after "thanks", "yes", "go ahead", before "'s team") and every such case is flagged for review. The same scrub runs on slide text and speaker notes, since a slide can list a team.
 - **Student turns.** Detected from content, because the label cannot tell. A cue is `student` when it falls inside a stretch that starts right after I hand the floor to someone (I say a student's name, "go ahead", "yes?", "what do you think?") and ends when I take it back ("great question", "so", "right, so"). Known student segments (the "AI in the News" and "AI Methods in the News" presentations, team presentations) are marked from a small per-session time-range file in `_build/overrides/`, which holds times only. Anything the rules are unsure of is `unclear`. Only `instructor` cues are ever used as narration material or clip audio; `student` and `unclear` are dropped.
+- **Everyone else named, too.** Added Oct 5 (later the same evening). I asked for every person named in a transcript to be de-identified except me (Ben, Benjamin, Ben Collier, Professor or Dr. Collier). That includes public figures I talk about, such as researchers and executives. Students and anyone I address in class become `[student]`; everyone else becomes `[person]`. Company, product, and model names are not people and stay. Slide text is not changed by this rule, so a name printed on a slide still shows on the slide. Detection uses capitalized-name patterns and a name list in addition to the roster, and the review file counts `[person]` replacements.
 - **Leak check.** Before anything is uploaded, every text output (`slides.json`, transcripts, alignment, the index, the clip manifest) is re-scanned against the full roster. One hit fails the stage. This automated check is the gate.
 - **Review.** `review/<course>-s<NN>.txt` lists the number of replacements, the flagged ambiguous cases, the student-turn stretches, and capitalized words that are not in the course vocabulary (possible names the roster cannot know, such as a nickname or a guest). I skim it per session. The review file stays in `_build/review/`, is never printed to the terminal, logged, or uploaded, and nothing in the pipeline ever prints a roster name.
 
@@ -486,7 +487,7 @@ Added Oct 5. This is the part that did not exist when the app was one deck. Ever
 - Only frame-matched windows, so the video shows that slide. Text-only alignments never become clips.
 - 15 to 90 seconds. Adjacent windows of the same slide merge when the gap is under 5 seconds. Cuts land on cue boundaries; a window over 90 seconds is cut at the last cue boundary before 90.
 - Instructor only: every cue overlapping the window, plus 5 seconds on each side, must be `instructor`. Any `student` or `unclear` cue disqualifies it.
-- No student names in the audio or text: no `[student]` token in the padded window, and the slide's own text and notes have no roster hit.
+- No names in the audio or text: no `[student]` or `[person]` token in the padded window (audio cannot be de-identified), and the slide's own text and notes have no roster hit.
 - No student names on screen: frame matching already guarantees the screen shows my slide, not a Canvas page or a participant list. A slide whose text had a roster hit gets no clip.
 - No embedded third-party video playing in the window (the frame match drops while it plays, and the audio is not me).
 - Excluded entirely: the student "AI in the News" and "AI Methods in the News" presentations, any student presentation, and the Tesla vs Waymo case sessions (45-884 session 11, and session 12 when it happens). I am keeping that case private for now; its slides are still indexed.
@@ -619,7 +620,7 @@ Added Oct 5.
 - Use a deck Ben is comfortable publishing in full: no textbook figures, no licensed images, no unreleased exam material. *(Changed Oct 5: content is no longer published. It sits behind the passcode for my own students, which is how it is already shared on Canvas. Graded material and answer keys still stay out.)*
 - The question log stores question text and scores only. No names, no accounts, no IP addresses in the stored rows.
 - Voice recordings used for cloning are Ben's own. Check the voice provider's current terms and plan requirements before uploading.
-- Added Oct 5. Every student name is replaced with `[student]` at import, in transcripts and in slide text. Rosters stay in `~/Lecture Archive/_private/rosters/` and are never copied, printed, logged, uploaded, or committed. The leak check is the gate before any upload.
+- Added Oct 5. Every student name is replaced with `[student]` at import, in transcripts and in slide text. In transcripts, every other person named except me is replaced with `[person]`. Rosters stay in `~/Lecture Archive/_private/rosters/` and are never copied, printed, logged, uploaded, or committed. The leak check is the gate before any upload.
 - Added Oct 5. Student turns are marked and never used as narration material or clip audio. Unsure turns are treated as student turns.
 - Added Oct 5. Clips follow the clip rules above: instructor only, no names in the audio, text, or on screen, no student presentations, and nothing from the Tesla vs Waymo case sessions.
 - Added Oct 5. Only de-identified text leaves my Mac: the narration provider (including models reached through OpenRouter) and Voyage see slide text, notes, and de-identified instructor speech, never a roster or a raw transcript.

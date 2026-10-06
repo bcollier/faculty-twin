@@ -8,3 +8,6 @@ __pycache__/
 
 # Reference material, not ours to publish
 gpt-digital-twin-guide.pdf
+
+# Agent worktrees
+.claude/worktrees/
