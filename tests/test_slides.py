@@ -4,6 +4,8 @@ Run: uv run --no-project --with pytest --with nbformat python -m pytest tests/te
 """
 
 import json
+
+import pytest
 import sys
 from pathlib import Path
 
@@ -102,7 +104,7 @@ def test_titles_and_boilerplate():
 
 
 def test_notebook_extraction_strips_outputs(tmp_path, monkeypatch):
-    import nbformat
+    nbformat = pytest.importorskip("nbformat")  # indexer-only dependency, not in requirements.txt
 
     folder = tmp_path / "70445" / "01 2026-08-25 Demo"
     (folder / "notebooks").mkdir(parents=True)
