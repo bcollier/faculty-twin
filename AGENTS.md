@@ -96,6 +96,11 @@ You may write function signatures, docstrings, and failing tests for them in
   tool and model used.
 - Record any place the AI got something wrong as a fact; Ben writes the
   reflection in his own words.
+- "Verbatim" has one exception: redact passcodes and secrets. Replace the
+  student passcode with `[student passcode redacted]`, and any admin passcode,
+  API key, token, or service key with `[secret redacted]`. This applies to
+  prompts and to any terminal output Ben pasted into a prompt. Note the
+  redaction in the entry so the log stays honest about what was changed.
 
 ## README
 
