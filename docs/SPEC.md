@@ -754,7 +754,7 @@ New Oct 5 (replaces the slide half of the original Block 1).
 New Oct 5 (replaces the index half of the original Block 1).
 
 1. `indexer/align.py`: frame matching where the recording is a screen share, text similarity with the in-order constraint as fallback (stage 3).
-2. Write `indexer/code_map.json` by hand for the sessions with notebooks. *(Added Oct 5, late: `indexer/suggest_code_map.py` writes a draft, TF-IDF cosine between cells and slides of the same course with a same-session preference, at most two cells per slide, and the table `docs/code_map_review.md` for me to strike rows from. Keys starting with `_` (source note, method, scores) are ignored by the index stage.)*
+2. Write `indexer/code_map.json` by hand for the sessions with notebooks. *(Added Oct 5, late: `indexer/suggest_code_map.py` writes a draft, TF-IDF cosine between cells and slides of the same course with a same-session preference, at most two cells per slide, and a review table for me to strike rows from. The table holds slide titles and code, so it is written to `_build/code_map_review.md` on my Mac, not the public repo. Keys starting with `_` (source note, method, scores) are ignored by the index stage.)*
 3. `indexer/build_index.py`: records, code cells, Voyage embeddings with the cache, `index.json` and `embeddings.npy`, leak check (stage 5). If the Voyage key is not in yet, it writes everything else and embeds when the key arrives.
 
 **Check:** open `index.json` and read three records from different sessions. For each, open the class video at the start of its first window and see that slide on screen. Record count equals slides plus code cells, and `embeddings.npy` has the same number of rows.
