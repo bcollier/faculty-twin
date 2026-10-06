@@ -368,7 +368,7 @@ async function route(url, method, body) {
     return json(200, { source_id: id, path: p, upload_url: `/__mock_upload/${id}`, method: 'PUT', headers: { 'x-upsert': 'true' } });
   }
   if (path === '/api/admin/sources') return json(200, admin.sources);
-  if ((m = path.match(/^\/api\/admin\/sources\/(\d+)\/rerun$/)) && method === 'POST') {
+  if ((m = path.match(/^\/api\/admin\/sources\/(\d+)\/(rerun|complete)$/)) && method === 'POST') {
     const s = admin.sources.find(x => x.id === Number(m[1]));
     if (!s) return json(404, { detail: 'No such source' });
     Object.assign(s, { status: 'uploaded', message: '', updated_at: new Date().toISOString() });
