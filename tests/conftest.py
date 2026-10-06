@@ -26,6 +26,9 @@ KEYS_TO_CLEAR = [
     "LLM_PROVIDER",
     "LLM_MODEL",
     "DAILY_VOICE_CHAR_CAP",
+    "DAILY_FREE_VOICE_CHAR_CAP",
+    "EDGE_TTS_RATE",
+    "EDGE_TTS_PITCH",
     "VERCEL",
     "VERCEL_ENV",
     "VERCEL_REGION",
@@ -55,12 +58,14 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("ADMIN_PASSCODE", "admin-pass")
     monkeypatch.delenv("CONTENT_DIR", raising=False)
 
-    from app import limits, playlist, settings_store, storage
+    from app import edge_voice, limits, playlist, settings_store, speech, storage
 
     storage.store.reset()
     settings_store.clear_cache()
     limits.reset_memory()
     playlist.clear_hidden_cache()
+    speech.clear_cache()
+    edge_voice.clear_cache()
     yield
     storage.store.reset()
     settings_store.clear_cache()
