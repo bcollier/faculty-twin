@@ -93,6 +93,8 @@ def test_leak_check_aborts_on_roster_hit(tmp_path):
     assert fake.uploads == [] and fake.settings == {}
     assert "70445-s01-001.transcript" in out and "Upload aborted" in out
     assert "Zorblat" not in out and pf.FAKE_SURNAME not in out
+    code, out = do(archive, fake, dry_run=True)  # the dry run lists the plan but reports the block
+    assert code == upload.EXIT_LEAK and "BLOCKED" in out and fake.uploads == []
 
 
 def test_leak_check_levels():

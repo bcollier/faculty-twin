@@ -498,6 +498,8 @@ def build(
         f"{c['excluded_student_names']} slides left out for student names; "
         f"{c['with_transcript']} slides with class transcript; {c['with_clip']} with a clip"
     )
+    if complete and fresh:
+        log(f"Voyage usage this run: {usage['tokens']:,} tokens ({fresh} new texts)")
     leak = run_leak_check(roster or common.roster_dir(archive), index, log)
     if leak == EXIT_LEAK:
         return EXIT_LEAK
@@ -509,8 +511,6 @@ def build(
         )
         return EXIT_PENDING
     log(f"embeddings.npy: {matrix.shape[0]} x {matrix.shape[1]} ({fresh} newly embedded, {cached} from cache)")
-    if fresh:
-        log(f"Voyage usage this run: {usage['tokens']:,} tokens")
     return EXIT_OK
 
 

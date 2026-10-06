@@ -255,7 +255,7 @@ def run(
         return EXIT_LEAK
     hits = leak_check(items, checker)
     log(hits.summary())
-    if hits.total:
+    if hits.total and not dry_run:
         log("Upload aborted: fix the de-identification for the places above and rebuild. Nothing was uploaded.")
         return EXIT_LEAK
 
@@ -292,6 +292,9 @@ def run(
             f"Would upload {len(todo)} of {len(items)} objects ({total / 1e6:.1f} MB), "
             f"skip {len(items) - len(todo)} unchanged, delete {len(stale)}, then set settings.index_version = {version}."
         )
+        if hits.total:
+            log("BLOCKED: the real upload would stop at the leak check above. Fix those places and rebuild first.")
+            return EXIT_LEAK
         return EXIT_OK
     if sb is None:
         log("Upload stopped: Supabase is not configured (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY in .env).")
