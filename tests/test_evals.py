@@ -283,3 +283,51 @@ def test_cli_stops_when_judge_keys_are_missing(tmp_path, monkeypatch):
     monkeypatch.setattr("evals.run.load_dotenv", lambda *a, **k: None)  # a real .env on the Mac mini has keys
     assert main(["--questions", str(EXAMPLES), "--target", "none", "--judge", "openai:gpt-6-astra",
                  "--out", str(tmp_path / "r")]) == 3
+
+
+# ---------------------------------------------------------------- judge calibration
+
+def test_calibration_cases_load_and_carry_expectations():
+    from evals import calibrate
+
+    cases = calibrate.load_cases()
+    assert len(cases) >= 8 and len({c["cid"] for c in cases}) == len(cases)
+    for c in cases:
+        assert c["expect"] and ("verdict" in c["expect"] or c["expect"].get("min") or c["expect"].get("max"))
+        rubric.build_user_prompt(c)  # every case renders into a judge prompt
+
+
+def test_calibration_check_and_scoring():
+    from evals import calibrate
+
+    cases = calibrate.load_cases()
+    good = next(c for c in cases if c["cid"] == "c01-grounded-good")
+    bad = next(c for c in cases if c["cid"] == "c02-invented-fact")
+    assert calibrate.check(good, dict(GOOD, judge="x")) == []
+    misses = calibrate.check(bad, dict(GOOD, judge="x"))
+    assert any("verdict" in m for m in misses) and any("grounded" in m for m in misses)
+    assert calibrate.check(bad, {"judge": "x", "error": "timeout"})[0].startswith("judge error")
+
+    always_pass = fake_judge("openai:lenient", json.dumps(GOOD))
+    out = calibrate.calibrate([good, bad], [always_pass])
+    assert out["per_judge"]["openai:lenient"] == {"cases": 2, "met": 1, "missed": ["c02-invented-fact"]}
+
+
+def test_judge_does_not_retry_a_rejected_key():
+    import httpx
+
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(401, json={"error": {"message": "bad key"}})
+
+    j = Judge("openai", "m", client=httpx.Client(transport=httpx.MockTransport(handler)))
+    import os
+    os.environ["OPENAI_API_KEY"] = "test-key-not-real"
+    try:
+        out = j.judge({"question": "q", "category": "CODE_HELP", "answerable": True, "reference_answer": None,
+                       "response": {"status": "not_covered", "segments": []}}, sleep=lambda s: None)
+    finally:
+        del os.environ["OPENAI_API_KEY"]
+    assert "401" in out["error"] and len(calls) == 1

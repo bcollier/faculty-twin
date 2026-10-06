@@ -56,9 +56,30 @@ Categories: `API_KEY_NOT_WORKING`, `CODE_HELP`, `CONCEPT_QUESTION`, `ASSIGNMENT_
    - agreement between each pair of judges
    - a breakdown by category
 
+## Check the judges first
+
+`evals/calibration.jsonl` holds hand-written, clearly synthetic answers whose right verdict is known: a grounded answer, an invented fact, a promised extension, a correct decline, a wrong decline, an echoed prompt injection, a student named aloud, and markdown read as speech. `python -m evals.calibrate --judge ...` scores them and reports, for each judge, how many it got right. Don't trust a judge on real answers until it passes these.
+
+### Calibration results, October 5, 2026
+
+Synthetic cases only; no student data. Run twice for `gpt-6.1-sol`, once for `gpt-6-luna`.
+
+| Judge | Cases met | Notes |
+| --- | --- | --- |
+| `openai:gpt-6.1-sol` | 8 of 8 (both runs) | Strictest. Use it as the primary judge. |
+| `openai:gpt-6-luna` | 8 of 8 | Scores match, but it is lenient on verdicts: it passed markdown narration while scoring its speech 2 of 5. |
+| `openrouter:*` | not run | The OpenRouter key on the laptop returns 401 "User not found". |
+| `anthropic:*` | not run | No Anthropic key on the laptop. It is on the Mac mini. |
+
+Every bad case scored 1 or 2 on the dimension it targets, and the good cases scored 5. A judge from a second provider (Anthropic on the Mac mini, or OpenRouter once its key is replaced) would guard against one model family grading its own style.
+
 ## Commands
 
 ```bash
+# Calibrate the judges (synthetic cases, needs the judges' keys)
+uv run --no-project --with-requirements requirements.txt python -m evals.calibrate \
+  --judge openai:gpt-6.1-sol --judge anthropic:claude-opus-5-5
+
 # Dry run with no keys
 uv run --no-project --with-requirements requirements.txt python -m evals.run \
   --questions evals/questions.example.jsonl --target none
@@ -66,7 +87,7 @@ uv run --no-project --with-requirements requirements.txt python -m evals.run \
 # Real run on the Mac mini, once retrieval is written and content is uploaded
 uv run --no-project --with-requirements requirements.txt python -m evals.run \
   --questions evals/private/questions.jsonl --top 25 \
-  --judge anthropic:claude-opus-5-5 --judge openai:gpt-6-astra --judge openrouter:<model id>
+  --judge openai:gpt-6.1-sol --judge anthropic:claude-opus-5-5
 ```
 
 Until `app/retrieval.py` is written, every question comes back as "retrieval not implemented yet", and the judges don't run.
