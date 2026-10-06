@@ -482,6 +482,14 @@ Added Oct 5. This is the part that did not exist when the app was one deck. Ever
 - **Text similarity as the fallback.** For stretches with no frame match, split the transcript into 30-second chunks and score each against each slide's text and notes (TF-IDF cosine, no key needed). Assign chunks with an in-order constraint: a dynamic program over chunks where the slide number never moves backward, except for a short jump back of one or two slides, which is how I actually teach.
 - Each window records which method produced it. The `transcript` for a slide is the de-identified instructor speech inside its windows.
 
+> **Added Oct 5 (Block 2 build).** How `indexer/align.py` does this, after calibration on two sessions:
+>
+> - Frames are sampled every 2 s at 256 px wide in grayscale and cached in `_build/.cache/align/`, so a re-run does not decode the video again. Comparison is normalized correlation on 64x36 thumbnails. Each frame is tried three ways: the whole frame, the best of up to three bright slide-shaped regions (presenter view, or a slide window next to another display), and the session's usual slide box (for dark slides).
+> - Thresholds: best score at least 0.45 and at least 0.04 above the best runner-up that is not a look-alike; below 0.60 the margin must be 0.15. Slides that correlate 0.93 or more with each other (repeated section dividers) count as one group, and the member nearest the previous match wins. A one-frame dropout inside a run is bridged; runs under 4 s are dropped.
+> - The text fallback keeps a chunk only when its TF-IDF cosine is at least 0.12, and the dynamic program for each uncovered stretch is bounded by the frame matches on either side (two slides of slack).
+> - A recording in two parts (`video.mp4`, `video_part2.mp4`) is one timeline: part 2 starts at part 1's duration, the same rule the transcript stage uses.
+> - `align/<course>/s<NN>.meta.json` sits next to each alignment file: coverage, thresholds, and every frame run with its scores, a motion measure, and the times of frames that matched only through bridging. Local only, like the alignment.
+
 **4. Clip cutting rules.** Clips auto-publish behind the passcode, so the rules are strict and a clip is skipped whenever one fails.
 
 - Only frame-matched windows, so the video shows that slide. Text-only alignments never become clips.
@@ -493,6 +501,16 @@ Added Oct 5. This is the part that did not exist when the app was one deck. Ever
 - Excluded entirely: the student "AI in the News" and "AI Methods in the News" presentations, any student presentation, and the Tesla vs Waymo case sessions (45-884 session 11, and session 12 when it happens). I am keeping that case private for now; its slides are still indexed.
 - Encode with ffmpeg: H.264 at 720p, AAC audio, `+faststart`, sized for mostly-static slides (target 3 MB or less per clip).
 - `clips/manifest.json` records each kept clip and why (`reason_kept`, for example "frame-matched 42 s, instructor only, no names"). To pull a clip, I add its slide id to the session's override file and re-run the stage.
+
+> **Added Oct 5 (Block 7 build).** Details of `indexer/clips.py`:
+>
+> - Stricter than the 5-second merge above: every sampled frame inside a clip must match the slide on its own. Runs are split around frames that matched only through bridging, so a 2-second flash of a browser or Canvas page can never sit inside a clip. The 5-second merge is used only when alignment has no frame-level detail.
+> - When a whole window fails the speech rules, the longest stretch inside it that passes every rule (whole cues, 15 to 90 seconds, 5 seconds clear of any student, unclear, or masked cue) is used instead. One clip per slide: the longest passing candidate.
+> - Slides flagged `student_names_possible`, `in_the_news`, `student_presentation_possible`, or `no_clips_private_case` by the slide stage get no clip, and neither does a slide whose stored text or notes carry a `[student]` mask.
+> - An embedded video is detected from the frames: if more than 35% of consecutive frame pairs in the window change, the window is skipped.
+> - Encoding: H.264 CRF 26 with `-tune stillimage`, 720p, AAC 96 kbps mono, `+faststart`; a clip over 3 MB is re-encoded at CRF 30. A clip that would cross from `video.mp4` into `video_part2.mp4` is skipped.
+> - The override file is `_build/overrides/<course>/s<NN>.json` with `{"no_clips": ["<slide_id>", ...]}`; a `no_clips` key in the de-identification override file for the session works too.
+> - `clips/manifest.json` stays a list. Rejections go to `clips/rejected.json`: per-window reasons (slide ids, times, and reason codes only), counts per reason, and the count of slides left without a clip by reason. It is a local report: upload only the `.mp4` files and `manifest.json`.
 
 **5. Build the index.** Combine `slides.json`, alignment, the clip manifest, notebook code cells (nbformat; code plus the markdown cell above it; outputs dropped), and `indexer/code_map.json` into records. Embed each record's text with Voyage (document input type, batches of 128). Embeddings are cached by a hash of the text in `_build/cache/`, so a re-run only embeds records that changed. Write `content/index.json` and `content/embeddings.npy`, then run the leak check on both.
 
