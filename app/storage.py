@@ -201,7 +201,7 @@ def _dev_sig(path: str, exp: int) -> str:
 def verify_dev_link(path: str, exp: int, sig: str) -> bool:
     if exp < time.time():
         return False
-    return hmac.compare_digest(_dev_sig(path, exp), sig)
+    return hmac.compare_digest(_dev_sig(path, exp).encode(), sig.encode("utf-8", "replace"))
 
 
 def is_media_path(path: str) -> bool:

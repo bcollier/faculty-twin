@@ -1,8 +1,11 @@
 // Faculty Twin: Settings page (admin). Not linked from the student page.
 // Talks only to /api/admin/* with the ft_admin cookie. Keys never reach the browser.
 
-if (new URLSearchParams(location.search).get('mock') === '1') {
-  await import('./dev/mock.js'); // development only
+const DEV_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+if (DEV_HOSTS.includes(location.hostname) && new URLSearchParams(location.search).get('mock') === '1') {
+  // Development only, and only on a local host: on the live site a crafted ?mock=1 link
+  // would otherwise show fake "saved" results while nothing is saved.
+  await import('./dev/mock.js');
 }
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -160,10 +163,16 @@ async function loadSettings() {
   } catch (e) { if (e instanceof AuthError) throw e; }
   $('#provider').value = S.settings.provider || 'anthropic';
   $('#model-id').value = S.settings.model || '';
-  $('#current-model').textContent = S.settings.model ? `Live now: ${S.settings.provider} / ${S.settings.model}` : '';
+  $('#current-model').textContent = liveModelText();
   $('#cap').value = S.settings.daily_voice_char_cap ?? S.status?.today?.voice_char_cap ?? '';
   $('#a-index-version').textContent = S.settings.index_version != null ? `Index version ${S.settings.index_version}` : '';
   updateProviderWarning();
+}
+
+function liveModelText() {
+  if (!S.settings.model) return '';
+  const warn = S.settings.model_warning ? ` (${S.settings.model_warning})` : '';
+  return `Live now: ${S.settings.provider} / ${S.settings.model}${warn}`;
 }
 
 let modelsReq = 0;
@@ -234,8 +243,9 @@ $('#save-model').addEventListener('click', async () => {
     const r = await api('/api/admin/settings', { method: 'PUT', body: { provider, model } });
     if (!r.ok) { say($('#save-model-status'), detail(r), 'err'); return; }
     S.settings = { ...S.settings, ...(r.data || { provider, model }) };
-    $('#current-model').textContent = `Live now: ${S.settings.provider} / ${S.settings.model}`;
-    say($('#save-model-status'), 'Saved. New questions use this model.', 'ok');
+    $('#current-model').textContent = liveModelText();
+    const warn = S.settings.model_warning;
+    say($('#save-model-status'), warn ? `Saved. ${warn}` : 'Saved. New questions use this model.', warn ? 'err' : 'ok');
   } catch (e) { if (!(e instanceof AuthError)) say($('#save-model-status'), errText(e), 'err'); }
 });
 
@@ -491,10 +501,17 @@ $('#upload-form').addEventListener('submit', async (e) => {
       prog.setAttribute('aria-valuenow', String(p));
       line.textContent = `${file.name}: ${p}%`;
     });
-    // Mark the source row ready for the worker (sets status to "uploaded"); harmless if it already is.
+    // Ask the server to confirm the file is in storage before queueing it for the worker.
+    // (/rerun would queue it without checking.) A 409 means storage has not shown it yet;
+    // listing sources promotes it once it appears.
     const id = d.source_id ?? d.id;
-    if (id != null) await api(`/api/admin/sources/${encodeURIComponent(id)}/rerun`, { method: 'POST' }).catch(() => {});
-    line.textContent = `${file.name}: uploaded. Waiting for the worker.`;
+    let note = 'uploaded. Waiting for the worker.';
+    if (id != null) {
+      const c = await api(`/api/admin/sources/${encodeURIComponent(id)}/complete`, { method: 'POST' });
+      if (c.status === 409) note = 'uploaded, but storage has not confirmed it yet. It will be queued when it appears.';
+      else if (!c.ok) { line.textContent = `${file.name}: ${detail(c)}`; item.classList.add('error-text'); return; }
+    }
+    line.textContent = `${file.name}: ${note}`;
     $('#up-file').value = '';
     loadCourses();
   } catch (ex) {

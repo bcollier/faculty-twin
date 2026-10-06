@@ -3,8 +3,9 @@
 // Screens: boot -> (offline | login | app). The app has two views: idle and presenting.
 // The player is a small state machine; see the "Player" section below.
 
-if (new URLSearchParams(location.search).get('mock') === '1') {
-  // Development only: canned responses that match the API contract. Never loaded otherwise.
+const DEV_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+if (DEV_HOSTS.includes(location.hostname) && new URLSearchParams(location.search).get('mock') === '1') {
+  // Development only (local hosts only): canned responses that match the API contract. Never loaded otherwise.
   await import('./dev/mock.js');
 }
 
@@ -24,12 +25,14 @@ const CAPTION_MIN_SEC = 4;
 const COPY = {
   loading: ['Finding where I cover this in class...', 'Pulling up the slides and writing the walkthrough.'],
   notCovered: ['I don\'t have course material on that.',
-    'I only answer from my slides and what I said in class for 70\u2011445 and 45\u2011884. Try one of these instead:'],
+    'I only answer from my slides and what I said in class for 70\u2011445 and 45\u2011884.'],
   unreachable: ['I can\'t reach the server right now.', 'It may be waking up. That usually takes a few seconds.'],
   rateLimited: ['That\'s a lot of questions in a short time.',
     'I cap questions per minute and per day to keep costs down. Give it a minute and try again.'],
   notReady: ['This part isn\'t finished yet.',
-    'I\'m still writing the code that picks the slides for an answer. Check back soon, or try one of these.'],
+    'I\'m still writing the code that picks the slides for an answer. Check back soon.'],
+  contentLoading: ['My course material is still loading.',
+    'The slides and class transcripts are being uploaded. Try again in a few minutes.'],
   badQuestion: ['I couldn\'t use that question.', 'Keep it under 300 characters and about the course.'],
   generic: ['Something went wrong on my end.', 'Try again, or ask a different question.'],
   sessionExpired: 'Your session ran out. Enter the passcode again to keep going.',
@@ -319,11 +322,12 @@ function showStageMessage({ title, text, spinner = false, actions = [], chips = 
 function showStageError(kind, question) {
   const [title, text] = COPY[kind] || COPY.generic;
   const actions = [];
-  if (kind === 'unreachable' || kind === 'generic' || kind === 'rateLimited') {
+  if (kind === 'unreachable' || kind === 'generic' || kind === 'rateLimited' || kind === 'contentLoading') {
     actions.push({ label: 'Try again', primary: true, onClick: () => ask(question) });
   }
   const chips = (kind === 'notCovered' || kind === 'notReady' || kind === 'badQuestion') ? topicsForCourse().slice(0, 6) : [];
-  showStageMessage({ title, text, actions, chips });
+  // Only invite the visitor to pick a chip when there are chips to pick.
+  showStageMessage({ title, text: chips.length ? `${text} Try one of these instead:` : text, actions, chips });
   addTwinMessage(title, 'msg-error');
   ui.followups.hidden = true;
   const firstBtn = ui.stageActions.querySelector('button') || ui.stageChips.querySelector('button');
@@ -443,6 +447,7 @@ async function ask(raw, { resumeAt = 0, quiet = false } = {}) {
   if (res.status === 401) { app.pendingQuestion = question; return showLogin(COPY.sessionExpired); }
   if (res.status === 429) return showStageError('rateLimited', question);
   if (res.status === 400 || res.status === 422) return showStageError('badQuestion', question);
+  if (res.status === 503 && /not loaded/i.test(String(res.data?.detail || ''))) return showStageError('contentLoading', question);
   if (res.status === 501 || res.status === 503) return showStageError('notReady', question);
   if (!res.ok || !res.data) return showStageError('generic', question);
 

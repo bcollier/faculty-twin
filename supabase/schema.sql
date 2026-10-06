@@ -133,6 +133,17 @@ alter table courses      enable row level security;
 alter table sessions     enable row level security;
 alter table sources      enable row level security;
 
+-- ------------------------------------------------------------------ storage bucket
+-- The content bucket must be private: everything in it is reached only through
+-- short-lived signed links minted by the backend. Re-running this file forces
+-- public = false even if someone flipped it in the dashboard. No storage
+-- policies are created, so only the service role key can read or write.
+-- Set the bucket's file size limit in the dashboard (Storage -> twin-content ->
+-- Edit) to the largest class video you upload; see docs/SECURITY.md.
+insert into storage.buckets (id, name, public)
+values ('twin-content', 'twin-content', false)
+on conflict (id) do update set public = false;
+
 -- ------------------------------------------------------------------ seed
 insert into courses (code, title, term) values
   ('70445', 'AI for Business Leaders', 'Fall 2026'),

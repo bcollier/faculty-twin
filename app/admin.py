@@ -88,6 +88,68 @@ def session_id(course: str, session: int) -> str:
     return f"{course}-s{session:02d}"
 
 
+def _check_course(raw: str) -> str:
+    """Course codes are five digits. They become part of a storage path, so check them here."""
+    code = (raw or "").strip()
+    if not COURSE_RE.match(code):
+        raise HTTPException(400, "The course code is five digits, like 70445.")
+    return code
+
+
+# ---------------------------------------------------------------- model price guard
+
+def max_price_per_mtok() -> dict[str, float]:
+    out = dict(config.DEFAULT_MAX_PRICE_PER_MTOK)
+    for key, var in (("prompt", "LLM_MAX_PROMPT_PRICE_PER_MTOK"), ("completion", "LLM_MAX_COMPLETION_PRICE_PER_MTOK")):
+        raw = config.env(var)
+        if raw:
+            try:
+                out[key] = float(raw)
+            except ValueError:
+                config.log.warning("%s is not a number; using %s", var, out[key])
+    return out
+
+
+def check_model_price(provider: str, model: str) -> None:
+    """Refuse OpenRouter models priced above the ceiling (o1-pro class models cost 10-60x more).
+
+    OpenRouter publishes prices per token; the check fails closed when the
+    price cannot be read. Claude and OpenAI have no price API, so ids outside
+    the curated list get a warning in the settings view instead.
+    """
+    if provider != "openrouter":
+        return
+    try:
+        listing = llm.list_models("openrouter")
+    except llm.LLMError as exc:
+        raise HTTPException(400, "Could not check this model's price on OpenRouter right now. Try again shortly.") from exc
+    found = next((m for m in listing.get("models", []) if m.get("id") == model), None)
+    if found is None:
+        raise HTTPException(400, "OpenRouter does not list that model id.")
+    pricing = found.get("pricing") or {}
+    try:
+        prompt = float(pricing.get("prompt")) * 1_000_000
+        completion = float(pricing.get("completion")) * 1_000_000
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "OpenRouter does not publish a fixed price for that model, so it cannot be used.") from exc
+    if prompt < 0 or completion < 0:
+        raise HTTPException(400, "That model has a variable price (a router), so it cannot be used.")
+    ceiling = max_price_per_mtok()
+    if prompt > ceiling["prompt"] or completion > ceiling["completion"]:
+        raise HTTPException(
+            400,
+            f"{model} costs ${prompt:.2f} in / ${completion:.2f} out per million tokens, over the limit of "
+            f"${ceiling['prompt']:.2f} / ${ceiling['completion']:.2f}. Pick a cheaper model, or raise "
+            "LLM_MAX_PROMPT_PRICE_PER_MTOK / LLM_MAX_COMPLETION_PRICE_PER_MTOK in Vercel.",
+        )
+
+
+def model_warning(provider: str, model: str) -> str | None:
+    if provider in ("anthropic", "openai") and model not in {m["id"] for m in llm.CURATED[provider]}:
+        return "This model id is not on the curated list. Check its price before students use it."
+    return None
+
+
 # ---------------------------------------------------------------- login
 
 @router.post("/login", status_code=204)
@@ -138,6 +200,8 @@ def settings_view() -> dict[str, Any]:
         "per_minute_limit": config.PER_MINUTE_LIMIT,
         "per_day_limit": config.PER_DAY_LIMIT,
         "question_max_chars": config.QUESTION_MAX_CHARS,
+        "model_warning": model_warning(provider, model),
+        "max_price_per_mtok": max_price_per_mtok(),
         "student_passcode_source": "settings" if settings_store.get("student_passcode_hash") else "env",
         "index_version": settings_store.index_version(),
     }
@@ -178,6 +242,8 @@ def put_settings(body: SettingsBody, _: auth.Session = Depends(auth.require_admi
         values["student_passcode_hash"] = auth.hash_passcode(code)
     if not values:
         raise HTTPException(400, "Nothing to save.")
+    if "model" in values:
+        check_model_price(values["provider"], values["model"])
     try:
         settings_store.put(values)
     except supa.SupabaseError as exc:
@@ -207,6 +273,7 @@ class TestBody(BaseModel):
 @router.post("/test")
 def test_model(
     body: TestBody,
+    request: Request,
     session: auth.Session = Depends(auth.require_admin),
     retriever: Retriever = Depends(get_retriever),
     embedder=Depends(get_embedder),
@@ -224,7 +291,8 @@ def test_model(
         raise HTTPException(400, "That model id does not look right.")
     if not llm.key_configured(provider):
         raise HTTPException(400, f"{llm.KEY_VARS[provider]} is not set, so this provider cannot be tested.")
-    limits.check_ask_rate(auth.visitor_key(session))  # counts against limits; not logged
+    check_model_price(provider, model)
+    limits.check_ask_rate(auth.visitor_key(session), limits.client_hash(request))  # counts against limits; not logged
     content = storage.store.get_or_503()
     started = time.monotonic()
     note = None
@@ -469,7 +537,7 @@ def add_session(body: SessionBody, _: auth.Session = Depends(auth.require_admin)
         "visible": True if body.visible is None else body.visible,
     }
     try:
-        row = _ensure_session(body.course.strip(), body.session, extra)
+        row = _ensure_session(_check_course(body.course), body.session, extra)
     except supa.SupabaseError as exc:
         raise _db_error(exc) from exc
     playlist.clear_hidden_cache()
@@ -518,6 +586,7 @@ def safe_filename(name: str) -> str:
 
 @router.post("/uploads")
 def create_upload(body: UploadBody, _: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    _check_course(body.course)
     _need_supabase()
     if body.kind not in UPLOAD_KINDS:
         raise HTTPException(400, "kind must be slides, transcript, video, or notebook.")
@@ -528,7 +597,9 @@ def create_upload(body: UploadBody, _: auth.Session = Depends(auth.require_admin
         raise HTTPException(400, f"{body.kind} uploads must be {' or '.join(sorted(allowed))} files.")
     if body.size <= 0 or body.size > max_size:
         raise HTTPException(400, f"That file is too large for {body.kind} (limit {max_size // 1024**2} MB).")
-    course = body.course.strip()
+    course = _check_course(body.course)
+    if not 1 <= body.session <= 99:
+        raise HTTPException(400, "The session number must be between 1 and 99.")
     path = f"inbox/{course}/s{body.session:02d}/{body.kind}/{filename}"
     try:
         _ensure_session(course, body.session)

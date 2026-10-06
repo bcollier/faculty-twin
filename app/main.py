@@ -11,6 +11,7 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
+from urllib.parse import urlparse
 
 import numpy as np
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
@@ -22,6 +23,49 @@ from . import auth, config, embed, limits, llm, narration, playlist, retrieval, 
 from .storage import Content
 
 app = FastAPI(title="Faculty Twin", docs_url=None, redoc_url=None, openapi_url=None)
+
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+API_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+    "Cross-Origin-Resource-Policy": "same-origin",
+}
+
+
+def _allowed_hosts(request: Request) -> set[str]:
+    hosts = {request.headers.get("host", "")}
+    site = config.env("PUBLIC_SITE_URL")
+    if site:
+        hosts.add(urlparse(site).netloc)
+    return {h.lower() for h in hosts if h}
+
+
+def cross_site(request: Request) -> bool:
+    """True when a browser says this state-changing request came from another site.
+
+    SameSite=Lax already keeps the cookies off cross-site POSTs; this also
+    covers sibling subdomains (same-site but cross-origin) and old browsers.
+    Requests with neither header (curl, tests, server-to-server) carry no
+    ambient browser cookies an attacker could ride on, so they pass.
+    """
+    origin = request.headers.get("origin")
+    if origin is not None:
+        return origin == "null" or urlparse(origin).netloc.lower() not in _allowed_hosts(request)
+    fetch_site = request.headers.get("sec-fetch-site")
+    return fetch_site is not None and fetch_site not in ("same-origin", "none")
+
+
+@app.middleware("http")
+async def _guard(request: Request, call_next):
+    if request.method in UNSAFE_METHODS and request.url.path.startswith("/api/") and cross_site(request):
+        return JSONResponse({"detail": "Cross-site requests are not allowed."}, status_code=403)
+    response = await call_next(request)
+    for name, value in API_SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    # Playlists carry short-lived signed links; nothing JSON should be cached.
+    response.headers.setdefault("Cache-Control", "no-store")
+    return response
 
 
 # ---------------------------------------------------------------- readable errors
@@ -129,6 +173,11 @@ def answer(
         return playlist.not_covered(question), info
     try:
         qvec = embedder(question)
+    except embed.EmbeddingCapReached as exc:
+        config.log.warning("embedding cap reached")
+        raise HTTPException(
+            503, "The twin has answered as many new questions as it can today. Please try again tomorrow."
+        ) from exc
     except embed.EmbeddingError as exc:
         config.log.warning("embedding failed: %s", exc)
         raise HTTPException(503, "The search service is not available right now. Please try again shortly.") from exc
@@ -233,6 +282,7 @@ def topics(_: auth.Session = Depends(auth.require_student), content: Content = D
 @app.post("/api/ask")
 def ask(
     body: AskBody,
+    request: Request,
     session: auth.Session = Depends(auth.require_student),
     retriever: Retriever = Depends(get_retriever),
     embedder: Callable[[str], np.ndarray] = Depends(get_embedder),
@@ -240,7 +290,7 @@ def ask(
 ) -> dict[str, Any]:
     question = clean_question(body.question)
     course = clean_course(body.course)
-    limits.check_ask_rate(auth.visitor_key(session))
+    limits.check_ask_rate(auth.visitor_key(session), limits.client_hash(request))
     content = storage.store.get_or_503()
     started = time.monotonic()
     try:
@@ -256,10 +306,11 @@ def ask(
 
 @app.get("/api/audio")
 async def audio(
+    request: Request,
     t: str = Query(..., max_length=4000),
     s: str = Query(..., max_length=100),
     v: str = Query("", max_length=40),
-    _: auth.Session = Depends(auth.require_student),
+    session: auth.Session = Depends(auth.require_student),
 ):
     text = speech.verify(t, v, s)
     if text is None:
@@ -269,7 +320,9 @@ async def audio(
         raise HTTPException(404, "The voice is turned off. Captions only.")
     if speech.voice_tag(voice) != v:
         raise HTTPException(403, "This audio link is from an older voice setting. Please ask again.")
-    if not limits.take_voice_chars(len(text), settings_store.daily_voice_char_cap()):
+    if not limits.take_voice_chars(
+        len(text), settings_store.daily_voice_char_cap(), auth.visitor_key(session), limits.client_hash(request)
+    ):
         raise HTTPException(429, "The voice has reached today's limit. Captions only for now.")
     try:
         client, resp = await speech.open_stream(text, voice)
