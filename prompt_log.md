@@ -226,3 +226,23 @@ Prompts below are verbatim. Responses are summarized.
   - Has LLM judges from several providers score six rubric dimensions and give a pass or fail verdict.
   - Writes a private question-by-question report plus a shareable summary with no question text.
   - 24 tests use fake judges and the test-fake retriever. The real run waits on my retrieval code and the content upload.
+
+### Prompt 10 (9:32 PM, sent while the evals work was running)
+
+> which repo are these in?
+
+(Quoted the AI's earlier answer about the four hand-written pieces.)
+
+**Response summary.** All four are in `bcollier/faculty-twin` on `main`: `NOT_COVERED_THRESHOLD` at `app/retrieval.py:30`, `rank` at line 36, `select_segments` at line 45, `onClipEnded()` at `public/app.js:859`, with the tests in `tests/test_retrieval.py`. Gave the laptop and Mac mini paths and the test command.
+
+### Prompt 11 (9:42 PM)
+
+> ok bring this repo local so I can edit it
+
+**Response summary.** It was already on the laptop and current with GitHub. Created the branch `feat/retrieval-by-hand` for my edits and opened the repo in the editor at the four places. No code was written in those files.
+
+### Prompt 12 (9:43 PM)
+
+> this needs to be moved out of the gaimdev folder it isn't associated iwth gaim
+
+**Response summary.** Moved the laptop clone from `~/Code/gaim_claude_dev/faculty_twin` to `~/Code/faculty-twin`, matching the repo name and the Mac mini path. Git history, the remote, my branch, and the git-ignored eval data moved with it. Updated `AGENTS.md` so it no longer says the repo sits inside the GAIM folder.

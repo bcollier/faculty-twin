@@ -4,10 +4,12 @@ Conventions for AI agents working in this repository.
 
 ## This is not a GAIM repository
 
-Faculty Twin is Ben Collier's personal project for CMU 15-113 (Project 2). It
-sits inside the `gaim_claude_dev/` folder on disk, so tools may also load
-`gaim_claude_dev/AGENTS.md`. **This file overrides it here.** The GAIM rules do
-not apply to this repo:
+Faculty Twin is Ben Collier's personal project for CMU 15-113 (Project 2), not
+GAIM work. It lives at `~/Code/faculty-twin` on the laptop and
+`/Users/jarvis/Code/faculty-twin` on the Mac mini, outside any GAIM folder
+(it was moved out of `gaim_claude_dev/` on October 5). If an older GAIM
+`AGENTS.md` is ever loaded alongside this one, **this file wins.** The GAIM
+rules do not apply to this repo:
 
 - no gaimsystems design-docs repo: specs live in `docs/` here
 - no GitHub Actions minute budget or `gate` job
