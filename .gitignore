@@ -11,3 +11,6 @@ gpt-digital-twin-guide.pdf
 
 # Agent worktrees
 .claude/worktrees/
+
+# Eval data and runs: real (de-identified) student questions never enter git
+evals/private/

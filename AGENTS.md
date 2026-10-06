@@ -141,6 +141,11 @@ These are requirements from the spec, not polish. Do not weaken them:
   section instead. It is published at
   https://www.cmu.edu/computing/services/ai/tools/chatgpt/how-to/gpt-digital-twin-guide.pdf
   (guide page: https://www.cmu.edu/computing/services/ai/tools/chatgpt/digital_twin_gpt.html).
+- Eval questions from Ben's email live only in `evals/private/` (git-ignored),
+  rewritten so no student can be identified by details or writing style, and
+  kept PG. Never commit them, never paste them into a PR, issue, or the prompt
+  log, and never send raw email text to a model. Only `summary.md` /
+  `summary.json` from a run may be shared. See `evals/README.md`.
 
 ## Copy
 
