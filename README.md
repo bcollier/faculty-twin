@@ -118,7 +118,18 @@ Without `VOYAGE_API_KEY`, `build_index` writes everything except `embeddings.npy
 
 Settings > Voice picks who reads the answers: Ben's ElevenLabs voice clone, another ElevenLabs voice, a free Microsoft neural voice (through [edge-tts](https://github.com/rany2/edge-tts), no key and no cost), or captions only. Every voice is AI-generated, and the page labels it to match: "AI voice made from my recordings." only for the clone, "AI voice (a stock voice, not mine)." for any other voice. An optional fallback lets a free voice take over when ElevenLabs fails or hits its daily cap; the label changes with it. Each tier has its own daily character cap (`DAILY_VOICE_CHAR_CAP` for ElevenLabs, `DAILY_FREE_VOICE_CHAR_CAP` for the free voices). Details: [docs/SPEC.md](docs/SPEC.md) (Settings page, `/api/audio`, Safety).
 
+### Evaluating answers
+
+`evals/` runs de-identified real student questions through the twin, and has LLM judges from several providers score each answer: grounded in the slides, answers the question, right call between answering and declining, matches Ben's real reply, works when spoken, PG and safe. The real questions stay in the git-ignored `evals/private/`; only an aggregate summary is shareable. See [evals/README.md](evals/README.md).
+
+```bash
+uv run --no-project --with-requirements requirements.txt python -m evals.run \
+  --questions evals/private/questions.jsonl --top 25 \
+  --judge anthropic:claude-opus-5-5 --judge openai:gpt-6-astra
+```
+
 ### More docs
 
 - [docs/ROADMAP.md](docs/ROADMAP.md): ideas for after submission, starting with free open-source voice models on the Mac mini
 - [docs/SECURITY.md](docs/SECURITY.md): threat model, findings, and the pre-launch checklist
+- [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md): shot list and pre-flight checklist for the demo video
