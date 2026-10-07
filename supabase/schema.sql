@@ -70,8 +70,11 @@ create table if not exists question_log (
   top_score   real,
   provider    text,
   model       text,
-  latency_ms  integer
+  latency_ms  integer,
+  kind        text  -- course_content, logistics, or null (not covered)
 );
+-- Added Oct 7 (logistics check): for tables made before the column existed.
+alter table question_log add column if not exists kind text;
 create index if not exists question_log_at on question_log (at desc);
 
 -- ------------------------------------------------------------------ settings

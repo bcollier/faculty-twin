@@ -272,7 +272,9 @@ def log_question(
     model: str | None,
     latency_ms: int | None = None,
     course: str | None = None,
+    kind: str | None = None,
 ) -> None:
+    """`kind` is "course_content", "logistics", or None (not covered, or never classified)."""
     increment(f"{'covered' if covered else 'not_covered'}:{_today()}", 1)
     row = {
         # Scrubbed of emails, numbers, and recognisable names first (app/privacy.py).
@@ -283,12 +285,18 @@ def log_question(
         "model": model,
         "latency_ms": latency_ms,
         "course": course,
+        "kind": kind,
     }
     if config.supabase_configured():
         try:
             supa.insert("question_log", row)
         except supa.SupabaseError as exc:
+            # Until the `kind` column exists (supabase/schema.sql), keep logging without it.
             config.log.warning("question log insert failed: %s", exc)
+            try:
+                supa.insert("question_log", {k: v for k, v in row.items() if k != "kind"})
+            except supa.SupabaseError as exc2:
+                config.log.warning("question log insert without kind failed: %s", exc2)
         return
     _warn_once()
     row["at"] = datetime.now(timezone.utc).isoformat()

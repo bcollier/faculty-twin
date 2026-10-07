@@ -122,6 +122,7 @@ On a phone the stage stacks on top and the chat collapses to an input bar at the
 - Added Oct 5. Cookie expired or passcode rotated: any API call returns 401 and the page goes back to the passcode screen, keeping the typed question.
 - Added Oct 5. A slide image or clip link has expired (the student left the tab open): the frontend asks the same question again for fresh links instead of showing a broken image.
 - Added Oct 5. A clip fails to load: the button disappears for that segment and the slide stays.
+- Added Oct 7. Question is about logistics (meetings, office hours, missed class, absences, grades, regrades, extensions, deadlines, rescheduling a presentation, Canvas access, team problems, dropping the course): a written "That one is for me directly. My twin only explains course material. For meetings, absences, grades or deadlines, please email me or come to office hours." plus the suggested chips. No slides, no audio. See step 7a of "Inside `/api/ask`".
 
 ### Where this is in the course
 
@@ -408,6 +409,16 @@ The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded 
 
 `covered` is false when the best match scores below the threshold. In that case `segments` is empty and the frontend shows the not-covered message.
 
+> **Added Oct 7 (logistics check).** A question the logistics check routes to Ben comes back as HTTP 200 with `kind: "logistics"`, no segments and no audio:
+>
+> ```json
+> {"question": "...", "covered": false, "kind": "logistics", "segments": [], "sources": [],
+>  "message": "That one is for me directly, not my twin. Please email me or come to office hours.",
+>  "follow_ups": ["<up to three suggested questions for this course>"]}
+> ```
+>
+> The page shows its own copy of that message (the `logistics` entry in `COPY`) with the suggested chips. Every other reply has no `kind` field.
+
 > **Changed Oct 5.** Each segment now carries the fields for its source card, a signed image link, and an optional clip, and the playlist has a `sources` list. `covered` works the same way, and `sources` is empty when it is false.
 
 ```json
@@ -462,7 +473,7 @@ The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded 
 | --- | --- | --- |
 | `settings` | `key`, `value` (jsonb), `updated_at` | Keys: `provider`, `model`, `voice_id`, `daily_voice_char_cap`, `student_passcode_hash`, `index_version`. Env vars are the defaults when a key is missing. *Added Oct 5 (voice tiers):* `voice_kind` (`{voice_id, kind}`, written by Settings after checking the voice's category on the ElevenLabs account), `voice_fallback` (`captions` or `free`), `voice_fallback_voice` (`edge:<ShortName>`), `daily_free_voice_char_cap` |
 | `counters` | `key`, `day`, `count`, `expires_at` | Rate limits per visitor id, login attempts, daily voice characters, daily question counts. Bumped only through the `ft_increment` function, which adds atomically and refuses an add that would pass a cap |
-| `question_log` | `id`, `at`, `question`, `course`, `covered`, `top_score`, `provider`, `model`, `latency_ms` | Question text and scores only: no names, accounts, cookies, or IP addresses |
+| `question_log` | `id`, `at`, `question`, `course`, `covered`, `top_score`, `provider`, `model`, `latency_ms`, `kind` | Question text and scores only: no names, accounts, cookies, or IP addresses. *Added Oct 7:* `kind` is `course_content`, `logistics`, or null (not covered). Until the column is added, rows are written without it |
 | `courses` | `code`, `title`, `term` | Seeded with 70445 and 45884 |
 | `sessions` | `id`, `course`, `session`, `date`, `title`, `visible` | `visible` false hides the session from students and from retrieval |
 | `sources` | `id`, `course`, `session`, `kind`, `path`, `status`, `message`, `updated_at` | `kind` is `slides` (PDF or pptx), `transcript` (VTT), `video`, or `notebook`, matching the Settings form. `status` is `pending_upload` (link minted, file not confirmed), `uploaded`, `processing`, `ready`, or `error`; the worker only takes `uploaded`. `message` never contains a student name |
@@ -621,7 +632,8 @@ Four routes. The frontend never talks to a model or voice provider directly.
 > 4. If the question matches a suggested question (and its course fits the filter), return its stored playlist with fresh signed links and stop.
 > 5. Embed the question with Voyage (query input type).
 > 6. Keep only rows for the chosen course and visible sessions, then score them by cosine similarity. If the top score is under the threshold, return `covered: false`.
-> 7. Pick the segments (see Code Ben writes by hand).
+> 7. Pick the segments (see Code Ben writes by hand). If none are picked, return `covered: false`.
+> 7a. *Added Oct 7 (logistics check).* Classify the question as `course_content` or `logistics`. The Oct 7 real-question eval found meeting, missed-class, reschedule, grade and Canvas messages scoring 0.54 to 0.55, just above the 0.52 threshold, so they were getting narrated slides. First a keyword pre-check (`app/logistics.py`: office hours, meet with you, zoom call, missed class, absent, sick, extension, extend the deadline, regrade, my grade, grading, reschedule, swap presentation, on Canvas, can't access, my team member, drop the class, and similar) routes the obvious cases with no model call. Phrases are kept narrow so concept questions ("how do I choose k", "what is overfitting") never match. Anything else goes to one small call through `app/llm.py` (the active provider and model, `max_tokens` 200) that must reply with JSON only: `{"kind": "course_content" | "logistics", "reason": "..."}`. For `logistics`, return the referral above and stop: no narration call, no audio. If the call fails or the reply is not that shape, treat the question as course content and carry on: this check never blocks a real answer. Suggested questions skip this step (they are course content by construction).
 > 8. Send the chosen slides' text, notes, transcript passages, and code to the active provider through `app/llm.py`, with the grounding prompt. Ask for JSON only.
 > 9. Validate the JSON: every `slide_id` must be one that was sent, every narration under 110 words. If validation fails, retry once, then fall back to each slide's speaker notes (or its transcript passage, then its text) as the narration.
 > 10. Sign each narration, build the audio links, sign the image and clip links in one batch call to Supabase, build `sources`, write one question-log row, and return the playlist.
