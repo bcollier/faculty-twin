@@ -629,3 +629,9 @@ Tool: Claude Code, Claude Opus 5.5.
 - Rewrote two old tests that expected retrieval to be unwritten (`test_api`, `test_pregenerate`) to use a stub instead. Full suite: 301 passed.
 - Deleted `sandbox/retrieval_reference.py`, the AI-written reference version. It was never committed or pushed. The test harness now defaults to `app/retrieval.py`.
 - Left my `AGENTS.md` edit out of the commit, pending a decision, because it also removes the README rule.
+
+### Prompt 20 (October 7)
+
+> this can be removed sandbox/: your test harness, now pointed at your app/retrieval.py, and the AI-written simple version, which is labeled as AI-written. I don't want to have a bunch of unrelated versions floating
+
+**Response summary.** Deleted `sandbox/` (the test harness and the AI-written simple version) through a pull request, so the repo has a single version of retrieval: mine in `app/retrieval.py`, checked by `tests/test_retrieval.py`. The files are still in git history from the commit that added them.
