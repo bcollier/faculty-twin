@@ -26,7 +26,14 @@ from typing import Any
 
 import numpy as np
 
-NOT_COVERED_THRESHOLD = 0.30  # Initial value = 0.30, adjusting based on tests
+# How this was chosen (Oct 7, 2026): test questions were run through rank() on the live index
+# (Mac mini). Top-1 cosine scores: on-topic 0.543 to 0.693, off-topic 0.377 to 0.448.
+# At the first value, 0.30, every off-topic question passed (e.g. "who won the Stanley Cup").
+# Any value in the gap (0.448, 0.543) separates the two groups. I chose to lean toward
+# declining, closer to the on-topic end: a wrongly declined question costs a retry, while a
+# wrongly answered one puts unrelated slides in my voice. 0.52 leaves 0.072 above the highest
+# off-topic score and 0.023 below the lowest on-topic one. Re-check as questions come in.
+NOT_COVERED_THRESHOLD = 0.52
 
 TOP_K = 8
 MAX_SEGMENTS = 5
