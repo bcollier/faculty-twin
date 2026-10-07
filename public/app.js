@@ -26,6 +26,8 @@ const COPY = {
   loading: ['Finding where I cover this in class...', 'Pulling up the slides and writing the walkthrough.'],
   notCovered: ['I don\'t have course material on that.',
     'I only answer from my slides and what I said in class for 70\u2011445 and 45\u2011884.'],
+  logistics: ['That one is for me directly.',
+    'My twin only explains course material. For meetings, absences, grades or deadlines, please email me or come to office hours.'],
   unreachable: ['I can\'t reach the server right now.', 'It may be waking up. That usually takes a few seconds.'],
   rateLimited: ['That\'s a lot of questions in a short time.',
     'I cap questions per minute and per day to keep costs down. Give it a minute and try again.'],
@@ -371,10 +373,12 @@ function showStageError(kind, question) {
   if (kind === 'unreachable' || kind === 'generic' || kind === 'rateLimited' || kind === 'contentLoading') {
     actions.push({ label: 'Try again', primary: true, onClick: () => ask(question) });
   }
-  const chips = (kind === 'notCovered' || kind === 'notReady' || kind === 'badQuestion') ? topicsForCourse().slice(0, 6) : [];
+  const withChips = kind === 'notCovered' || kind === 'notReady' || kind === 'badQuestion' || kind === 'logistics';
+  const chips = withChips ? topicsForCourse().slice(0, 6) : [];
   // Only invite the visitor to pick a chip when there are chips to pick.
-  showStageMessage({ title, text: chips.length ? `${text} Try one of these instead:` : text, actions, chips });
-  addTwinMessage(title, 'msg-error');
+  const invite = kind === 'logistics' ? 'Or ask me about the course:' : 'Try one of these instead:';
+  showStageMessage({ title, text: chips.length ? `${text} ${invite}` : text, actions, chips });
+  addTwinMessage(title, kind === 'logistics' ? '' : 'msg-error');
   ui.followups.hidden = true;
   const firstBtn = ui.stageActions.querySelector('button') || ui.stageChips.querySelector('button');
   if (firstBtn && !ui.dockQ.matches(':focus')) firstBtn.focus({ preventScroll: true });
@@ -498,6 +502,8 @@ async function ask(raw, { resumeAt = 0, quiet = false } = {}) {
   if (!res.ok || !res.data) return showStageError('generic', question);
 
   const answer = res.data;
+  // Meetings, absences, grades, deadlines: a referral to me, never narrated slides.
+  if (answer.kind === 'logistics') return showStageError('logistics', question);
   if (!answer.covered || !Array.isArray(answer.segments) || answer.segments.length === 0) {
     return showStageError('notCovered', question);
   }

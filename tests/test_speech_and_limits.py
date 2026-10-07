@@ -51,7 +51,7 @@ def test_voice_cap():
 def test_question_log_has_no_identity():
     limits.log_question("what is k-means", 0.71234, True, "anthropic", "claude-sonnet-5-5", 900, "70445")
     row = limits.recent_questions(1)[0]
-    assert set(row) == {"question", "top_score", "covered", "provider", "model", "latency_ms", "course", "at"}
+    assert set(row) == {"question", "top_score", "covered", "provider", "model", "latency_ms", "course", "kind", "at"}
 
 
 class FakeStream:

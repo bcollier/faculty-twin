@@ -26,6 +26,7 @@ from . import (
     embed,
     limits,
     llm,
+    logistics,
     narration,
     playlist,
     retrieval,
@@ -174,11 +175,12 @@ def answer(
     if provider is None or model is None:
         provider, model = settings_store.llm_choice()
     voice = voices.for_answer()
-    info: dict[str, Any] = {"provider": provider, "model": model, "top_score": None, "narration": None}
+    info: dict[str, Any] = {"provider": provider, "model": model, "top_score": None, "narration": None, "kind": None}
 
     stored = _stored_topic(content, question, course)
     if stored is not None:
         info["narration"] = "stored"
+        info["kind"] = logistics.COURSE_CONTENT
         return _replay_topic(content, question, stored, voice), info
 
     records, matrix = playlist.searchable(content, course)
@@ -207,6 +209,13 @@ def answer(
     if not chosen:
         return playlist.not_covered(question), info
 
+    # Logistics check (spec step 7a): meetings, absences, grades, deadlines and Canvas go to Ben.
+    kind = logistics.classify(question, completer, provider=provider, model=model)
+    info["kind"] = kind.kind
+    info["kind_source"] = kind.source
+    if kind.kind == logistics.LOGISTICS:
+        return logistics.referral(question, _suggested_questions(content, course)), info
+
     codes = {r["id"]: (playlist.related_code(content, r) or {}).get("source") for r in chosen}
     result = narration.narrate(question, chosen, codes, provider=provider, model=model, complete=completer)
     info["narration"] = result.source
@@ -225,6 +234,15 @@ def _check_retrieval_ready(retriever: Retriever, dim: int) -> None:
         raise RetrievalNotReady() from exc
     except Exception:  # an empty matrix is an odd input; the real call will tell
         pass
+
+
+def _suggested_questions(content: Content, course: Optional[str]) -> list[str]:
+    """Suggested course questions to offer after a logistics referral."""
+    out = []
+    for topic in content.topics:
+        if isinstance(topic, dict) and topic.get("question") and (course is None or topic.get("course") in (None, course)):
+            out.append(str(topic["question"]))
+    return out[: logistics.MAX_FOLLOW_UPS]
 
 
 def _stored_topic(content: Content, question: str, course: Optional[str]) -> Optional[dict[str, Any]]:
@@ -324,7 +342,8 @@ def ask(
         raise HTTPException(503, "retrieval not implemented yet")
     latency = int((time.monotonic() - started) * 1000)
     limits.log_question(
-        question, info["top_score"], result["covered"], info["provider"], info["model"], latency, course
+        question, info["top_score"], result["covered"], info["provider"], info["model"], latency, course,
+        kind=info.get("kind"),
     )
     return result
 
