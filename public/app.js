@@ -377,6 +377,7 @@ function showStageError(kind, question) {
   const chips = withChips ? topicsForCourse().slice(0, 6) : [];
   // Only invite the visitor to pick a chip when there are chips to pick.
   const invite = kind === 'logistics' ? 'Or ask me about the course:' : 'Try one of these instead:';
+  if (kind === 'notCovered' || kind === 'logistics') clearSourcesToggle();
   showStageMessage({ title, text: chips.length ? `${text} ${invite}` : text, actions, chips });
   addTwinMessage(title, kind === 'logistics' ? '' : 'msg-error');
   ui.followups.hidden = true;
@@ -437,6 +438,13 @@ function renderSourcesList(container, answer) {
   app.sourcesBlock = block;
   app.sourceCount = sources.length;
   if (!ui.dock.classList.contains('expanded')) ui.dockToggle.textContent = `Sources (${sources.length})`;
+}
+
+/** This answer used no slides: the phone's Sources toggle must not keep the previous answer's count. */
+function clearSourcesToggle() {
+  app.sourcesBlock = null;
+  app.sourceCount = 0;
+  if (!ui.dock.classList.contains('expanded')) ui.dockToggle.textContent = 'Sources';
 }
 
 function openSlideDialog(src) {
@@ -585,7 +593,10 @@ function showSegment(i) {
   stopNarration();
   player.index = i;
 
-  ui.slideImg.src = seg.image;
+  if (ui.slideImg.getAttribute('src') !== seg.image) {
+    ui.slideImg.classList.add('is-loading');
+    ui.slideImg.src = seg.image;
+  }
   ui.slideImg.alt = `Slide ${seg.slide_number} from ${courseCode(seg.course)} session ${seg.session}, ${seg.session_title}`;
   ui.slideAlt.textContent = ui.slideImg.alt;
 
@@ -958,7 +969,9 @@ ui.clipVideo.addEventListener('error', () => {
   ui.clipNote.hidden = false;
 });
 
+ui.slideImg.addEventListener('load', () => ui.slideImg.classList.remove('is-loading'));
 ui.slideImg.addEventListener('error', () => {
+  ui.slideImg.classList.remove('is-loading');
   if (ui.slideImg.getAttribute('src')) refreshExpiredLinks();
 });
 

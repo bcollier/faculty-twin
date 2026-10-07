@@ -183,7 +183,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .course-filter label { position: relative; }
 .course-filter input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .course-filter label > span {
-  display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 1rem; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: .3em; min-height: var(--tap); padding: 0 1rem; border-radius: 999px;
   border: 1px solid var(--line-strong); background: var(--surface); font-size: .92rem; cursor: pointer;
 }
 .course-filter input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
@@ -229,6 +229,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 }
 .slide-frame img, .slide-frame video { width: 100%; height: 100%; object-fit: contain; }
 .slide-frame video { background: #000; }
+/* While the next slide loads, show the empty frame rather than the previous slide under the new caption. */
+.slide-frame img.is-loading { visibility: hidden; }
 .media:not(.has-code) .slide-frame { width: min(100%, calc(64vh * 16 / 9)); justify-self: center; }
 
 .code-panel { background: var(--code-bg); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; overflow: hidden; }
