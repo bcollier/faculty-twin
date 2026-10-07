@@ -107,8 +107,43 @@ def test_leak_check_levels():
     assert checker.strong("email zquenwic@example.edu or zquenwic") == 2
     assert checker.strong(f"Work by {pf.FAKE_SURNAME} et al.") == 0  # slide citations are not altered
     assert checker.strict(f"I asked {pf.FAKE_SURNAME} to explain") == 1  # transcripts are fully scrubbed
+    assert checker.strict(f"I used {pf.FAKE_SURNAME}'s notes") == 1  # a possessive is the name too
     assert checker.strict("Ben Collier explains apples to [student]") == 0
     assert checker.strong("Advisor Person") == 0  # only student columns are read
+
+
+def test_leak_allowlist_is_narrow(tmp_path):
+    """A reviewed non-name hit is allowed in its one record and field only; full names never are."""
+    import csv
+    import io
+
+    from indexer.leakcheck import load_allowlist
+
+    rows = list(csv.DictReader(io.StringIO(pf.ROSTER_CSV)))
+    path = tmp_path / "leak_allowlist.json"
+    path.write_text(json.dumps([{"record": "70445-s01-001", "field": "transcript", "token": pf.FAKE_SURNAME,
+                                 "reason": "test: the product, not the person"}]))
+    checker = RosterChecker(rows, english=set(), allow=load_allowlist(path))
+    text = f"The {pf.FAKE_SURNAME} tier costs more."
+    index = {"records": [
+        {"id": "70445-s01-001", "transcript": text},                          # allowed here
+        {"id": "70445-s01-002", "transcript": text},                          # same token, other record: a hit
+        {"id": "70445-s01-001", "text": f"Thanks {pf.FAKE_FULL_NAME}"},       # other field: a hit
+        {"id": "70445-s01-001", "transcript": f"Thanks {pf.FAKE_FULL_NAME}"},  # full name: never allowed
+    ]}
+    hits = checker.check_index(index)
+    assert hits.allowed == 2  # the bare surname in record 001's transcripts
+    assert "content/index.json#70445-s01-002.transcript" in hits.where
+    assert "content/index.json#70445-s01-001.text" in hits.where
+    # the full name in an allowlisted record and field still blocks
+    assert hits.where["content/index.json#70445-s01-001.transcript"] >= 1
+    assert pf.FAKE_SURNAME not in hits.summary() and "allowed" in hits.summary()
+    path.write_text(json.dumps([{"record": "x", "field": "transcript", "token": "Two words", "reason": "r"}]))
+    with pytest.raises(ValueError):
+        load_allowlist(path)
+    path.write_text(json.dumps([{"record": "x", "field": "transcript", "token": "Word"}]))  # no reason
+    with pytest.raises(ValueError):
+        load_allowlist(path)
 
 
 def test_upload_refuses_without_roster(built, tmp_path):

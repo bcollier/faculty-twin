@@ -84,16 +84,52 @@ def summary(results: list[dict[str, Any]], meta: dict[str, Any] | None = None) -
 
     return {
         "meta": meta or {},
+        "probabilistic_judges": probabilistic(results),
         "questions": len(results),
         "status_counts": dict(sorted(statuses.items())),
         "scope_right_call_rate": _avg([1.0] * len(right_call) + [0.0] * (len(expected) - len(right_call))),
         "answerable_declined": len(declined_answerable),
         "narration_fallback_rate": _avg([1.0] * len(fallback) + [0.0] * (len(ok) - len(fallback))),
-        "median_latency_ms": sorted(r["response"]["latency_ms"] for r in results)[len(results) // 2] if results else None,
+        "median_latency_ms": sorted(r["response"].get("latency_ms", 0) for r in results)[len(results) // 2] if results else None,
         "judges": per_judge,
         "judge_agreement": agreement,
         "by_category": by_cat,
     }
+
+
+def probabilistic(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """For judges that return probabilities (Jev): how sure they were, and whether P(pass) tracks the LLM judges.
+
+    `brier_vs_llm_majority` compares a judge's P(pass) with the majority verdict of
+    the other (text) judges on the same item: 0 is perfect agreement, 0.25 is a
+    coin flip at 0.5. Items with no LLM majority (a tie, or no LLM judges) are skipped.
+    """
+    out: dict[str, Any] = {}
+    names = sorted({j["judge"] for r in results for j in r.get("judgements", []) if "p_pass" in j})
+    for name in names:
+        ps, confs, brier, flags = [], [], [], defaultdict(list)
+        for r in results:
+            mine = next((j for j in r.get("judgements", []) if j["judge"] == name and "p_pass" in j), None)
+            if mine is None:
+                continue
+            ps.append(mine["p_pass"])
+            if (mine.get("confidence") or {}).get("verdict") is not None:
+                confs.append(mine["confidence"]["verdict"])
+            for k, v in (mine.get("flags") or {}).items():
+                flags[k].append(1.0 if v >= 0.5 else 0.0)
+            others = [j for j in r.get("judgements", []) if "error" not in j and "p_pass" not in j]
+            passes = sum(1 for j in others if j["verdict"] == "pass")
+            if others and passes * 2 != len(others):
+                brier.append((mine["p_pass"] - (1.0 if passes * 2 > len(others) else 0.0)) ** 2)
+        out[name] = {
+            "items": len(ps),
+            "mean_p_pass": _avg(ps),
+            "mean_verdict_confidence": _avg(confs),
+            "brier_vs_llm_majority": round(mean(brier), 3) if brier else None,
+            "compared_items": len(brier),
+            "flag_rates": {k: _avg(v) for k, v in sorted(flags.items())},
+        }
+    return out
 
 
 def summary_markdown(s: dict[str, Any]) -> str:
@@ -121,6 +157,14 @@ def summary_markdown(s: dict[str, Any]) -> str:
         lines.append("| --- | --- | --- |")
         for pair, a in s["judge_agreement"].items():
             lines.append(f"| {pair} | {a['verdict_agreement']} | {a['mean_abs_score_gap']} |")
+        lines.append("")
+    if s.get("probabilistic_judges"):
+        lines.append("| Probabilistic judge | Items | Mean P(pass) | Mean confidence | Brier vs LLM majority (items) | Flag rates |")
+        lines.append("| --- | --- | --- | --- | --- | --- |")
+        for name, p in s["probabilistic_judges"].items():
+            flags = ", ".join(f"{k} {v}" for k, v in p["flag_rates"].items()) or "N/A"
+            lines.append(f"| {name} | {p['items']} | {p['mean_p_pass']} | {p['mean_verdict_confidence']} | "
+                         f"{p['brier_vs_llm_majority']} ({p['compared_items']}) | {flags} |")
         lines.append("")
     lines.append("| Category | Questions | Answered | Pass rate | Scope score |")
     lines.append("| --- | --- | --- | --- | --- |")

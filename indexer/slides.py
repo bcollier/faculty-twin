@@ -33,6 +33,8 @@ Per-slide ``flags`` (flag, never drop; downstream stages decide):
   notes_unmatched               the pptx exists but this page could not be matched to a slide
   no_clips_private_case         session whose class video must not be cut into clips
   secret_redacted               an API-key-like string was replaced with [REDACTED_KEY]
+  pg_language                   cursing in the text, title, notes or OCR text was swapped for a mild
+                                word (indexer/pg_filter.py); the slide image itself is unchanged
 
 ``notes_match.confidence``: high (text similarity >= 0.5), medium (>= 0.2),
 positional (no text to compare, but the page sits in an unbroken one-to-one run
@@ -53,7 +55,6 @@ unless ``--force`` is given.
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import os
 import re
@@ -62,11 +63,23 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
-PIPELINE_VERSION = 7
+try:  # run as a script (python indexer/slides.py) or with indexer/ on sys.path
+    from pg_filter import smooth as pg_smooth
+    from roster import person as roster_person
+    from roster import read_people
+except ImportError:  # imported as a package module
+    from indexer.pg_filter import smooth as pg_smooth
+    from indexer.roster import person as roster_person
+    from indexer.roster import read_people
+
+# 8: PG filter on text, title, notes and OCR text (re-extracts text, never re-renders)
+# 9: rosters with other column names (name/login_id, Student, SIS Login ID) join the name scrub
+PIPELINE_VERSION = 9
 
 ARCHIVE = Path(os.environ.get("LECTURE_ARCHIVE", "~/Lecture Archive")).expanduser()
 TERM = "2026 Fall"
@@ -174,10 +187,10 @@ class NameScrubber:
         self.surnames: set[str] = set()
         self.firsts: set[str] = set()
         for r in rows:
-            last = (r.get("Last Name") or "").strip()
-            first = (r.get("Preferred/First Name") or "").strip()
-            aid = (r.get("Andrew ID") or "").strip().lower()
-            email = (r.get("Email") or "").strip().lower()
+            p = roster_person(r)  # any roster header layout (indexer/roster.py)
+            if p is None:
+                continue
+            last, first, aid, email = p["last"], p["first"], p["andrew_id"], p["email"]
             if first and last:
                 self.full.add(_norm_name(f"{first} {last}"))
                 self.full.add(_norm_name(f"{first.split()[0]} {last}"))
@@ -197,10 +210,7 @@ class NameScrubber:
 
     @classmethod
     def from_dir(cls, roster_dir: Path) -> "NameScrubber":
-        rows = []
-        for p in sorted(roster_dir.glob("*.csv")):
-            with open(p, newline="", encoding="utf-8-sig") as fh:
-                rows.extend(csv.DictReader(fh))
+        rows = read_people(roster_dir)
         dictionary = set()
         words = Path("/usr/share/dict/words")
         if words.exists():
@@ -633,8 +643,23 @@ def render_deck(deck: Deck, workers: int) -> None:
         deck.rendered = sum(ex.map(lambda a: render_page(*a), jobs))
 
 
-def extraction_current(deck: Deck) -> bool:
-    """True when slides.json was built from the same sources by this pipeline version."""
+def roster_fingerprint(roster_dir: Path | None = None) -> str:
+    """A hash of the roster files' names, sizes and times (never their contents' text).
+
+    Part of the extraction cache key: a roster added or changed after a deck was
+    extracted must re-run the name scrub on that deck. (Oct 5: rosters from other
+    terms were added after the decks were extracted, and the cache kept a slide
+    that names a student, because the key only covered the PDF and pptx.)
+    """
+    import hashlib
+
+    roster_dir = roster_dir or ARCHIVE / "_private" / "rosters"
+    files = sorted(roster_dir.glob("*.csv")) if roster_dir.is_dir() else []
+    return hashlib.sha256(json.dumps(fingerprint(*files)).encode()).hexdigest()[:16]
+
+
+def extraction_current(deck: Deck, roster_fp: str | None = None) -> bool:
+    """True when slides.json was built from the same sources and rosters by this pipeline version."""
     deck_path, slides_path = deck.out / "deck.json", deck.out / "slides.json"
     if not (deck_path.exists() and slides_path.exists()):
         return False
@@ -642,8 +667,9 @@ def extraction_current(deck: Deck) -> bool:
         old = json.loads(deck_path.read_text())
     except ValueError:
         return False
+    roster_fp = roster_fp if roster_fp is not None else roster_fingerprint()
     if old.get("pipeline_version") == PIPELINE_VERSION and old.get("fingerprint") == fingerprint(deck.pdf, deck.pptx) \
-            and old.get("pages") == deck.pages:
+            and old.get("pages") == deck.pages and old.get("roster_fingerprint") == roster_fp:
         deck.quality = old.get("notes_match", {})
         deck.flags = old.get("flag_counts", {})
         deck.ocr_used = bool(old.get("ocr"))
@@ -664,6 +690,7 @@ def extract_deck(deck: Deck, scrubber: NameScrubber, ocr: dict[str, str] | None)
     positional = positional_ok(alignment, pslides) if pslides else [False] * n
 
     records, qual, flag_counts = [], {}, {}
+    pg_counts: Counter = Counter()
     for p in range(1, n + 1):
         sid = deck.sid(p)
         j, sim = alignment[p - 1]
@@ -685,6 +712,13 @@ def extract_deck(deck: Deck, scrubber: NameScrubber, ocr: dict[str, str] | None)
         ocr_text, s3 = redact_secrets(ocr_text)
         if s1 or s2 or s3:
             flags.add("secret_redacted")
+        # PG rule: mild words for cursing in the stored text (the slide image is unchanged)
+        text, p1 = pg_smooth(text, pg_counts)
+        title, p2 = pg_smooth(title, pg_counts)
+        notes, p3 = pg_smooth(notes, pg_counts)
+        ocr_text, p4 = pg_smooth(ocr_text, pg_counts)
+        if p1 or p2 or p3 or p4:
+            flags.add("pg_language")
         little = len(re.sub(r"\W", "", text)) < 15
         if little:
             flags.add("little_text")
@@ -733,12 +767,14 @@ def extract_deck(deck: Deck, scrubber: NameScrubber, ocr: dict[str, str] | None)
         "pdf": deck.pdf.name,
         "pptx": deck.pptx.name if deck.pptx else None,
         "fingerprint": fingerprint(deck.pdf, deck.pptx),
+        "roster_fingerprint": roster_fingerprint(),
         "pages": n,
         "pptx_slides": len(pslides),
         "pptx_hidden": len(pslides) - len(visible),
         "count_match": len(visible) == n if pslides else None,
         "notes_match": qual,
         "flag_counts": flag_counts,
+        "pg_changes": dict(pg_counts),  # labels such as "hell -> heck", counts only
         "ocr": ocr is not None,
         "boilerplate_lines_removed": len(boiler),
     })
@@ -900,7 +936,8 @@ def main(argv: list[str] | None = None) -> int:
     write_json(missing_path, sorted(missing.values(), key=lambda m: (m["course"], m["session"])))
 
     # Text, notes and flags, only for decks whose sources or pipeline changed.
-    todo = [d for d in results if args.force or not extraction_current(d)]
+    roster_fp = roster_fingerprint()
+    todo = [d for d in results if args.force or not extraction_current(d, roster_fp)]
     for d in results:
         d.skipped_extract = d not in todo
     ocr = None

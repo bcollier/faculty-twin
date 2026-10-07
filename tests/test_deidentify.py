@@ -283,3 +283,38 @@ def test_process_all_end_to_end(tmp_path):
     assert "Marisol" not in review and "Replacements by rule" in review
     result = d.sweep(archive, verbose=False)
     assert all(result[k] == 0 for k in d.SWEEP_KINDS if k not in d.REVIEW_ONLY_KINDS)
+
+
+# --- PG rule (after de-identification) ----------------------------------------
+def test_apply_pg_marks_changed_cues_only():
+    cues = [{"start": 0.0, "end": 2.0, "text": "Damn, thanks [student]."},
+            {"start": 2.0, "end": 4.0, "text": "The loss will bounce around.", "pg": True}]
+    counts = Counter()
+    assert d.apply_pg(cues, counts) == 1
+    assert cues[0] == {"start": 0.0, "end": 2.0, "text": "Darn, thanks [student].", "pg": True}
+    assert "pg" not in cues[1]  # a stale flag is cleared when the text is clean
+    assert counts == Counter({"damn -> darn": 1})
+
+
+def test_process_all_applies_pg_after_deidentification(tmp_path):
+    archive = tmp_path / "archive"
+    sess = archive / "00-000 Test Course" / d.TERM / "01 2026-08-25 Gradient Descent"
+    sess.mkdir(parents=True)
+    vtt = SYNTHETIC_VTT.replace("It takes forever, and you burn compute",
+                                "It takes forever, what the hell, and you burn compute")
+    (sess / "transcript_raw.vtt").write_text(vtt)
+    (sess / "transcript_drive.md").write_text("[1:14] Exactly, thanks Marisol. Damn.\n")
+    write_roster(archive / "_private" / "rosters")
+    summary = d.process_all(archive, verbose=False)
+    assert summary[0]["pg_cues"] == 1 and summary[0]["pg_changes"] == 1
+    assert summary[0]["drive_pg_changes"] == 1
+    doc = json.loads((archive / "_build" / "transcripts" / "00000" / "s01.json").read_text())
+    flagged = [c for c in doc["cues"] if c.get("pg")]
+    assert len(flagged) == 1 and "what the heck" in flagged[0]["text"] and "Marisol" not in flagged[0]["text"]
+    assert all(set(c) <= {"start", "end", "text", "speaker", "pg"} for c in doc["cues"])
+    drive = (archive / "_build" / "transcripts" / "00000" / "s01.drive.md").read_text()
+    assert "Darn." in drive and "Marisol" not in drive
+    review = (archive / "_build" / "transcripts" / "00000" / "s01.review.md").read_text()
+    assert "## PG language (counts only)" in review and "hell -> heck: 1" in review
+    assert "what the" not in review  # counts only, never the cue text
+    assert d.sweep(archive, verbose=False)["pg_language"] == 0

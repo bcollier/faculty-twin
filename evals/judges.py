@@ -1,7 +1,7 @@
 """LLM judges: several models from different providers score the same answers.
 
 A judge is named `provider:model`, for example `anthropic:claude-opus-5-5`,
-`openai:gpt-6-astra`, or `openrouter:google/gemini-3-pro`. Calls reuse the
+`openai:gpt-6.1-sol`, or `openrouter:google/gemini-3.8-flash`. Calls reuse the
 request builders and reply parsers in `app/llm.py` (same keys, same env vars),
 but go straight to the provider: they do not count against the app's daily
 model-call cap, which protects the live site, not offline evals.
@@ -28,7 +28,9 @@ RETRIES = 3
 
 
 class JudgeError(RuntimeError):
-    pass
+    def __init__(self, message: str, retryable: bool = True):
+        super().__init__(message)
+        self.retryable = retryable
 
 
 @dataclass
@@ -73,7 +75,8 @@ class Judge:
         if resp.status_code == 429 or resp.status_code >= 500:
             raise JudgeError(f"{self.name} returned {resp.status_code} (retryable)")
         if resp.status_code >= 400:
-            raise JudgeError(f"{self.name} returned {resp.status_code}: {resp.text[:200]}")
+            # 400s other than 429 (bad key, unknown model, bad request) will not fix themselves.
+            raise JudgeError(f"{self.name} returned {resp.status_code}: {resp.text[:200]}", retryable=False)
         return llm.PARSERS[self.provider](resp.json())
 
     def judge(self, item: dict[str, Any], sleep: Callable[[float], None] = time.sleep) -> dict[str, Any]:
@@ -87,6 +90,17 @@ class Judge:
                 return out
             except (JudgeError, llm.LLMError, rubric.JudgementError, KeyError, ValueError) as exc:
                 last = str(exc)
+                if not getattr(exc, "retryable", True):
+                    break
                 if attempt + 1 < RETRIES:
                     sleep(2.0 * (attempt + 1))
         return {"judge": self.name, "error": last}
+
+
+def make_judge(spec: str):
+    """A judge from a CLI spec: `provider:model` for an LLM, or `jev` / `jev:<model>` for Jev."""
+    if spec == "jev" or spec.startswith("jev:"):
+        from .jev_judge import JevJudge
+
+        return JevJudge(spec.partition(":")[2] or None)
+    return Judge.parse_spec(spec)

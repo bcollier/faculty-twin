@@ -18,13 +18,14 @@ live. Reads and writes nothing in the repo; never prints transcript text.
     uv run --no-project --with numpy python -m localvoice.sample \\
         --transcript "~/Lecture Archive/_build/transcripts/70445/s06.json" \\
         --video "~/Lecture Archive/<course folder>/2026 Fall/06 .../video.mp4" \\
-        --out "~/Lecture Archive/_private/voice/ben_ref.wav" [--seconds 45]
+        --out "~/Lecture Archive/_private/voice/ben_ref.wav" [--seconds 45] [--rank 2]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -93,15 +94,36 @@ def clean_windows(cues: list[dict], target: float = 45.0) -> list[Window]:
     return sorted(windows, key=lambda w: (-min(w.seconds, target), -w.words / max(w.seconds, 1e-6)))
 
 
+def make_private_dirs(folder: Path) -> None:
+    """Create `folder` and any missing parents with mode 700. Folders that already exist are left alone."""
+    missing = []
+    f = folder
+    while not f.exists():
+        missing.append(f)
+        f = f.parent
+    for d in reversed(missing):
+        d.mkdir(mode=0o700)
+        os.chmod(d, 0o700)  # mkdir's mode is masked by the umask
+
+
 def cut(video: Path, window: Window, out: Path) -> None:
-    """Extract mono 24 kHz WAV audio for the window. Video is dropped."""
-    out.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{window.start:.2f}",
-         "-to", f"{window.end:.2f}", "-i", str(video), "-vn", "-ac", "1", "-ar", "24000",
-         "-af", "highpass=f=80,loudnorm", str(out)],
-        check=True,
-    )
+    """Extract mono 24 kHz WAV audio for the window. Video is dropped. The clip is readable only by its owner."""
+    make_private_dirs(out.parent)
+    if "_private" in out.parent.parts:  # an existing folder under _private/ is tightened too
+        os.chmod(out.parent, 0o700)
+    if out.exists():
+        os.chmod(out, 0o600)
+    old_umask = os.umask(0o077)  # so the file is never readable by others, even for a moment
+    try:
+        subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{window.start:.2f}",
+             "-to", f"{window.end:.2f}", "-i", str(video), "-vn", "-ac", "1", "-ar", "24000",
+             "-af", "highpass=f=80,loudnorm", str(out)],
+            check=True,
+        )
+    finally:
+        os.umask(old_umask)
+    os.chmod(out, 0o600)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -110,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--video", type=Path, help="session video (a single-part recording)")
     p.add_argument("--out", type=Path)
     p.add_argument("--seconds", type=float, default=45.0)
+    p.add_argument("--rank", type=int, default=1, help="which candidate window to cut, 1 = best (see --list)")
     p.add_argument("--list", action="store_true", help="only list candidate windows (times and counts)")
     args = p.parse_args(argv)
 
@@ -118,16 +141,21 @@ def main(argv: list[str] | None = None) -> int:
     if not windows:
         print("No instructor-only stretch long enough in this session. Try another session.")
         return 1
-    for w in windows[:5]:
-        print(f"  {w.start:8.1f}s to {w.end:8.1f}s  ({w.seconds:5.1f} s, {w.words} words)")
+    for i, w in enumerate(windows[:10], start=1):
+        print(f"  {i:2d}. {w.start:8.1f}s to {w.end:8.1f}s  ({w.seconds:5.1f} s, {w.words} words)")
     if args.list:
         return 0
     if not args.video or not args.out:
         print("--video and --out are needed to cut the sample.", file=sys.stderr)
         return 2
-    cut(args.video.expanduser(), windows[0], args.out.expanduser())
-    print(f"Wrote {args.out.name} ({windows[0].seconds:.1f} s). Listen to all of it before using it: "
-          "no other voice may be audible.")
+    if not 1 <= args.rank <= len(windows):
+        print(f"--rank must be between 1 and {len(windows)} for this session.", file=sys.stderr)
+        return 2
+    chosen = windows[args.rank - 1]
+    cut(args.video.expanduser(), chosen, args.out.expanduser())
+    print(f"Wrote {args.out.name} ({chosen.seconds:.1f} s, rank {args.rank}), readable only by you. "
+          "Listen to all of it before using it: no other voice may be audible. "
+          "Chatterbox only uses about the first 6 to 10 seconds, so the start matters most.")
     return 0
 
 

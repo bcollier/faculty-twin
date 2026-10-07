@@ -30,6 +30,7 @@ Categories: `API_KEY_NOT_WORKING`, `CODE_HELP`, `CONCEPT_QUESTION`, `ASSIGNMENT_
 2. **Ask the twin.**
    - `--target in-process` calls `app.main.answer`, the same function behind `/api/ask`. It runs with the real index and the real retriever, and it also records the slide material each narration came from. Run it on the Mac mini, where the index and keys are.
    - `--target http --base-url <site>` asks a running site instead. Judges can't see slide material that way, so groundedness is scored as N/A.
+   - `--target baseline --baseline-model openai:gpt-6.1-sol` has a generic chatbot with no course material answer instead, as a comparison.
    - `--target none` is a dry run that checks the wiring only.
 3. **Judge each answer.** Each `--judge provider:model` scores six dimensions from 1 to 5:
    - **grounded:** every claim comes from the slides
@@ -56,9 +57,54 @@ Categories: `API_KEY_NOT_WORKING`, `CODE_HELP`, `CONCEPT_QUESTION`, `ASSIGNMENT_
    - agreement between each pair of judges
    - a breakdown by category
 
+## Jev as a judge (exploration)
+
+`--judge jev` adds Jev, TypeSafe's System One model, as a judge. It generates no text: it answers the rubric as typed Score and yes/no questions with calibrated probabilities, through DeepEval's `JevEval`, the same setup as the Ignatius at Home evals. It needs its own environment (`evals/requirements.txt`) and `TYPESAFE_API_KEY`. The questions this exploration is meant to answer, and the results so far, are in [docs/EXPLORATION_JEV.md](../docs/EXPLORATION_JEV.md).
+
+## Check the judges first
+
+`evals/calibration.jsonl` holds hand-written, clearly synthetic answers whose right verdict is known: a grounded answer, an invented fact, a promised extension, a correct decline, a wrong decline, an echoed prompt injection, a student named aloud, and markdown read as speech. `python -m evals.calibrate --judge ...` scores them and reports, for each judge, how many it got right. Don't trust a judge on real answers until it passes these.
+
+### Calibration results, October 5, 2026
+
+Synthetic cases only; no student data. Run twice for `gpt-6.1-sol`, once for `gpt-6-luna`.
+
+| Judge | Cases met | Notes |
+| --- | --- | --- |
+| `openai:gpt-6.1-sol` | 8 of 8 (both runs) | Strictest. Use it as the primary judge. |
+| `openai:gpt-6-luna` | 8 of 8 | Scores match, but it is lenient on verdicts: it passed markdown narration while scoring its speech 2 of 5. |
+| `openrouter:*` | not run | The OpenRouter key on the laptop returns 401 "User not found". |
+| `anthropic:*` | not run | No Anthropic key on the laptop. It is on the Mac mini. |
+
+Every bad case scored 1 or 2 on the dimension it targets, and the good cases scored 5. A judge from a second provider (Anthropic on the Mac mini, or OpenRouter once its key is replaced) would guard against one model family grading its own style.
+
+### Baseline results, October 5, 2026
+
+A generic chatbot with no course material (`--target baseline`, `gpt-6.1-sol`) answered the 22 real, de-identified email questions. This is the bar the twin has to clear. Aggregates only:
+
+| Judge | Pass rate | answers_question | correct_scope | matches_reference | speech_quality | safety_tone |
+| --- | --- | --- | --- | --- | --- | --- |
+| `gpt-6.1-sol` (judging its own answers) | 0.68 | 3.77 | 3.68 | 2.00 | 3.67 | 4.45 |
+| `gpt-6-luna` | 0.27 | 3.00 | 2.59 | 1.08 | 3.11 | 3.14 |
+
+The two judges gave the same verdict on 59% of questions. What they flagged:
+- **Logistics:** the baseline rarely declines. On meetings, grades, career advice and missed classes it asked for details, offered to review work, or implied it could reschedule, scoring 1 on scope from at least one judge.
+- **Invented policy:** in one case it contradicted the real answer about how quizzes work.
+- **Concept questions:** it gave generic textbook advice and missed the specific diagnosis in Ben's real reply (`matches_reference` 1 to 2).
+- **Judge bias:** `gpt-6.1-sol` was far more lenient grading answers it wrote itself. On calibration it was the stricter judge. This is why the real run should include a judge from another model family.
+
+What the twin should beat:
+- decline every logistics question cleanly (the twin's not-covered path)
+- never invent policy (the grounding check)
+- match Ben's own explanations on concept questions (his slides, notes and class transcript)
+
 ## Commands
 
 ```bash
+# Calibrate the judges (synthetic cases, needs the judges' keys)
+uv run --no-project --with-requirements requirements.txt python -m evals.calibrate \
+  --judge openai:gpt-6.1-sol --judge anthropic:claude-opus-5-5
+
 # Dry run with no keys
 uv run --no-project --with-requirements requirements.txt python -m evals.run \
   --questions evals/questions.example.jsonl --target none
@@ -66,7 +112,7 @@ uv run --no-project --with-requirements requirements.txt python -m evals.run \
 # Real run on the Mac mini, once retrieval is written and content is uploaded
 uv run --no-project --with-requirements requirements.txt python -m evals.run \
   --questions evals/private/questions.jsonl --top 25 \
-  --judge anthropic:claude-opus-5-5 --judge openai:gpt-6-astra --judge openrouter:<model id>
+  --judge openai:gpt-6.1-sol --judge anthropic:claude-opus-5-5
 ```
 
 Until `app/retrieval.py` is written, every question comes back as "retrieval not implemented yet", and the judges don't run.

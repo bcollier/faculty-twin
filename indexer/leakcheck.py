@@ -13,21 +13,32 @@ a cited author:
 - strict (de-identified transcript text, where every person was already
   replaced): also any single roster first name or surname, capitalized, that
   is not an ordinary lowercase English word and is not one of Ben's own names.
+
+Reviewed exceptions (added Oct 5). A roster word can also be a product, a
+place, or an ordinary word ("Duolingo Max", "IBM Watson", "Austin, Texas").
+After a person has looked at a hit and decided it is not a name, it goes in a
+PRIVATE allowlist, `~/Lecture Archive/_private/leak_allowlist.json` (it holds
+roster words, so it is never committed):
+
+    [{"record": "70445-s02-015", "field": "transcript", "token": "Watson",
+      "reason": "IBM Watson, the product"}]
+
+An entry allows only that single-word strict hit, in that one record and
+field. It never allows a full name, an Andrew ID, or an email, never applies to
+another record, and a record id or token that changes makes the hit fail again.
+Allowed hits are counted and reported (counts only) but do not block.
 """
 
 from __future__ import annotations
 
-import csv
 import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-FIRST_COLS = ("Preferred/First Name", "Preferred Name", "First Name")
-LAST_COLS = ("Last Name",)
-ID_COLS = ("Andrew ID",)
-EMAIL_COLS = ("Email",)
+from indexer.roster import person, read_people, roster_files
+
 BEN = {"ben", "benjamin", "collier"}
 WORD_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*[A-Za-z]|[A-Za-z]")
 TOKEN_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+|[A-Za-z0-9][A-Za-z0-9._\-]*")
@@ -35,14 +46,6 @@ TOKEN_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+|[A-Za-z0-9][A-Za-z0-9
 
 class RosterMissing(RuntimeError):
     pass
-
-
-def _first(row: dict[str, str], cols: Iterable[str]) -> str:
-    for c in cols:
-        v = (row.get(c) or "").strip()
-        if v:
-            return v
-    return ""
 
 
 def _english_words() -> set[str]:
@@ -56,17 +59,26 @@ def _english_words() -> set[str]:
 class Hits:
     total: int = 0
     where: dict[str, int] = field(default_factory=dict)  # "<object>#<record id>.<field>" -> count
+    allowed: int = 0  # strict hits a person reviewed and allowlisted (not names); never block
+    allowed_where: dict[str, int] = field(default_factory=dict)
 
     def add(self, where: str, n: int) -> None:
         if n:
             self.total += n
             self.where[where] = self.where.get(where, 0) + n
 
+    def add_allowed(self, where: str, n: int) -> None:
+        if n:
+            self.allowed += n
+            self.allowed_where[where] = self.allowed_where.get(where, 0) + n
+
     def summary(self, limit: int = 20) -> str:
         """Locations and counts only. Never the matched text."""
+        note = (f" ({self.allowed} reviewed non-name hit(s) allowed in {len(self.allowed_where)} place(s) "
+                f"by the private allowlist)") if self.allowed else ""
         if not self.total:
-            return "leak check: 0 roster hits"
-        lines = [f"leak check: {self.total} roster hit(s) in {len(self.where)} place(s)"]
+            return "leak check: 0 roster hits" + note
+        lines = [f"leak check: {self.total} roster hit(s) in {len(self.where)} place(s)" + note]
         for k, n in sorted(self.where.items())[:limit]:
             lines.append(f"  {k}: {n}")
         if len(self.where) > limit:
@@ -74,14 +86,39 @@ class Hits:
         return "\n".join(lines)
 
 
+ALLOWLIST_NAME = "leak_allowlist.json"  # in _private/, next to rosters/
+
+
+def load_allowlist(path: Path) -> dict[tuple[str, str], set[str]]:
+    """{(record id, field): {lowercase token}} from the private allowlist; {} when there is none.
+
+    Every entry needs record, field, token and a non-empty reason, or the file is refused.
+    """
+    if not Path(path).exists():
+        return {}
+    data = json.loads(Path(path).read_text())
+    out: dict[tuple[str, str], set[str]] = {}
+    for e in data:
+        rec, fld, tok, why = (str(e.get(k) or "").strip() for k in ("record", "field", "token", "reason"))
+        if not (rec and fld and tok and why) or " " in tok:
+            raise ValueError("leak allowlist entries need record, field, a single-word token, and a reason")
+        out.setdefault((rec, fld), set()).add(tok.lower())
+    return out
+
+
 class RosterChecker:
-    def __init__(self, rows: list[dict[str, str]], english: set[str] | None = None) -> None:
+    def __init__(self, rows: list[dict[str, str]], english: set[str] | None = None,
+                 allow: dict[tuple[str, str], set[str]] | None = None) -> None:
+        self.allow = allow or {}
         english = english if english is not None else _english_words()
         full: set[str] = set()
         self._ids: set[str] = set()
         self._singles: set[str] = set()
         for r in rows:
-            first, last = _first(r, FIRST_COLS), _first(r, LAST_COLS)
+            p = person(r)  # any roster header layout (indexer/roster.py)
+            if p is None:
+                continue
+            first, last = p["first"], p["last"]
             if first and last:
                 full.add(f"{first} {last}".lower())
                 full.add(f"{first.split()[0]} {last}".lower())
@@ -89,10 +126,10 @@ class RosterChecker:
                 tok = tok.strip(".'")
                 if len(tok) >= 3 and tok not in english and tok not in BEN:
                     self._singles.add(tok)
-            aid = _first(r, ID_COLS).lower()
+            aid = p["andrew_id"]
             if len(aid) >= 3:
                 self._ids.add(aid)
-            email = _first(r, EMAIL_COLS).lower()
+            email = p["email"]
             if email:
                 self._ids.add(email)
                 self._ids.add(email.split("@")[0])
@@ -101,15 +138,14 @@ class RosterChecker:
         self.size = len(rows)
 
     @classmethod
-    def from_dir(cls, path: Path, english: set[str] | None = None) -> "RosterChecker":
-        files = sorted(Path(path).glob("*.csv")) if Path(path).is_dir() else []
-        if not files:
+    def from_dir(cls, path: Path, english: set[str] | None = None,
+                 allowlist: Path | None = None) -> "RosterChecker":
+        """Rosters from `path`; the reviewed allowlist from `path/../leak_allowlist.json` unless given."""
+        if not roster_files(path):
             raise RosterMissing(f"No roster CSVs in {path}; the leak check cannot run")
-        rows: list[dict[str, str]] = []
-        for p in files:
-            with open(p, newline="", encoding="utf-8-sig") as fh:
-                rows.extend(csv.DictReader(fh))
-        return cls(rows, english)
+        rows = read_people(path)
+        allowlist = allowlist if allowlist is not None else Path(path).parent / ALLOWLIST_NAME
+        return cls(rows, english, load_allowlist(allowlist))
 
     # ------------------------------------------------------------ counting
 
@@ -124,11 +160,22 @@ class RosterChecker:
         return n
 
     def strict(self, text: str) -> int:
-        n = self.strong(text)
+        return self.strict_allowing(text)[0]
+
+    def strict_allowing(self, text: str, allow: set[str] | frozenset = frozenset()) -> tuple[int, int]:
+        """(hits, allowed): single-word hits whose token is in `allow` are counted as allowed instead.
+
+        Strong hits (full names, Andrew IDs, emails) are never allowed.
+        """
+        n, ok = self.strong(text), 0
         for tok in WORD_RE.findall(text or ""):
-            if tok[0].isupper() and tok.lower().strip("'") in self._singles:
-                n += 1
-        return n
+            low = re.sub(r"'s$", "", tok.lower()).strip("'")  # possessive: "Name's" is a hit too
+            if tok[0].isupper() and low in self._singles:
+                if low in allow:
+                    ok += 1
+                else:
+                    n += 1
+        return n, ok
 
     # ------------------------------------------------------------ objects
 
@@ -146,7 +193,11 @@ class RosterChecker:
                 continue
             for key, value in rec.items():
                 text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-                count = self.strict(text) if key == "transcript" else self.strong(text)
+                if key == "transcript":
+                    count, ok = self.strict_allowing(text, self.allow.get((rid, key), frozenset()))
+                    hits.add_allowed(f"{name}#{rid}.{key}", ok)
+                else:
+                    count = self.strong(text)
                 hits.add(f"{name}#{rid}.{key}", count)
         return hits
 
