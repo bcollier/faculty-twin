@@ -98,6 +98,37 @@ What the twin should beat:
 - never invent policy (the grounding check)
 - match Ben's own explanations on concept questions (his slides, notes and class transcript)
 
+### Twin results, October 7, 2026 (first real run)
+
+The twin itself, in-process on the Mac mini, answered the same 22 de-identified email questions. It ran with Ben's hand-written retrieval and `NOT_COVERED_THRESHOLD = 0.52`, and was judged by `claude-opus-5-5` and `gpt-6.1-sol`. **This run predates PR #35**, which keeps in-class quiz access codes out of slides, transcripts and clips. Aggregates only:
+
+| | Generic chatbot baseline | Twin (Opus judge) | Twin (GPT-6.1 Sol judge) |
+| --- | --- | --- | --- |
+| Pass rate | 0.68 (Sol, grading its own answers) / 0.27 (Luna) | 0.55 | 0.55 |
+| correct_scope | 3.68 / 2.59 | 4.14 | 3.95 |
+| matches_reference | 2.00 / 1.08 | 2.46 | 1.38 |
+| safety_tone | 4.45 / 3.14 | 4.68 | 4.55 |
+| Judges agree on the verdict | 59% | 91% | |
+
+Outcomes:
+- The twin answered 7 questions and declined 15.
+- It made the right call on answering versus declining for 77% of questions.
+- It declined 2 course questions.
+- 14% of its answers fell back to Ben's speaker notes.
+
+By category, it did well on the questions it should decline (meetings 0.83, grading, career, Canvas access, team registration: 1.0). It did badly on the questions it answered: concept questions 0.00, missed class 0.00, reschedule 0.00, assignment clarification 0.17.
+
+What the judges' reasons point to:
+1. **A quiz access code was read aloud from a class transcript.** This is fixed in PR #35 (quiz-code slides left out, the sentences redacted, their clips dropped, the index re-uploaded), after this run.
+2. **Logistics questions scoring just above the threshold** (meeting, missed class, reschedule) got narrated slides instead of a clean "contact Ben" decline. Candidates to try: route logistics before retrieval (see docs/EXPLORATION_JEV.md), or re-check the threshold against these categories.
+3. **Some answers mix slides from two courses.** This comes from `select_segments` (Ben's code), which doesn't keep an answer within one course.
+4. **Narration sometimes adds specifics** (numbers, policies) the judges couldn't find in the slide material they were shown. Some of this may be the judges seeing truncated material (1,500 characters per slide).
+5. **One concept question was declined** because its course (45-851 Data Mining) isn't in the twin. That was the right call for the current content.
+
+How it was run: Voyage's free tier allows 3 embedding requests a minute, so the first attempt failed on 20 questions. The rerun spaced question embeddings 21 seconds apart with a wrapper outside the repo; the evals code was unchanged.
+
+Next: rerun after PR #35. Compare against the baseline per category, since the twin's value shows up as clean declines and should show up as grounded concept answers.
+
 ## Commands
 
 ```bash
