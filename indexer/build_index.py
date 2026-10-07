@@ -41,7 +41,7 @@ import numpy as np
 if __package__ in (None, ""):  # allow `python indexer/build_index.py`
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from indexer import common  # noqa: E402
+from indexer import assessment_filter, common  # noqa: E402
 from indexer.leakcheck import RosterChecker, RosterMissing  # noqa: E402
 
 VOYAGE_URL = "https://api.voyageai.com/v1/embeddings"
@@ -129,6 +129,7 @@ def collect(build: Path, archive: Path, code_map_path: Path | None = None) -> tu
     sources: dict[str, str] = {}
     by_course: dict[str, dict[str, Any]] = {}
     excluded = 0
+    code_redactions = 0  # access-code slides left out plus sentences replaced
 
     def note(path: Path) -> None:
         if path.exists():
@@ -178,21 +179,32 @@ def collect(build: Path, archive: Path, code_map_path: Path | None = None) -> tu
                 st["excluded"] += 1
                 continue
             sid = str(row["slide_id"])
+            if assessment_filter.slide_announces_code(row.get("title"), row.get("text"), row.get("ocr_text")):
+                # The slide image shows a quiz or survey access code: leave the whole slide out.
+                excluded += 1
+                st["excluded"] += 1
+                code_redactions += 1
+                continue
             tag = common.session_tag(session)
             clip = None
             if sid in clips and not no_clip_session and not (flags & common.NO_CLIP_FLAGS):
                 if (build / "clips" / f"{sid}.mp4").is_file():
                     clip = f"clips/{sid}.mp4"
-            transcript = transcripts.get(sid, "")
+            transcript, n_code = assessment_filter.redact(transcripts.get(sid, ""))
+            text, n_text = assessment_filter.redact(str(row.get("text") or "").strip())
+            notes, n_notes = assessment_filter.redact(str(row.get("notes") or "").strip())
+            if n_code:
+                clip = None  # the clip's audio may say the code
+            code_redactions += n_code + n_text + n_notes
             rec = {
                 "id": sid,
                 "kind": "slide",
                 **base,
                 "slide_number": int(row["slide_number"]),
                 "title": str(row.get("title") or "").strip(),
-                "text": str(row.get("text") or "").strip(),
-                "notes": str(row.get("notes") or "").strip(),
-                "ocr_text": str(row.get("ocr_text") or "").strip(),
+                "text": text,
+                "notes": notes,
+                "ocr_text": assessment_filter.redact(str(row.get("ocr_text") or "").strip())[0],
                 "transcript": transcript,
                 "image": row.get("image") or f"slides/{course}/{tag}/{sid}.webp",
                 "thumb": row.get("thumb") or f"slides/{course}/{tag}/{sid}-thumb.webp",
@@ -253,6 +265,7 @@ def collect(build: Path, archive: Path, code_map_path: Path | None = None) -> tu
         "slides": len(slides),
         "code": len(code),
         "excluded_student_names": excluded,
+        "access_code_redactions": code_redactions,
         "with_transcript": sum(1 for r in slides if r["transcript"]),
         "with_clip": sum(1 for r in slides if r["clip"]),
         "with_related_code": sum(1 for r in slides if r["related_code"]),
