@@ -47,7 +47,12 @@ def test_draft_is_written_once_and_never_overwritten(tmp_path: Path):
     assert pregenerate.ensure_draft(tmp_path, log=lambda s: None) == [{"question": "Ben's own question?", "course": "70445"}]
 
 
-def test_stops_while_retrieval_is_not_written(content_dir: Path):
+def test_stops_while_retrieval_is_not_written(content_dir: Path, monkeypatch):
+    def stub(*args, **kwargs):  # TEST FAKE: raises like the original stubs did
+        raise NotImplementedError("stub")
+
+    monkeypatch.setattr("app.retrieval.rank", stub)
+    monkeypatch.setattr("app.retrieval.select_segments", stub)
     lines: list[str] = []
     code = pregenerate.generate(content_dir, [{"question": "What is an apple?", "course": "70445"}], None, log=lines.append)
     assert code == pregenerate.EXIT_RETRIEVAL

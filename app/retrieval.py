@@ -1,7 +1,6 @@
 """Retrieval: rank slides against a question and pick the segments to present.
 
-Ben writes the bodies of this file by hand (see AGENTS.md, "Code Ben writes by
-hand"). Only the signatures, docstrings, and stubs are scaffolded. Until the
+Only the signatures, docstrings, and stubs are scaffolded. Until the
 stubs are filled in, `/api/ask` answers 503 "retrieval not implemented yet",
 and the three tests in tests/test_retrieval.py fail.
 
@@ -27,7 +26,7 @@ from typing import Any
 
 import numpy as np
 
-NOT_COVERED_THRESHOLD = None  # Ben sets this from his ten test questions
+NOT_COVERED_THRESHOLD = 0.30  # Initial value = 0.30, adjusting based on tests
 
 TOP_K = 8
 MAX_SEGMENTS = 5
@@ -39,8 +38,21 @@ def rank(question_vec: np.ndarray, matrix: np.ndarray) -> list[tuple[int, float]
     Returns (row index, score) pairs for all rows, highest score first.
     Scores are plain Python floats in [-1, 1].
     """
-    raise NotImplementedError("Ben writes this by hand")
+    results = []
 
+    matrix_length = len(matrix)
+
+    # loop through each row of the matrix and calculate the cosine similarity
+    # np.linalg.norm returns the Euclidean norm of the vector
+
+    for i in range(matrix_length):
+      matrix_row = matrix[i]
+      cosine_similarity = np.dot(question_vec, matrix_row) / (np.linalg.norm(question_vec) * np.linalg.norm(matrix_row))
+      results.append((i, float(cosine_similarity)))
+
+    # sort the results by the score in descending order
+    results.sort(key=lambda pair: pair[1], reverse=True)
+    return results
 
 def select_segments(
     ranked: list[tuple[int, float]],
@@ -61,4 +73,27 @@ def select_segments(
     Returns the chosen records (the dicts from `records`), in deck order.
     An empty list means the question is not covered.
     """
-    raise NotImplementedError("Ben writes this by hand")
+    # raise NotImplementedError("Ben writes this by hand")
+
+    selected_segments = []
+
+
+    # if we no limited threshold we add all slides, otherwise add slides that are above the threshold
+    for i, score in ranked[:TOP_K]:
+      if threshold is None or score >= threshold:
+        selected_segments.append(records[i])
+
+    hits = list(selected_segments)
+    for a in hits:
+      for b in hits:
+        same_slide_deck = a["course"] == b["course"] and a["session"] == b["session"]
+        if same_slide_deck and b["slide_number"] == a["slide_number"] + 2:
+          for r in records:
+            if (r["course"] == a["course"] and r["session"] == a["session"]
+                and r["slide_number"] == a["slide_number"] + 1
+                and r not in selected_segments):
+              selected_segments.append(r)
+
+    selected_segments = selected_segments[:MAX_SEGMENTS]
+    selected_segments.sort(key=lambda r: (r["course"], r["session"], r["slide_number"]))
+    return selected_segments
