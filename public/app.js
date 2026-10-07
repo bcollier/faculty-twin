@@ -856,8 +856,20 @@ function clearCaptionTimer() {
  * Helpers it can call: showSegment(i), playCurrent(), preloadAudio(i),
  * finishAnswer().
  */
-function onClipEnded() { /* Ben writes this by hand: move to next segment, start its audio, preload the one after, handle last segment and pause state. */ }
+function onClipEnded() { /* Ben writes this by hand: move to next segment, start its audio, preload the one after, handle last segment and pause state. */ 
+  if (!player.playing) return;
 
+  const next = player.index + 1;
+
+  if (next >= player.segments.length) {
+    finishAnswer();
+    return;
+  }
+
+  showSegment(next);
+  playCurrent();
+  preloadAudio(next + 1);
+}
 /* ---- controls ---- */
 
 function buildDots() {

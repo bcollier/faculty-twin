@@ -63,8 +63,12 @@ def test_health(client):
     assert r.status_code == 200 and r.json() == {"ok": True}
 
 
-def test_ask_returns_503_until_retrieval_is_written(student):
-    # No Voyage key and no overrides: the stub is reported before any embedding call.
+def test_ask_returns_503_when_retrieval_is_a_stub(student):
+    # A TEST FAKE that raises like the original stubs did: reported before any embedding call.
+    def stub(*args, **kwargs):
+        raise NotImplementedError("stub")
+
+    app.dependency_overrides[get_retriever] = lambda: Retriever(stub, stub, None)
     r = student.post("/api/ask", json={"question": "what is an apple"})
     assert r.status_code == 503
     assert r.json()["detail"] == "retrieval not implemented yet"

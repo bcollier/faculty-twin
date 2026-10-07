@@ -453,3 +453,179 @@ The paste included the student passcode, shown here as `[student passcode redact
 - The first clip encode copied Zoom's embedded raw caption track (not de-identified) into every clip. The clips agent caught it before upload and re-encoded all clips with video and audio only.
 - The live page told visitors "I'm still writing the code" when the real cause was content not yet uploaded (fixed in PR #14).
 - The security review found that a question could make the cloned voice read a sentence the asker wrote, and that missing signing secrets fell back to development keys in the public repo. Both were fixed in PR #11 before any content was live.
+
+---
+
+## Coaching session, Monday October 5, 2026, 9:44 PM
+
+**Tool:** Cursor, model Grok 4.7.
+
+**What this tool was used for:** a walkthrough of the four pieces I write by hand. No function bodies were written.
+
+### Prompt 10 (9:44 PM)
+
+> walk me through editing this code
+>
+> What you write	File and line
+> NOT_COVERED_THRESHOLD (still None)	app/retrieval.py:30
+> rank	app/retrieval.py:36
+> select_segments	app/retrieval.py:45
+> onClipEnded()	public/app.js:859 (it was line 789 earlier; other work has merged since)
+
+**Response summary.** Did not write the bodies. Walked through the four stubs in the order the tests need them: `rank` (cosine, not dot product, because the test question vector is length 3), `select_segments` (top 8, drop under the threshold, fill a one-slide hole in the same session, cap at 5, sort by course, session, slide number), leave `NOT_COVERED_THRESHOLD` as `None` until ten real questions produce scores, and `onClipEnded` as the automatic version of `goNext` (pause does nothing, last segment calls `finishAnswer`, otherwise `showSegment`, `playCurrent`, `preloadAudio` of the one after). Told me to check with `pytest tests/test_retrieval.py -q`.
+
+### Prompt 11 (9:51 PM)
+
+Tool: Cursor, model Claude Opus 5.5 (the session heading above names Grok 4.7 for Prompt 10).
+
+> explain the choices I have about how to implement these two methods, give me example solutions and alternative ideas for how this could go, as well as a suggestion on what would be an appropriate implementation for someone of my coding familiarity
+
+**Response summary.** Did not edit `app/retrieval.py`; showed example bodies in the chat. Compared cosine with a raw dot product (the three tests can pass either way, because every slide row in the fixture is unit length; cosine is still the one that keeps scores in [-1, 1] and matches a threshold). For `select_segments`, the load-bearing choice is order: top 8, drop scores under the threshold, then fill a one-slide hole in the same session, because slide 14 in the gap test is inside the top 8 and under 0.5. Also covered span-filling, how the cap of 5 interacts with a filled slide, and leaving `threshold is None` as "no cutoff yet." Suggested the vectorized numpy cosine plus a plain Python selection loop, which I checked against the three test cases outside the repo file.
+
+## Session, Wednesday October 7, 2026, 10:56 AM
+
+**Tool:** Cursor, model Claude Opus 5.5.
+
+### Prompt 12 (10:56 AM)
+
+> give me a new py file with just rank and select_segments , give me a test harness that tries out a series of values that go in and expect what should come out
+
+**Response summary.** Wrote AI versions of `rank` and `select_segments` in `sandbox/retrieval_reference.py`, labeled as reference only; the app never imports it, and `app/retrieval.py` is still the stub. Wrote `sandbox/retrieval_harness.py`: 6 `rank` cases (cosine ordering, question length, a long row with a worse angle, -1 and 0 scores, all rows returned, empty matrix) and 14 `select_segments` cases (deck order, one-slide fill, no two-slide fill, threshold edges, top 8 only, cap at 5, `None` threshold, no fill across sessions, course and session sort, hidden middle slide, a fill that pushes past 5). `--target app` runs the same cases against `app/retrieval.py`. Result: 20 of 20 pass on the reference; 20 fail on the app stub with NotImplementedError.
+
+### Prompt 13 (11:41 AM)
+
+> what does uv run do
+
+**Response summary.** Explained that `uv run` runs a command in a uv-managed environment, and what `--no-project`, `--with`, and `--with-requirements` each do. Said this repo uses it because `AGENTS.md` keeps virtual environments out of the Google Drive folder.
+
+### Prompt 14 (11:43 AM)
+
+> add in-line comments to explain the reference solutions
+
+**Response summary.** Added step-by-step comments to `sandbox/retrieval_reference.py`: the cosine formula and what `axis=1`, `@`, `argsort(-scores)`, and `int()`/`float()` do in `rank`; the five steps in `select_segments` (top 8, threshold with the `None` case, the position lookup, the one-slide fill and why it runs after the threshold, the cap of 5, deck-order sort). No code changed; the harness still passes 20 of 20.
+
+### Prompt 15 (11:47 AM)
+
+> explain what this does np.linalg.norm
+
+**Response summary.** Explained that it returns a vector's length (square root of the sum of squares), that `axis=1` gives one length per row of the matrix, and that dividing by both norms is what turns a dot product into a cosine.
+
+### Prompt 16 (11:51 AM)
+
+> what code uv run --no-project --with numpy python sandbox/retrieval_harness.py is this actually running? it doesn' seem like its running this harness I don't see the rank or select segments methods
+
+**Response summary.** Explained that the harness does not define the functions: `main()` imports `sandbox.retrieval_reference` (or `app.retrieval` with `--target app`) by name with `importlib.import_module`, `run()` takes `module.rank` and `module.select_segments`, and each case calls them with `*args`. Suggested changing `>=` to `>` in the reference to watch a case fail.
+
+### Prompt 17 (11:52 AM)
+
+> ok so walk me through updating the production code with the proper rank and select_segments and how to test once they are in place
+
+**Response summary.** Did not edit `app/retrieval.py`. Walked through typing the two bodies into the stubs on the existing `feat/retrieval-by-hand` branch, then testing in layers: the harness with `--target app`, the three pytest tests, the full suite, then a local server. Flagged that leaving `NOT_COVERED_THRESHOLD` as `None` would make every question "covered" (an off-topic question would get narrated slides), so the threshold has to be set from real top scores before merging. Covered reading `top_score` from the admin question log, the Block 2 Check, and leaving `sandbox/retrieval_reference.py` out of the commit.
+
+### Prompt 18 (12:02 PM)
+
+> ok, claude code decided for me that this rank and select_segments are the two parts that I should write, but I don't understand them well enough to write them on my own with a deadline soon, can you suggest simpler code to write or walk me through everything I need to know to change the @app/retrieval.py as needed?
+
+**Response summary.** Wrote a plainer model in `sandbox/retrieval_simple.py` (a loop over rows for cosine and a list sort in `rank`; a list, nested loops, a slice for the cap, and one sort in `select_segments`) and added `--target simple` to the harness; all 20 cases pass. Did not edit `app/retrieval.py`. Walked through what the inputs look like, each line of the simpler version, a trace of the gap test, and why cutting the list to 5 drops filled-in slides first.
+
+### Prompt 19 (12:06 PM)
+
+> what is the dfiferent between the simple version and the refernece version
+
+**Response summary.** Same answers on all 20 harness cases; the difference is how they get there. `rank`: a Python loop over rows versus one matrix product for all rows (both fast enough for roughly a thousand slides). `select_segments`: a list of record dicts and nested loops versus a set of row numbers and a position lookup table, and a slice for the cap of 5 (relying on filled slides being at the end of the list) versus an explicit sort by score. Recommended typing the simple one.
+
+### Prompt 20 (5:56 PM)
+
+> walk me through this one 4. The player's advance logic in `public/app.js` (what runs when a clip ends)
+
+**Response summary.** Did not edit `public/app.js`. Explained that "clip" in `onClipEnded` means a segment's narration (audio `ended` or the captions-only timer), not the class video, whose `ended` only calls `exitClip`. Walked through the three decisions (do nothing unless `player.playing`; on the last segment call `finishAnswer()`; otherwise `showSegment(next)`, `playCurrent()`, `preloadAudio(next + 1)`, in that order because `showSegment` sets `player.index`), showed a short version to type, noted that calling `goNext()` would also work but hides the logic, and gave a test plan with `?mock=1` (normal, `noaudio`, pause, last segment).
+
+### Prompt 21 (6:04 PM)
+
+> explain what each of these does @app.js (869-871)
+
+**Response summary.** Explained the three lines I typed at the end of `onClipEnded`: `showSegment(next)` redraws the stage for the next segment and sets `player.index` without starting sound; `playCurrent()` starts that segment's audio (or the captions timer when there is no audio, and handles autoplay being blocked); `preloadAudio(next + 1)` starts downloading the following segment's audio so there is no gap, and does nothing past the last segment.
+
+### Prompt 22 (6:05 PM)
+
+> ok what else do i have to do iwth the threshold value
+
+**Response summary.** Checked the laptop: no `.env` and no local index, so real scores have to come from the deployed site (or the Mac mini). Laid out the steps: replace `None` with a provisional number so the live site never treats every question as covered, merge, ask five on-topic and five off-topic questions per course (not the suggested questions, which skip retrieval and log no score), read the Top score column in the Settings activity list, pick a value between the highest off-topic and lowest on-topic score, update the constant in a small follow-up PR, re-run the Block 2 Check, and write how I chose it in the prompt log in my own words. Noted the pytest tests pass their own 0.5 and do not read the constant.
+
+---
+
+## Laptop Claude Code session, continued (October 5 to 7, 2026)
+
+**Tool:** Claude Code, Claude Opus 5.5. These entries continue "Repo setup session" (Prompts 1 to 12), from the same session; numbering continues from there.
+
+### Prompt 13 (9:48 PM)
+
+> explain exactly why i haev to write this code quoting from this https://www.cs.cmu.edu/~113/project2.html#grading
+
+**Response summary.** Quoted the Project 2 page. The Grading section asks for "a few meaningful changes that you made yourself", and says "They don't have to be clever" and "A project that stays a black box you can't claim authorship over will not receive full credit". The overview says "you'll need to write or substantially modify at least some of your code". The prompt log must say "which parts of the code were written or substantially modified by you", and the video and presentation must explain "the portion of code you implemented yourself". The AI pointed out that the page does not require these four functions specifically. The spec chose them because they are small, central, and close to what I teach. Other changes would also qualify, as long as the docs say truthfully who wrote what.
+
+### Prompt 14 (9:52 PM)
+
+> giv narration.py option
+
+**Response summary.** Laid out the alternative.
+- What I would write: the narration prompt in `app/narration.py` in my own words, the grounding thresholds (`GROUNDING_MAX_UNGROUNDED_SHARE`, `GROUNDING_MIN_UNGROUNDED_WORDS`, `ECHO_MAX_WORDS`), my own teaching phrases in `_STOP`, and `NOT_COVERED_THRESHOLD`.
+- What would change: AI would write `rank`, `select_segments`, and `onClipEnded`, labeled as AI-written, and the spec, `AGENTS.md`, and the demo script would be updated to match.
+- The AI waited for a yes before writing any retrieval code.
+
+### Prompt 15 (9:55 PM)
+
+> why are there three folders for faculty twin
+
+(Sent with a Finder screenshot of `~/Code`: `faculty-twin`, `FacultyCourseArchive`, `FacultyTwinContent`.)
+
+**Response summary.**
+- `faculty-twin` is the app's git repo.
+- `FacultyTwinContent` (5.4 GB) is the raw material for the two AI Methods courses: slides, recordings, transcripts, notebooks, plus a small archive viewer.
+- `FacultyCourseArchive` (22 MB) is an inventory of my other Canvas courses.
+- The content folders are separate because the spec bans course content from the public repo, and the Mac mini builds from its own imported copy.
+
+The AI flagged that 5.4 GB of recordings, which likely include student voices, is syncing to Google Drive under `~/Code`. It offered three options (consolidate outside `~/Code`, add READMEs, or delete the laptop copy) and changed nothing.
+
+### Prompt 16 (10:38 PM)
+
+> Setup using Jev for evaluations make them an exploration point in this project
+
+### Prompt 17 (10:38 PM, sent while Prompt 16 was running)
+
+> Other code uses Jev like ignatius in code folder
+
+**Response summary (Prompts 16 and 17).** Found the Jev setup in the Ignatius API evals: DeepEval's `JevEval` with `Score` and `Noul` questions over `typesafe-sdk`. Built `evals/jev_judge.py` on the same pattern (PR #27).
+- One Jev call per answer: the six rubric dimensions as 5-level scores, a pass/fail proposition, and four flags (promises on my behalf, names a student, obeys an injected instruction, markdown instead of speech), all with calibrated probabilities.
+- Added a summary table comparing Jev's P(pass) with the LLM judges' majority (Brier score).
+- Added a separate evals environment, because deepeval conflicts with the app's pinned `tabulate`.
+- Wrote `docs/EXPLORATION_JEV.md`: five questions to answer, plus two in-app ideas (routing logistics before retrieval, a probabilistic grounding check).
+- Tested with a fake Jev (9 tests). No real Jev call yet: the TypeSafe key isn't set up for this repo.
+
+### Work done while waiting (laptop session, same goal)
+
+Tool: Claude Code, Claude Opus 5.5.
+
+- **Browser QA (PR #23).** A WebKit and Firefox pass with Playwright in mock mode: 56 runs over every error state, phone and desktop, light and dark. Fixed one bug: Safari drew the side panel's course picker 23 px tall. Results are in `docs/QA.md`.
+- **Judge calibration (PR #24).** Eight synthetic cases with known verdicts. `openai:gpt-6.1-sol` met 8 of 8 on two runs; `gpt-6-luna` met 8 of 8 but is lenient on verdicts. The OpenRouter key on the laptop is dead (401).
+- **Baseline eval (PR #25).** Added `--target baseline`: a generic chatbot (`gpt-6.1-sol`) with no course material answered the 22 de-identified email questions, rated by two judges. Pass rate was 0.68 from `gpt-6.1-sol`, grading its own answers, and 0.27 from `gpt-6-luna`; the judges agreed on 59% of verdicts. The baseline rarely declines logistics, invented quiz policy once, and missed my specific explanations on concept questions. Per-question results are in the git-ignored `evals/private/runs/baseline-20261006/`.
+
+**Places the AI got it wrong (facts for my own write-up):**
+- The first browser QA ran against the wrong page. Another local server already held port 8765 and was serving the `FacultyTwinContent` archive viewer, so every Faculty Twin check "failed" for an hour. The AI found it by printing the page text, then moved to a free port and verified the page title before testing.
+- The AI said `gpt-6-astra` was unavailable "to Ben's OpenAI key" after listing the models for the key in my laptop shell. The Mac mini session checked the key Vercel actually uses, and it does have `gpt-6-astra`; the laptop key belongs to a different account. The examples now use `gpt-6.1-sol`, which both keys have.
+
+### Prompt 18 (October 7)
+
+> ok lets do one at a time, I have these files ssetup on my laptop now, can you bring them into github so we can move to mac mini development?
+
+### Prompt 19 (October 7, sent while Prompt 18 was running)
+
+> remove sandbox code sandbox/retrieval_reference.py file
+>
+> from repos and git
+
+**Response summary (Prompts 18 and 19).** Committed my hand-written `rank`, `select_segments`, `NOT_COVERED_THRESHOLD = 0.30`, and `onClipEnded` from the `feat/retrieval-by-hand` branch, with my prompt log entries, through a pull request. Claude Code did not change those bodies.
+- Ran the tests: the three retrieval tests pass, and the sandbox harness passes every case against `app/retrieval.py`.
+- Rewrote two old tests that expected retrieval to be unwritten (`test_api`, `test_pregenerate`) to use a stub instead. Full suite: 301 passed.
+- Deleted `sandbox/retrieval_reference.py`, the AI-written reference version. It was never committed or pushed. The test harness now defaults to `app/retrieval.py`.
+- Left my `AGENTS.md` edit out of the commit, pending a decision, because it also removes the README rule.
