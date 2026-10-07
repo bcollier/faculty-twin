@@ -38,6 +38,9 @@ const humanize = (k) => String(k).replace(/_/g, ' ').replace(/\b(api|id)\b/gi, s
 
 class NetworkError extends Error {}
 class AuthError extends Error {}
+/* True once this page has been inside the app. Only then does a 401 mean the session ran out;
+   on a fresh visit with no admin cookie, a 401 just means "not signed in yet". */
+let hadSession = false;
 
 async function api(path, { method = 'GET', body, timeout = 30000 } = {}) {
   const ctrl = new AbortController();
@@ -52,7 +55,11 @@ async function api(path, { method = 'GET', body, timeout = 30000 } = {}) {
   } catch (e) { throw new NetworkError(e?.message); } finally { clearTimeout(t); }
   let data = null;
   try { data = await res.json(); } catch { /* no body */ }
-  if (res.status === 401 && !path.endsWith('/login')) { showLogin('Your admin session ran out. Sign in again.'); throw new AuthError(); }
+  if (res.status === 401 && !path.endsWith('/login')) {
+    showLogin(hadSession ? 'Your admin session ran out. Sign in again.' : '');
+    hadSession = false;
+    throw new AuthError();
+  }
   return { status: res.status, ok: res.ok, data };
 }
 const detail = (r, fallback) => {
@@ -122,6 +129,7 @@ const S = {
 };
 
 async function enter(status) {
+  hadSession = true;
   show('app');
   renderStatus(status);
   await loadSettings();
