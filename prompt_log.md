@@ -635,3 +635,18 @@ Tool: Claude Code, Claude Opus 5.5.
 > this can be removed sandbox/: your test harness, now pointed at your app/retrieval.py, and the AI-written simple version, which is labeled as AI-written. I don't want to have a bunch of unrelated versions floating
 
 **Response summary.** Deleted `sandbox/` (the test harness and the AI-written simple version) through a pull request, so the repo has a single version of retrieval: mine in `app/retrieval.py`, checked by `tests/test_retrieval.py`. The files are still in git history from the commit that added them.
+
+### Prompt 21 (October 7)
+
+> Closer to 0.54: declines more safely, add notes on how the value was chosen
+
+**How the threshold was chosen.** The Mac mini session ran test questions through my `rank()` on the live index:
+- **On-topic questions:** top-1 cosine scores from 0.543 to 0.693.
+- **Off-topic questions:** 0.377 to 0.448.
+- **My first value, 0.30:** let every off-topic question through, so "who won the Stanley Cup" got narrated slides.
+
+Any value between 0.448 and 0.543 separates the two groups. I chose to lean toward declining, closer to the on-topic end. A wrongly declined course question only costs the student a rephrase. A wrongly answered off-topic question puts unrelated slides and words in my voice.
+
+**Who chose what.** I chose the direction. Claude Code proposed the exact number, 0.52, which sits 0.072 above the highest off-topic score and 0.023 below the lowest on-topic one. The reasoning is also recorded as a comment above `NOT_COVERED_THRESHOLD` in `app/retrieval.py`.
+
+**Response summary.** Set `NOT_COVERED_THRESHOLD = 0.52` with that comment, through a pull request. The Mac mini session deploys it and then runs the real evaluation of the twin on the de-identified email questions.
