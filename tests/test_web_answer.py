@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -216,17 +217,103 @@ def test_settings_cap_of_zero_turns_web_answers_off(student, monkeypatch):
     assert _ask(student, "How do I set up n8n?")["covered"] is False and search.calls == []
 
 
-def test_failed_search_is_declined(student):
+def test_failed_search_gets_where_to_look_with_the_closest_slides(student):
     model, search = FakeModel(), FakeSearch(error=llm.LLMError("boom"))
     _use(model, search)
-    assert _ask(student, "How do I set up n8n?")["covered"] is False
+    body = _ask(student, "How do I set up n8n?")
+    assert body["kind"] == "web" and body["message"] == web_answer.WHERE_TO_LOOK
+    assert body["links"] == [] and len(body["related"]) >= 2 and body["audio"] is None
+    assert limits._mem_log[-1]["fallback_reason"] == "provider_error"
 
 
-def test_no_usable_link_is_declined(student):
+def test_no_usable_link_gets_where_to_look_with_the_closest_slides(student):
     bad = [{"url": "http://insecure.example.com/x", "title": "x"}, {"url": "javascript:alert(1)", "title": "y"}]
     model, search = FakeModel(), FakeSearch(citations=bad)
     _use(model, search)
-    assert _ask(student, "How do I set up n8n?")["covered"] is False
+    body = _ask(student, "How do I set up n8n?")
+    assert body["message"] == web_answer.WHERE_TO_LOOK and body["links"] == [] and body["related"]
+    assert limits._mem_log[-1]["fallback_reason"] == "no_links"
+
+
+def test_nothing_to_point_to_still_declines(student, monkeypatch):
+    monkeypatch.setattr(web_answer, "related_slides", lambda *a, **k: [])
+    model, search = FakeModel(), FakeSearch(error=llm.LLMError("boom"))
+    _use(model, search)
+    body = _ask(student, "How do I set up n8n?")
+    assert body["covered"] is False and body.get("kind") is None
+    assert limits._mem_log[-1]["fallback_reason"] == "provider_error"
+
+
+# ---------------------------------------------------------------- Oct 8 live bug: the provider refused every call
+
+CREDIT_ERROR = (Path(__file__).parent / "fixtures" / "anthropic_credit_error.json").read_text()
+
+
+def _real_search_against(status, body):
+    """The real web_answer.search (request builder, error handling) against a fake transport: no network."""
+    def searcher(system, user, max_tokens, provider=None, model=None):
+        client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(status, text=body)))
+        return web_answer.search(system, user, max_tokens, provider=provider, model=model, client=client)
+    return searcher
+
+
+def test_live_credit_error_falls_back_and_logs_provider_credits(student, monkeypatch, caplog):
+    """Oct 8 production: claude-opus-5-5 answered every call with 400 "credit balance is too low" (captured body)."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("LLM_MODEL", "claude-opus-5-5")
+    _use(FakeModel(), FakeSearch())
+    app.dependency_overrides[get_searcher] = lambda: _real_search_against(400, CREDIT_ERROR)
+    for q in ("How do I add memory checkpointing to a LangGraph agent?", "How do I install CrewAI and define two agents?"):
+        body = _ask(student, q)
+        assert body["kind"] == "web" and body["message"] == web_answer.WHERE_TO_LOOK  # not a bare decline
+        assert body["related"] and body["links"] == []
+        row = limits._mem_log[-1]
+        assert row["kind"] == "web" and row["fallback_reason"] == "provider_credits"
+        assert (row["provider"], row["model"]) == ("anthropic", "claude-opus-5-5")
+    assert "fallback_reason=provider_credits (anthropic 400: Your credit balance is too low" in caplog.text
+    assert "test-key-not-real" not in caplog.text
+    assert limits.read_counter(limits.web_answers_key()) == 0  # failed calls give their web answer back
+
+
+def test_fallback_reason_shows_in_activity(admin):
+    limits.log_question("q", 0.4, True, "anthropic", "m", kind="web", fallback_reason="provider_credits")
+    rows = admin.get("/api/admin/log").json()["rows"]
+    assert rows[0]["fallback_reason"] == "provider_credits"
+    js = (Path(__file__).resolve().parents[1] / "public" / "admin.js").read_text(encoding="utf-8")
+    assert "no_links:" in js and "x.kind === 'web'" in js
+
+
+def test_describe_error_is_short_readable_and_masks_keys():
+    exc = web_answer.WebSearchError("anthropic returned 400: " + CREDIT_ERROR.strip())
+    assert llm.describe_error(exc) == ("anthropic 400: Your credit balance is too low to access the Anthropic API. "
+                                       "Please go to Plans & Billing to upgrade or purchase credits.")
+    cut = llm.describe_error(("anthropic returned 400: " + CREDIT_ERROR)[:150])
+    assert cut.startswith("anthropic 400: Your credit balance")
+    leaky = llm.describe_error('openai returned 401: {"error": {"message": "Bad key ' + "sk" + '-abcdefghijklmnop1234"}}')
+    assert "abcdefghijklmnop" not in leaky and "[masked]" in leaky
+    assert llm.describe_error(TimeoutError("read timed out")) == "TimeoutError: read timed out"
+    assert len(llm.describe_error("x" * 1000)) <= 200
+
+
+@pytest.mark.parametrize("exc, code", [
+    (web_answer.WebSearchError("anthropic returned 400: " + CREDIT_ERROR.strip()), "provider_credits"),
+    (web_answer.WebSearchError("openai returned 401: {}"), "provider_auth"),
+    (web_answer.WebSearchError("openrouter returned 429: {}"), "provider_rate_limit"),
+    (web_answer.WebSearchError("anthropic request failed: ConnectError"), "provider_unreachable"),
+    (llm.LLMError("The daily model-call cap is reached (DAILY_LLM_CALL_CAP)"), "daily_cap"),
+    (web_answer.ValidationError("the answer is 160 words"), "too_long"),
+    (web_answer.ValidationError("it contains a web address"), "unsafe_text"),
+])
+def test_fallback_reason_codes(exc, code):
+    assert web_answer.fallback_reason(exc) == code
+
+
+def test_tracking_parameters_are_dropped_from_links():
+    reply = web_answer.WebReply("x", [{"url": "https://docs.example.org/a?utm_source=openai&v=2", "title": "A"},
+                                      {"url": "https://docs.example.org/b?utm_source=openai", "title": "B"}])
+    assert [x["url"] for x in web_answer.pick_links(reply)] == ["https://docs.example.org/a?v=2",
+                                                                "https://docs.example.org/b"]
 
 
 def test_failing_text_falls_back_to_where_to_look_with_links(student):

@@ -862,7 +862,7 @@ function testBadge(x) {
     : `Test traffic (${x.source}): left out of student analytics.`;
   return el('span', { class: 'pill off', text: x.test_inferred ? 'Test?' : 'Test', title, style: 'margin-left:.3rem' });
 }
-/* Why a course-info answer fell back to the Canvas text (question_log.fallback_reason, app/course_info.py). */
+/* Why a course-info or web answer fell back (question_log.fallback_reason; app/course_info.py, app/web_answer.py). */
 const FALLBACK_REASONS = {
   provider_credits: 'Model account out of credits',
   provider_auth: 'Model key rejected',
@@ -876,12 +876,15 @@ const FALLBACK_REASONS = {
   too_long: 'Answer too long',
   not_grounded: 'Answer not grounded in Canvas',
   unsafe_text: 'Answer failed a safety check',
+  no_links: 'Search gave no usable link',
   error: 'Unexpected error',
 };
 function fallbackBadge(x) {
   if (!x.fallback_reason) return null;
   const text = FALLBACK_REASONS[x.fallback_reason] || x.fallback_reason;
-  return el('span', { class: 'pill warn', text: `Fell back: ${text}`, title: `The student saw the Canvas text, not a written answer (${x.fallback_reason}).`, style: 'margin-left:.3rem' });
+  const saw = x.kind === 'web' ? '"Here is where to look." with links and my closest slides'
+    : x.kind === 'course_info' ? 'the Canvas text' : 'my fallback';
+  return el('span', { class: 'pill warn', text: `Fell back: ${text}`, title: `The student saw ${saw}, not a written answer (${x.fallback_reason}).`, style: 'margin-left:.3rem' });
 }
 function modelText(x) {
   return [x.provider, x.model].filter(Boolean).join(' / ') || 'none';

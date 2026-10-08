@@ -29,6 +29,8 @@ saved setting does not change and no student request ever sees it.
 
 from __future__ import annotations
 
+import json
+import re
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -76,6 +78,39 @@ _FALLBACK_MODELS = {"claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5", "cl
 
 class LLMError(RuntimeError):
     pass
+
+
+_PROVIDER_ERROR = re.compile(r"^(\w+) returned (\d{3}): (.*)$", re.S)
+_SECRETISH = re.compile(r"\b(?:(?:sk|pk|rk)[-_]|gh[pos]_|AKIA|AIza|eyJ)[A-Za-z0-9_\-]{8,}|\b[A-Za-z0-9_\-]{36,}\b")
+
+
+def describe_error(error: Any, limit: int = 200) -> str:
+    """A short, readable reason for a failed model call, safe for a log line.
+
+    "anthropic returned 400: {json}" becomes "anthropic 400: Your credit balance is too low ...".
+    Provider error bodies carry no keys, but anything key-shaped is masked anyway.
+    """
+    text = str(error or "").strip()
+    m = _PROVIDER_ERROR.match(text)
+    if m:
+        provider, status, body = m.groups()
+        message = body
+        try:
+            data = json.loads(body)
+            err = data.get("error") if isinstance(data, dict) else None
+            if isinstance(err, dict):
+                message = str(err.get("message") or err.get("type") or body)
+            elif isinstance(err, str):
+                message = err
+        except ValueError:  # often cut short upstream: take the message field if it is there
+            found = re.search(r'"message"\s*:\s*"((?:[^"\\]|\\.)*)', body)
+            if found:
+                message = found.group(1)
+        text = f"{provider} {status}: {message}"
+    elif isinstance(error, BaseException) and not isinstance(error, LLMError):
+        text = f"{type(error).__name__}: {text}"
+    text = _SECRETISH.sub("[masked]", re.sub(r"\s+", " ", text))
+    return text[:limit]
 
 
 # ---------------------------------------------------------------- per-request override
