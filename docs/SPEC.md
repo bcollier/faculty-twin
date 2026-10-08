@@ -145,7 +145,7 @@ After the last segment, the chat lists the answer's sources (course, session, da
 
 ### Settings page
 
-Added Oct 5, for me only. `/admin.html`, behind a separate admin passcode and its own cookie, never linked from the student page. Five sections (seven since Oct 7, with Prompts and Analytics):
+Added Oct 5, for me only. `/admin.html`, behind a separate admin passcode and its own cookie, never linked from the student page. Five sections (eight since Oct 7, with Prompts, Analytics and Evals):
 
 1. **Model.** Provider dropdown (Claude native, OpenAI native, OpenRouter) and a model picker. Claude and OpenAI show a short curated list plus a free-text model id. OpenRouter shows its live model list, searchable. "Test this model" runs one sample question through the full ask pipeline and shows the result and latency. Save writes the choice to the `settings` table.
 2. **Voice.** The voices on the ElevenLabs account, each with a preview I can play, plus a stock voice and a captions-only option. Saving changes `voice_id`. Pre-generated audio is keyed by voice id, so changing the voice never plays the old one.
@@ -187,11 +187,21 @@ Added Oct 5, for me only. `/admin.html`, behind a separate admin passcode and it
    - **Questions:** per day (answered from slides vs other) and by hour of day (Eastern time).
    - **Topics:** questions per course, then session, then slide (from each answered question's top slide and its session title), the top 20 slides, content gaps (declined questions grouped by wording, most frequent first, scrubbed text), FAQ hits per entry, and how questions were asked (suggested chip, typed, follow-up chip).
    - **Engagement:** questions, walkthroughs returned, first segment played, walkthrough completed, plus class clip plays, audio failures, chip taps, typed questions, follow-up taps, course filter changes (from the student page's events).
-   - **Model performance:** average judge scores (the six dimensions) and pass rate per generator model across every eval run in the bucket (`evals/index.json`, `evals/runs/<id>/results.jsonl`); "No eval data yet" until a run exists.
+   - **Model performance:** average judge scores (the six dimensions) and pass rate per generator model across every eval run in the bucket (`evals/index.json`, `evals/runs/<id>/results.jsonl`), leaving out runs marked excluded; "No eval data yet" until a run exists.
    - **Label topics:** one call to a small model on the active provider (Claude Haiku 4.5, GPT-6 Luna, or `openai/gpt-6-luna` on OpenRouter) groups the newest 10 to 300 student questions (scrubbed text only, test traffic left out) into at most 12 themes with counts and example questions. Examples are referenced by number, so the model cannot invent one. At most 10 runs a day, 1,500 output tokens each. Each run is saved in the bucket at `analytics/topics/<UTC>.json` and listed with its history.
    - **Export CSV** of the question log for the range (formula-looking cells are prefixed so a spreadsheet does not run them).
    - **Price table:** USD per million input and output tokens per model, per million Voyage tokens, ElevenLabs per thousand characters by plan, edge-tts free. Defaults were read from each provider's public price page (source link and date on each row, marked "verify"); edits are saved in `settings.pricing`. OpenRouter models missing from the table use OpenRouter's live price list. The spend figure is an estimate (tokens times this table), not a bill.
    The Activity table also shows a **Test** badge on test-traffic rows ("Test?" when it is only inferred because the question is word for word one of the three smoke-check questions, for rows logged before `source` existed).
+
+
+   - **Question set:** count, answerable count and categories of the de-identified question set in the private bucket (`evals/questions.jsonl`), with a note that question text is private and admin only. The questions are listed behind a "Show the questions (private)" disclosure, and a question can be added or edited there; every save re-runs the same privacy checks as `evals/dataset.py` (emails, URLs, long numbers, keys, names caught by `app/privacy.py`), and the error names the problem, never the text.
+   - **Calibrate a judge first:** pick a judge model and score the 8 invented calibration cases (`app/eval_calibration.jsonl`, a copy of `evals/calibration.jsonl`), one case per request, with a progress bar. Results (cases met, which missed) show in a calibration table next to the report card.
+   - **Start a run:** a name; up to 3 models that answer and up to 3 judges, each picked from the same provider model lists as the Model section (free-text ids allowed); the number of questions (1 to 30, picked the same way as the CLI: categories in turn, most common first); categories. "Check the estimate" shows the questions, answers, model calls (typical and at most), embeddings, today's remaining eval budget, a rough cost, and a **self-grading** warning when a judge is the same model as an answering model. "Confirm and start" is required. Jev is not offered: it runs from the command line only (it needs deepeval, which is not in the Vercel bundle).
+   - **Progress:** the page drives the run one step at a time (one question x one answering model per request), with a progress bar, Pause, Resume and Cancel. Reloading the page finds the run in progress and Resume continues from the server's state.
+   - **Runs:** one card per run with its status, judges, and per answering model: pass rate and all six scores with n, the right call on answering versus declining, the fallback rate, and judge agreement. Imported runs say so, and the Oct 7 run says it predates PR #35 (access-code filter) and PR #37 (logistics routing). The errored first attempt shows as excluded.
+   - **Run detail:** one row per question x answering model: question, category, model, top score, outcome (Covered, Stored answer, FAQ, Referred to Ben, Not covered, Course info, plus what the question set expects), and each judge's verdict and six scores, with expandable narration, the real reply, and each judge's rationale and issues. Filters: category, model, verdict (all pass, any fail, judges disagree, judge error).
+   - **Report card:** one line per answering model over time (inline SVG, zero baseline, palette and marks from the dataviz method, a legend, direct end labels, a tooltip with n and the judges on every point, keyboard focusable), for pass rate, each of the six scores, the right call, fallback rate, or judge agreement; a table view of every point; and a side-by-side comparison of two runs.
+   - **Clear scales everywhere.** Every header says its scale ("Grounded (1–5, 5 best)", "Pass rate (% of answers judged pass)", counts say what they count). A legend under every table gives each dimension's rubric line, 1 = very poor, 3 = acceptable, 5 = excellent, that each score is a mean over n answers, what n/a means (for example grounded when the twin declined or the baseline had no slides, shown as "n/a (no slides)", never a dropped column), and that pass or fail is each judge's overall verdict, given separately from the six scores. Rates are percentages. Chart axes are labeled with units: pass rate 0 to 100%, scores on a 0 to 5 axis.
 
 The page shows only whether each key is configured, never the key itself.
 
@@ -423,7 +433,19 @@ Code records use the same shape with `"kind": "code"`, a `source` field holding 
 | `audio/<voice_id>/<hash>.mp3` | Pre-generated narration for suggested questions, named by voice id and a hash of the narration text. *Changed Oct 5 (voice tiers): new files go under `audio/<voice tag>/`, the same 10-character tag the audio links carry, because free voice ids contain a colon. Older `audio/<ElevenLabs id>/` folders are still read for that voice.* | yes |
 | `review/<course>-s<NN>.txt` | De-identification review notes | no, never |
 
-The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded through Settings. Transcripts and alignment stay on the local build machine: the backend only needs what is already folded into the index.
+The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded through Settings.
+
+*Added Oct 7 (admin Evals).* Eval data lives in the same private bucket under `evals/`, as plain JSON objects (no new SQL table, no DDL), read and written only by the function with the service role key and never signed into a link (`storage.is_media_path` allows only `slides/`, `clips/`, `audio/`):
+
+| Path | What it holds |
+| --- | --- |
+| `evals/questions.jsonl` | The de-identified question set (the format in evals/README.md), uploaded by `scripts/upload_eval_questions.py` after `evals/dataset.py`'s checks pass. Re-checked on every read. Question ids are line numbers (`q001`), so they match CLI runs |
+| `evals/runs/<run_id>/run.json` | Config (answering models, judges, `top`, categories), the chosen questions, status (`running`, `done`, `cancelled`, `excluded`), progress (`pairs_done` of `pairs_total`), model calls used and the run's cap, the estimate, self-grading pairs, notes, and `summary.by_generator` (the report card numbers per answering model) |
+| `evals/runs/<run_id>/results.jsonl` | One row per question x answering model: `qid, pair, category, answerable, question, reference_answer, generator, outcome, response {status, message, segments [{n, slide_id, narration, evidence}], follow_ups, narration_source, top_score, latency_ms}, judgements [{judge, scores (six, 1 to 5 or null), verdict, rationale, issues} or {judge, error}], calls, at` |
+| `evals/index.json` | `{runs: [...]}`: each run's id, name, kind (`admin`, `imported`, `baseline`), status, models, judges, counts, notes, self-grading pairs and `by_generator` metrics, newest first, with no question text. The runs list and the report card read only this |
+| `evals/calibration.json` | Latest calibration per judge: cases met, which missed, per-case rows, when, and where it came from (Settings, or the CLI results in evals/README.md) |
+
+`run_id` is the UTC start time (`20261007T222857Z`, with a short suffix if two start in the same second) or `baseline-YYYYMMDD`. Per-generator metrics (`app/eval_core.py`, `generator_metrics`): pass rate over every judge's valid judgements, the mean of each of the six dimensions with `score_n` (how many judgements each mean covers), decline accuracy (the summary's right-call rate: answered what is answerable, declined the rest; no judge involved), fallback rate (answers whose narration fell back to the notes), and judge agreement (mean, over judge pairs, of how often they gave the same verdict). Transcripts and alignment stay on the local build machine: the backend only needs what is already folded into the index.
 
 **What the backend returns for a question.** A playlist:
 
@@ -676,6 +698,24 @@ Four routes. The frontend never talks to a model or voice provider directly.
 | `GET /api/admin/analytics/topics`, `POST` the same `{limit: 10..300}` | none, or the question count | `{runs: [...]}`, or the new run `{id, at, questions, provider, model, latency_ms, themes: [{label, count, examples}]}` | Added Oct 7. "Label topics": see the Settings page section. 400 under 5 questions, 429 past 10 runs a day |
 | `GET /api/admin/analytics/export.csv?days=` | none | the question log as CSV | Added Oct 7. Includes a `test` column |
 
+**Settings > Evals routes** (added Oct 7; all need `ft_admin`, and every POST/PUT passes the same-origin check like every other state-changing route; `app/admin_evals.py`)
+
+| Route | Input | Returns | Notes |
+| --- | --- | --- | --- |
+| `GET /api/admin/evals/questions` | none | `{count, answerable, categories: [{category, count}], questions: [...], uploaded, privacy}` | Question text for the admin view only. 409 if the uploaded file fails the privacy checks |
+| `POST /api/admin/evals/questions` | `{question, category, answerable, reference_answer?, course?, month?}` | the question set | Adds one question after the `evals/dataset.py` checks (400 names the problem, never the text) |
+| `PUT /api/admin/evals/questions/{qid}` | same | the question set | Edits one question in place (it keeps its id); same checks |
+| `POST /api/admin/evals/runs/estimate` | the run body below | `{questions, estimate: {pairs, calls_typical, calls_max, embeddings, run_call_cap, daily_eval_cap, eval_calls_today, cost_usd, cost_unknown_for, per_model, within_cap}, self_grading}` | Calls no model. Rough cost uses OpenRouter's published price for the same model |
+| `POST /api/admin/evals/runs` | `{name, generators: [{provider, model}], judges: [{provider, model}], top, categories?, confirm: true}` | 201 `{run, progress}` | Guards: 1 to 3 answering models, 1 to 3 judges, 1 to 30 questions, keys configured, model ids checked, OpenRouter models over the price ceiling refused (the Model section's check), Jev refused, `confirm` required, the most calls the run could make within `EVAL_MAX_CALLS_PER_RUN`, and one active run at a time (409) |
+| `POST /api/admin/evals/runs/{id}/step` | none | `{progress: {done, total, fraction, status, finished, calls_used, call_cap}, row}` or `{progress, waiting: {seconds, reason}}` | Does ONE question x ONE answering model: the real `answer()` path with that model through a per-request override (a context variable in `app/llm.py`; the saved model and student requests are untouched), then every judge in parallel, within about 50 s. Idempotent: the next pair is the first with no result, a pair is written once even if two steps race (a 70 s lease), and a finished run returns its progress without calling anything. A busy embedding service returns `waiting` and records nothing. 429 when a cap would be passed |
+| `POST /api/admin/evals/runs/{id}/cancel` | none | `{progress}` | Keeps what was judged |
+| `GET /api/admin/evals/runs` | none | `{runs: [index entries], active}` | No question text |
+| `GET /api/admin/evals/runs/{id}` | none | `{run, progress, rows, legend}` | Rows without the slide material sent to the judges |
+| `GET /api/admin/evals/report-card` | none | `{series: [{generator, label, points: [{run_id, at, judges, notes, self_grading, questions, judgements, score_n, pass_rate, scores, decline_accuracy, fallback_rate, judge_agreement}]}], calibration, legend}` | Oldest first; excluded runs left out |
+| `GET /api/admin/evals/calibration` | none | `{cases: [{cid, about}], judges: {...}}` | |
+| `POST /api/admin/evals/calibration/step` | `{provider, model, restart?}` | `{judge, result: {met, cases, missed, rows, done}}` | Scores the next calibration case with that judge; counts against the eval caps |
+| `GET /api/admin/evals/limits` | none | caps, today's counts, the live model, which keys are set (booleans) | |
+
 **Inside `/api/ask`, step by step**
 
 > **Added Oct 7 (course FAQ).** Between step 4 (stored suggested questions) and embedding, check Ben's course FAQ (`app/faq.py`, `app/faq_entries.json`): keyword patterns per entry, first match wins, course-aware. A hit returns `{"kind": "faq", "covered": false, "title", "message", "answers", "links", "contacts", "segments": []}`: Ben's written answer word for word (from his 70-445 and 45-884 FAQ docs, plus his Oct 7 answers on Calendly meetings and TA-handled presentation rescheduling), link buttons (Calendly), and TA contact cards when the answer points to the TA. No embedding, no model call, no audio. TA names and emails come only from the `TA_CONTACTS` environment variable (JSON per course code) and appear only on a contact card the student opens; the twin never says a TA's name. The logistics referral (step 7a) also carries the Calendly button and the TA cards for the course filter.
@@ -749,6 +789,7 @@ Added Oct 5.
 - Added Oct 5 (voice tiers). The free Microsoft voices cost nothing but use a free service, so they have their own daily cap (`DAILY_FREE_VOICE_CHAR_CAP`, default 200,000 characters, editable in Settings) with the same quarter-per-visitor and per-address rule, at most 6 requests at once per function instance, and short timeouts. The ElevenLabs cap applies only to ElevenLabs voices. Both caps fail closed.
 - Added Oct 5 (security review). OpenRouter models priced above $15 in / $60 out per million tokens are refused in Settings (adjustable with `LLM_MAX_PROMPT_PRICE_PER_MTOK` and `LLM_MAX_COMPLETION_PRICE_PER_MTOK`).
 - Added Oct 7 (analytics). Usage metering never slows or blocks an answer: counters are written off the request path and a failure is only logged. Topic labeling is capped (300 questions, 1,500 output tokens, 10 runs a day, failing closed) and counts against `DAILY_LLM_CALL_CAP`. It sends scrubbed question text only, never ids, and test traffic is left out.
+- Added Oct 7 (admin Evals). Eval runs started from Settings spend from the same keys, so they have their own guards on top of everything above: at most 30 questions, 3 answering models and 3 judges per run; one active run at a time; the price ceiling applies to every answering model and judge; a confirm click after an estimate of calls and cost. Every model call an eval makes counts against the global `DAILY_LLM_CALL_CAP`, against a daily admin-eval cap (`DAILY_EVAL_LLM_CALL_CAP`, default 300, fails closed) and against the run's own cap (`EVAL_MAX_CALLS_PER_RUN`, default 300). A step waits (429) rather than leave students fewer than `EVAL_STUDENT_RESERVE` (default 100) of the global calls. Embeddings count against `DAILY_EMBED_CAP`; one question's embedding is reused across the run's answering models when the same instance serves them.
 
 **Secrets**
 
@@ -770,6 +811,7 @@ Added Oct 5.
 - Added Oct 5. Everything stays PG: cursing in transcripts and slide text is swapped for a mild word at import, a clip may not contain a smoothed cue, and the narration prompt says never to curse.
 - Added Oct 5. Only de-identified text leaves the local build machine: the narration provider (including models reached through OpenRouter) and Voyage see slide text, notes, and de-identified instructor speech, never a roster or a raw transcript.
 - Added Oct 5. Never committed: `.env`, rosters, raw or de-identified transcripts, video, clips, slide images, the index, embeddings, review files.
+- Added Oct 7 (admin Evals). Eval questions may also live in the private bucket under `evals/`, served only through the admin routes behind the admin cookie: never a signed URL, never anything a student page can reach. They are checked by `evals/dataset.py`'s rules on upload, on every read, and on every question typed or edited in Settings. Judges and answering models see the de-identified question, the twin's answer and the slide material, as in the CLI.
 
 ## Build guide
 

@@ -75,7 +75,14 @@ def clear_cache() -> None:
 # ---------------------------------------------------------------- typed helpers
 
 def llm_choice() -> tuple[str, str]:
-    """Active (provider, model): settings row first, then env, then built-in default."""
+    """Active (provider, model): an admin eval's per-request override first (app/llm.py
+    `model_override`, never set on a student request), then the settings row, then env,
+    then the built-in default."""
+    from .llm import current_override
+
+    override = current_override()
+    if override is not None:
+        return override
     if get("provider"):
         provider, model = get("provider"), get("model")
     else:

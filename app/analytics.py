@@ -385,6 +385,8 @@ def eval_performance(read: Callable[[str], Optional[bytes]] = _read_bucket) -> d
     used_runs = 0
     for run in runs:
         run_id = str(run.get("id") or run.get("run_id") or "")
+        if run.get("excluded") or run.get("status") == "excluded":  # e.g. a run that errored (Settings > Evals)
+            continue
         if not re.match(r"^[A-Za-z0-9_.:\-]{1,80}$", run_id):
             continue
         body = read(f"evals/runs/{run_id}/results.jsonl")
@@ -403,9 +405,12 @@ def eval_performance(read: Callable[[str], Optional[bytes]] = _read_bucket) -> d
                                       "scores": defaultdict(list), "latency": []})
             a["runs"].add(run_id)
             a["answers"] += 1
-            if row.get("latency_ms") is not None:
+            latency = row.get("latency_ms")
+            if latency is None and isinstance(row.get("response"), dict):  # Settings > Evals rows keep it here
+                latency = row["response"].get("latency_ms")
+            if latency is not None:
                 try:
-                    a["latency"].append(float(row["latency_ms"]))
+                    a["latency"].append(float(latency))
                 except (TypeError, ValueError):
                     pass
             for j in _judgements(row):

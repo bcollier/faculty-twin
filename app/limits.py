@@ -156,6 +156,27 @@ def take_llm_call() -> bool:
     return ok
 
 
+def daily_eval_call_cap() -> int:
+    return config.env_int("DAILY_EVAL_LLM_CALL_CAP", config.DEFAULT_DAILY_EVAL_LLM_CALL_CAP)
+
+
+def eval_calls_key() -> str:
+    return f"eval_llm_calls:{_today()}"
+
+
+def take_eval_call() -> bool:
+    """Reserve one model call from today's admin-eval budget (Settings > Evals). Fails closed.
+
+    Eval calls also go through `llm.complete_json`, so each one counts against
+    the global cap as well; this budget keeps evals from using up the students' share.
+    """
+    cap = daily_eval_call_cap()
+    if cap <= 0:
+        return False
+    ok, _ = increment(eval_calls_key(), 1, cap=cap, fail_open=False)
+    return ok
+
+
 def take_embedding() -> bool:
     """Reserve one question embedding from today's global budget. Fails closed."""
     cap = daily_embed_cap()
@@ -259,6 +280,7 @@ def today_counters() -> dict[str, int]:
         "free_voice_chars": read_counter(voice_key("free")),
         "llm_calls": read_counter(f"llm_calls:{day}"),
         "embeddings": read_counter(f"embeds:{day}"),
+        "eval_llm_calls": read_counter(f"eval_llm_calls:{day}"),
     }
 
 

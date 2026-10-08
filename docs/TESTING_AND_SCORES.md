@@ -476,6 +476,71 @@ narration prompt and checks that students still get grounded narration
 
 Edits to the eval judge or baseline prompts change the yardstick, not the
 twin: compare runs only when they used the same judge prompt.
+## Run evals from Settings
+
+Settings > Evals (admin passcode) runs the same real-question eval as (b)
+on the live site, with no local machine involved: the function answers each
+question through the real `answer()` path and calls the judges itself. The
+rubric, the judge prompt, the parser and the summary numbers are the CLI's
+(`app/eval_core.py`, which `evals/` re-exports), so the two kinds of run are
+comparable.
+
+1. **Put the question set in the bucket (once, and after each edit of the
+   local file).** On the local build machine:
+
+   ```bash
+   uv run --no-project --with-requirements requirements.txt python -m scripts.upload_eval_questions
+   ```
+
+   It runs `evals/dataset.py`'s checks over `evals/private/questions.jsonl`
+   (emails, URLs, long numbers, keys, names) and stops on any failure, naming
+   the line and the problem, never the text. It prints counts only. It will not
+   overwrite questions that were added in Settings unless you pass `--force`.
+   You can also add or edit a single question in Settings ("Show the
+   questions"), which runs the same checks.
+2. **Calibrate any judge you have not used before.** "Calibrate a judge
+   first" scores the 8 invented cases; a judge should meet all 8 before you
+   trust it. The result shows in the calibration table under the report card.
+3. **Start a run.** Pick up to 3 models that answer and up to 3 judges (from
+   another model family than the answering model: a judge grading its own
+   model is lenient, and the page warns when you pick one), the number of
+   questions (1 to 30) and the categories. "Check the estimate" shows the model
+   calls (typical and at most), embeddings, today's remaining eval budget and a
+   rough cost (OpenRouter's published price for the same model). "Confirm and
+   start" begins.
+4. **Keep the page open.** The page asks the server for one question x one
+   answering model at a time (each request answers, then runs every judge, in
+   under a minute), so the progress bar moves one answer at a time. Pause stops
+   after the current answer; Resume, or reloading the page and pressing
+   Resume, continues from where the server says the run is. Cancel keeps what
+   was judged. If Voyage is busy (the free tier allows 3 embeddings a minute),
+   the page waits and retries that question by itself.
+5. **Read the results.** Each run gets a card (pass rate and the six scores per
+   answering model, with n). "Open results" lists every question with what the
+   twin did and each judge's verdict, scores and reasons, filterable by
+   category, model and verdict. The report card plots one line per answering
+   model over time, with a table view and a side-by-side comparison of two
+   runs.
+
+What it spends, and the guards: every model call counts against the site's
+global `DAILY_LLM_CALL_CAP`, against the admin-eval cap
+`DAILY_EVAL_LLM_CALL_CAP` (default 300 a day) and against the run's cap
+`EVAL_MAX_CALLS_PER_RUN` (default 300). A run whose most possible calls pass
+the run cap cannot start. A step waits (and says so) rather than leave
+students fewer than `EVAL_STUDENT_RESERVE` (default 100) of today's global
+calls. One run at a time. Jev runs only from the command line.
+
+How to read the numbers: every score is 1 to 5 (1 = very poor, 3 =
+acceptable, 5 = excellent), the mean over n judged answers; pass rate is the
+percentage of answers a judge marked pass, and that verdict is the judge's
+overall call, separate from the six scores; n/a means the dimension did not
+apply (grounded when the twin declined, or for the baseline, which has no
+slides). The page prints this under every table.
+
+History: the October 5 generic-chatbot baseline (from evals/README.md) and the
+October 7 CLI run are imported into the report card by
+`python -m scripts.import_eval_history` (labeled as predating PR #35 and PR
+#37); the errored first attempt of October 7 is listed as excluded.
 
 ## Where results live, and what is private
 
@@ -489,3 +554,5 @@ twin: compare runs only when they used the same judge prompt.
 | Live smoke check | The terminal, plus three rows in Activity (marked Test) | Yes |
 | Live questions | Supabase `question_log`, shown in Settings > Activity | No: student questions, even scrubbed, stay in Settings |
 | Prompt versions | Supabase `settings` (`prompt:<name>`) and the private bucket `prompts/history/<name>/` | The prompt text, yes; it holds no student data |
+| Settings eval questions, answers and judgements | Private bucket `evals/` (`questions.jsonl`, `runs/<id>/run.json`, `runs/<id>/results.jsonl`), shown in Settings > Evals behind the admin passcode | No |
+| Settings eval aggregates (per-run cards, report card) | Private bucket `evals/index.json` | The numbers, yes; the question text never |

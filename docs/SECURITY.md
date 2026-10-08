@@ -100,6 +100,7 @@ The grounding check is a heuristic. A payload written mostly in the slides' own 
 | Voice | daily cap from Settings (default 20,000 characters), 25% per visitor and per address | global plus shares | refused, captions only |
 | Free voices (added Oct 5, voice tiers) | separate daily cap (`DAILY_FREE_VOICE_CHAR_CAP`, default 200,000 characters), 25% per visitor and per address; at most 6 requests at once per instance | global plus shares | refused, captions only |
 | Model price | OpenRouter: $15 in / $60 out per million tokens | | refused if the price cannot be read |
+| Admin eval runs (added Oct 7) | 30 questions, 3 answering models, 3 judges per run; one active run; up to `EVAL_MAX_CALLS_PER_RUN` (300) model calls per run; `DAILY_EVAL_LLM_CALL_CAP` (300) eval calls per day; a step waits rather than leave students under `EVAL_STUDENT_RESERVE` (100) global calls | admin cookie, plus the global caps above | refused (eval cap fails closed) |
 
 The address hash never enters `question_log`; it lives only in `counters` keys, which expire.
 

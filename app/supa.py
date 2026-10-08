@@ -124,6 +124,15 @@ def download(path: str) -> bytes:
     return _check(r, f"download {path}").content
 
 
+def download_optional(path: str) -> bytes | None:
+    """Object bytes, or None when the object does not exist (Storage answers 400 or 404 for that)."""
+    with _client() as c:
+        r = c.get(f"{_base()}/storage/v1/object/{config.bucket()}/{_obj_path(path)}", headers=_headers())
+    if r.status_code in (400, 404):
+        return None
+    return _check(r, f"download {path}").content
+
+
 def upload(path: str, data: bytes, content_type: str, upsert: bool = False) -> None:
     """Write one small object from the server (prompt history). Large files go browser-direct instead."""
     with _client() as c:

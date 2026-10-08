@@ -22,6 +22,8 @@
 // URL flags:  &boot=offline  (server unreachable on first load)   &fresh=1  (forget mock login)
 // Passcodes:  student "demo", admin "admin".
 
+import { evalsRoute } from './mock-evals.js';
+
 const params = new URLSearchParams(location.search);
 const realFetch = window.fetch.bind(window);
 const store = sessionStorage;
@@ -365,6 +367,7 @@ async function route(url, method, body) {
     return json(401, { detail: 'Wrong admin passcode' });
   }
   if (path.startsWith('/api/admin/') && !isAdmin) return unauthorized();
+  if (path.startsWith('/api/admin/evals/')) return evalsRoute(url, method, body);
 
   if (path === '/api/admin/status') {
     return json(200, {

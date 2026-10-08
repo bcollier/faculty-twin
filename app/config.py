@@ -32,6 +32,13 @@ DEFAULT_DAILY_LLM_CALL_CAP = 600  # all narration calls, every visitor, per UTC 
 DEFAULT_DAILY_EMBED_CAP = 1500  # question embeddings, every visitor, per UTC day (fails closed)
 VOICE_VISITOR_SHARE = 0.25  # one visitor (or one address) may use at most this share of each daily voice cap
 NARRATION_MAX_CHARS = 900  # 110 words of normal prose is about 700 characters
+# Settings > Evals (admin only) has its own budget on top of the global model-call cap above.
+DEFAULT_DAILY_EVAL_LLM_CALL_CAP = 300  # model calls by admin eval runs per UTC day (DAILY_EVAL_LLM_CALL_CAP)
+DEFAULT_EVAL_MAX_CALLS_PER_RUN = 300  # model calls one admin eval run may make (EVAL_MAX_CALLS_PER_RUN)
+DEFAULT_EVAL_STUDENT_RESERVE = 100  # an eval step waits rather than leave students fewer global calls than this
+EVAL_MAX_QUESTIONS = 30
+EVAL_MAX_GENERATORS = 3
+EVAL_MAX_JUDGES = 3
 # OpenRouter lets the admin pick any model; refuse ones priced above this (USD per million tokens).
 DEFAULT_MAX_PRICE_PER_MTOK = {"prompt": 15.0, "completion": 60.0}
 

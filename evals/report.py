@@ -10,166 +10,75 @@ Two outputs, on purpose:
 
 from __future__ import annotations
 
-from collections import defaultdict
-from itertools import combinations
-from statistics import mean
 from typing import Any
+
+# The numbers live in app/eval_core.py so Settings > Evals computes them the same way.
+from app.eval_core import _avg, _ok_judgements, probabilistic, summary  # noqa: F401  (re-exported)
+from app.eval_core import (
+    SCALE_NOTE,
+    VERDICT_NOTE,
+    dimension_header,
+    fmt_pct,
+    fmt_score,
+    legend_lines,
+)
 
 from .rubric import DIMENSIONS
 
 
-def _avg(values: list[float]) -> float | None:
-    return round(mean(values), 2) if values else None
-
-
-def _ok_judgements(results: list[dict[str, Any]]):
-    for r in results:
-        for j in r.get("judgements", []):
-            if "error" not in j:
-                yield r, j
-
-
-def summary(results: list[dict[str, Any]], meta: dict[str, Any] | None = None) -> dict[str, Any]:
-    statuses: dict[str, int] = defaultdict(int)
-    for r in results:
-        statuses[r["response"]["status"]] += 1
-
-    judges = sorted({j["judge"] for r in results for j in r.get("judgements", [])})
-    per_judge: dict[str, Any] = {}
-    for name in judges:
-        js = [j for _, j in _ok_judgements(results) if j["judge"] == name]
-        errors = sum(1 for r in results for j in r.get("judgements", []) if j["judge"] == name and "error" in j)
-        per_judge[name] = {
-            "judged": len(js),
-            "errors": errors,
-            "pass_rate": _avg([1.0 if j["verdict"] == "pass" else 0.0 for j in js]),
-            "scores": {d: _avg([j["scores"][d] for j in js if j["scores"].get(d) is not None]) for d in DIMENSIONS},
-        }
-
-    by_cat: dict[str, dict[str, Any]] = {}
-    cats = sorted({r["category"] for r in results})
-    for cat in cats:
-        rows = [r for r in results if r["category"] == cat]
-        js = [j for r, j in _ok_judgements(rows)]
-        by_cat[cat] = {
-            "questions": len(rows),
-            "answered": sum(1 for r in rows if r["response"]["status"] == "ok"),
-            "pass_rate": _avg([1.0 if j["verdict"] == "pass" else 0.0 for j in js]),
-            "correct_scope": _avg([j["scores"]["correct_scope"] for j in js if j["scores"].get("correct_scope")]),
-        }
-
-    # Scope behavior without any judge: did the twin answer what it should and decline the rest?
-    expected = [r for r in results if r["response"]["status"] in ("ok", "not_covered")]
-    right_call = [
-        r for r in expected if (r["response"]["status"] == "ok") == bool(r["answerable"])
-    ]
-    answerable = [r for r in expected if r["answerable"]]
-    declined_answerable = [r for r in answerable if r["response"]["status"] == "not_covered"]
-    ok = [r for r in results if r["response"]["status"] == "ok"]
-    fallback = [r for r in ok if r["response"].get("narration_source") == "fallback"]
-
-    agreement: dict[str, Any] = {}
-    for a, b in combinations(judges, 2):
-        diffs, same = [], []
-        for r in results:
-            ja = next((j for j in r.get("judgements", []) if j["judge"] == a and "error" not in j), None)
-            jb = next((j for j in r.get("judgements", []) if j["judge"] == b and "error" not in j), None)
-            if not ja or not jb:
-                continue
-            same.append(1.0 if ja["verdict"] == jb["verdict"] else 0.0)
-            for d in DIMENSIONS:
-                if ja["scores"].get(d) is not None and jb["scores"].get(d) is not None:
-                    diffs.append(abs(ja["scores"][d] - jb["scores"][d]))
-        agreement[f"{a} vs {b}"] = {"verdict_agreement": _avg(same), "mean_abs_score_gap": _avg(diffs)}
-
-    return {
-        "meta": meta or {},
-        "probabilistic_judges": probabilistic(results),
-        "questions": len(results),
-        "status_counts": dict(sorted(statuses.items())),
-        "scope_right_call_rate": _avg([1.0] * len(right_call) + [0.0] * (len(expected) - len(right_call))),
-        "answerable_declined": len(declined_answerable),
-        "narration_fallback_rate": _avg([1.0] * len(fallback) + [0.0] * (len(ok) - len(fallback))),
-        "median_latency_ms": sorted(r["response"].get("latency_ms", 0) for r in results)[len(results) // 2] if results else None,
-        "judges": per_judge,
-        "judge_agreement": agreement,
-        "by_category": by_cat,
-    }
-
-
-def probabilistic(results: list[dict[str, Any]]) -> dict[str, Any]:
-    """For judges that return probabilities (Jev): how sure they were, and whether P(pass) tracks the LLM judges.
-
-    `brier_vs_llm_majority` compares a judge's P(pass) with the majority verdict of
-    the other (text) judges on the same item: 0 is perfect agreement, 0.25 is a
-    coin flip at 0.5. Items with no LLM majority (a tie, or no LLM judges) are skipped.
-    """
-    out: dict[str, Any] = {}
-    names = sorted({j["judge"] for r in results for j in r.get("judgements", []) if "p_pass" in j})
-    for name in names:
-        ps, confs, brier, flags = [], [], [], defaultdict(list)
-        for r in results:
-            mine = next((j for j in r.get("judgements", []) if j["judge"] == name and "p_pass" in j), None)
-            if mine is None:
-                continue
-            ps.append(mine["p_pass"])
-            if (mine.get("confidence") or {}).get("verdict") is not None:
-                confs.append(mine["confidence"]["verdict"])
-            for k, v in (mine.get("flags") or {}).items():
-                flags[k].append(1.0 if v >= 0.5 else 0.0)
-            others = [j for j in r.get("judgements", []) if "error" not in j and "p_pass" not in j]
-            passes = sum(1 for j in others if j["verdict"] == "pass")
-            if others and passes * 2 != len(others):
-                brier.append((mine["p_pass"] - (1.0 if passes * 2 > len(others) else 0.0)) ** 2)
-        out[name] = {
-            "items": len(ps),
-            "mean_p_pass": _avg(ps),
-            "mean_verdict_confidence": _avg(confs),
-            "brier_vs_llm_majority": round(mean(brier), 3) if brier else None,
-            "compared_items": len(brier),
-            "flag_rates": {k: _avg(v) for k, v in sorted(flags.items())},
-        }
-    return out
-
-
 def summary_markdown(s: dict[str, Any]) -> str:
+    """The shareable summary. Every header states its scale, and a legend follows every table."""
     lines = ["# Faculty Twin eval summary", ""]
     meta = s.get("meta") or {}
     if meta:
         lines.append(" · ".join(f"{k}: {v}" for k, v in meta.items()))
         lines.append("")
-    lines.append(f"Questions: {s['questions']}. Outcomes: "
+    lines.append(f"Questions: {s['questions']}. Outcomes (number of questions): "
                  + ", ".join(f"{k} {v}" for k, v in s["status_counts"].items()) + ".")
-    lines.append(f"Right call on answer versus decline: {s['scope_right_call_rate']}. "
+    lines.append(f"Right call on answer versus decline: {fmt_pct(s['scope_right_call_rate'])} of questions. "
                  f"Course questions the twin declined: {s['answerable_declined']}. "
-                 f"Answers that fell back to speaker notes: {s['narration_fallback_rate']}.")
+                 f"Answers that fell back to speaker notes: {fmt_pct(s['narration_fallback_rate'])} of answers.")
     lines.append("")
     if s["judges"]:
         dims = list(DIMENSIONS)
-        lines.append("| Judge | Judged | Errors | Pass rate | " + " | ".join(dims) + " |")
+        lines.append("| Judge | Answers judged (n) | Judge errors (n) | Pass rate (% judged pass) | "
+                     + " | ".join(dimension_header(d) for d in dims) + " |")
         lines.append("| --- " * (4 + len(dims)) + "|")
         for name, j in s["judges"].items():
-            cells = [str(j["scores"][d]) if j["scores"][d] is not None else "N/A" for d in dims]
-            lines.append(f"| {name} | {j['judged']} | {j['errors']} | {j['pass_rate']} | " + " | ".join(cells) + " |")
+            score_n = j.get("score_n") or {}
+            cells = [fmt_score(d, j["scores"][d], score_n.get(d)) for d in dims]
+            lines.append(f"| {name} | {j['judged']} | {j['errors']} | {fmt_pct(j['pass_rate'])} | " + " | ".join(cells) + " |")
+        lines.append("")
+        lines += [f"- {line}" for line in legend_lines()]
         lines.append("")
     if s["judge_agreement"]:
-        lines.append("| Judge pair | Same verdict | Mean score gap |")
+        lines.append("| Judge pair | Same verdict (% of answers both judged) | Mean score gap (points on the 1–5 scale) |")
         lines.append("| --- | --- | --- |")
         for pair, a in s["judge_agreement"].items():
-            lines.append(f"| {pair} | {a['verdict_agreement']} | {a['mean_abs_score_gap']} |")
+            gap = "n/a" if a["mean_abs_score_gap"] is None else f"{a['mean_abs_score_gap']:.2f}"
+            lines.append(f"| {pair} | {fmt_pct(a['verdict_agreement'])} | {gap} |")
+        lines.append("")
+        lines.append("- Same verdict: how often both judges gave the same pass or fail on an answer they both judged.")
+        lines.append("- Mean score gap: the average distance between their scores on the same dimension of the same answer "
+                     "(0 = identical, 4 = opposite ends of the scale).")
         lines.append("")
     if s.get("probabilistic_judges"):
-        lines.append("| Probabilistic judge | Items | Mean P(pass) | Mean confidence | Brier vs LLM majority (items) | Flag rates |")
+        lines.append("| Probabilistic judge | Items (n) | Mean P(pass) (0–1) | Mean confidence (0–1) | Brier vs LLM majority (0 best; n items) | Flag rates (% of items) |")
         lines.append("| --- | --- | --- | --- | --- | --- |")
         for name, p in s["probabilistic_judges"].items():
-            flags = ", ".join(f"{k} {v}" for k, v in p["flag_rates"].items()) or "N/A"
+            flags = ", ".join(f"{k} {fmt_pct(v)}" for k, v in p["flag_rates"].items()) or "n/a"
             lines.append(f"| {name} | {p['items']} | {p['mean_p_pass']} | {p['mean_verdict_confidence']} | "
                          f"{p['brier_vs_llm_majority']} ({p['compared_items']}) | {flags} |")
         lines.append("")
-    lines.append("| Category | Questions | Answered | Pass rate | Scope score |")
+    lines.append("| Category | Questions (n) | Answered with slides (n) | Pass rate (% judged pass, all judges) | "
+                 + dimension_header("correct_scope") + " |")
     lines.append("| --- | --- | --- | --- | --- |")
     for cat, c in s["by_category"].items():
-        lines.append(f"| {cat} | {c['questions']} | {c['answered']} | {c['pass_rate']} | {c['correct_scope']} |")
+        lines.append(f"| {cat} | {c['questions']} | {c['answered']} | {fmt_pct(c['pass_rate'])} | "
+                     f"{fmt_score('correct_scope', c['correct_scope'])} |")
+    lines.append("")
+    lines.append("- Pass rate and Right scope pool every judge's judgements of the category's questions. "
+                 + SCALE_NOTE + " " + VERDICT_NOTE)
     return "\n".join(lines) + "\n"
 
 
