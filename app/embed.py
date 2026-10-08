@@ -67,6 +67,11 @@ def embed_question(text: str, client: httpx.Client | None = None) -> np.ndarray:
             client.close()
     if resp.status_code >= 400:
         raise EmbeddingError(f"Voyage returned {resp.status_code}: {resp.text[:200]}")
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError as exc:  # an HTML or empty 200 from a gateway
+        raise EmbeddingError("Voyage returned a reply that is not JSON") from exc
+    if not isinstance(data, dict):
+        raise EmbeddingError("Voyage response had no embedding")
     usage.record_embed(body["model"], usage.parse_embed_usage(data, [text]))  # never raises
     return parse_response(data)

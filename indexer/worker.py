@@ -369,6 +369,11 @@ class Worker:
             except WorkerError as exc:
                 self._fail([r for r, _ in done], str(exc))
                 return len(claimed)
+            except Exception as exc:  # a crash in build_index or upload must not leave rows "processing"
+                log.exception("global stage crashed")
+                self._fail([r for r, _ in done],
+                           f"unexpected {type(exc).__name__} while rebuilding the index; see the local worker log")
+                return len(claimed)
             for row, stages in done:
                 self.status(row["id"], "ready", "Processed: " + ", ".join(stages + GLOBAL_STAGES))
                 log.info("source %s -> ready", row["id"])
@@ -405,6 +410,8 @@ class Worker:
                 self.poll_once()
             except common.SupabaseError as exc:
                 log.warning("poll failed: %s", exc)
+            except Exception:  # keep polling; the rows involved were marked error where possible
+                log.exception("poll crashed")
             self.stopper.stop.wait(interval)
         log.info("worker stopped")
 
