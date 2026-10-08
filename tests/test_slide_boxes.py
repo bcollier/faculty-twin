@@ -97,7 +97,7 @@ def test_clean_words_drops_lines_the_filters_change():
 
     words = [["Thanks", 0, 0, .1, .1, 0], ["Jane", .1, 0, .2, .1, 0], ["Roe", .2, 0, .3, .1, 0],
              ["Gradient", 0, .2, .1, .3, 1], ["descent", .1, .2, .2, .3, 1],
-             ["key", 0, .4, .1, .5, 2], ["sk-abcdefghijklmnopqrstu", .1, .4, .2, .5, 2],
+             ["key", 0, .4, .1, .5, 2], ["sk-" + "x" * 20, .1, .4, .2, .5, 2],
              ["Prof", 0, .6, .1, .7, 3], ["Roe", .1, .6, .2, .7, 3],
              ["What", 0, .8, .1, .9, 4], ["the", .1, .8, .2, .9, 4], ["hell", .2, .8, .3, .9, 4]]
     kept = slide_boxes.clean_words(words, scrub)
