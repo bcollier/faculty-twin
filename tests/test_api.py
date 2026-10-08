@@ -214,3 +214,28 @@ def test_question_log_written(admin):
     rows = admin.get("/api/admin/log").json()["rows"]
     assert rows[0]["question"] == "apple" and rows[0]["covered"] is True
     assert rows[0]["provider"] == "anthropic"
+
+
+def test_stored_answer_never_replays_a_hidden_session(student, monkeypatch):
+    # Oct 8 code review: stored suggested answers skipped the hidden-session filter, so hiding a session
+    # in Settings did not drop its slides from a suggested question's answer.
+    from app import playlist
+
+    use_fakes()
+    monkeypatch.setattr(playlist, "hidden_sessions", lambda: {("70445", 1)})
+    body = student.post("/api/ask", json={"question": "Show me the banana slide"}).json()
+    assert all(not s["slide_id"].startswith("70445-s01-") for s in body["segments"])
+
+
+def test_stored_answer_whose_slides_left_the_index_is_answered_live(student):
+    # A stored answer whose slides are gone (re-indexed, or excluded) used to come back "not covered".
+    from app import storage
+
+    use_fakes()
+    content = storage.store.get()
+    topic = next(t for t in content.topics if t.get("playlist"))
+    topic["question"] = "Show me the fruit slide"
+    for seg in topic["playlist"]["segments"]:
+        seg["slide_id"] = "70445-s01-099"  # no longer in the index
+    body = student.post("/api/ask", json={"question": "Show me the fruit slide"}).json()
+    assert body["covered"] is True and [s["slide_id"] for s in body["segments"]] == FRUIT_IDS

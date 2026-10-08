@@ -410,14 +410,29 @@ def _stored_topic(content: Content, question: str, course: Optional[str]) -> Opt
         if not isinstance(topic, dict) or not topic.get("playlist"):
             continue
         if _norm(str(topic.get("question", ""))) == key and (course is None or topic.get("course") in (None, course)):
-            return topic
+            # Only when a stored slide can still be shown; otherwise the question is answered live.
+            return topic if _replayable(content, topic) else None
     return None
+
+
+def _replayable(content: Content, topic: dict[str, Any]) -> list[dict[str, Any]]:
+    """The stored segments whose slide is still in the index and not in a session hidden in Settings.
+
+    Added Oct 8 (code review): replays skipped the hidden-session filter that live answers use.
+    """
+    hidden = playlist.hidden_sessions()
+    out = []
+    for seg in (topic.get("playlist") or {}).get("segments", []):
+        rec = content.record(str(seg.get("slide_id") or ""))
+        if rec is not None and (str(rec.get("course")), int(rec.get("session") or 0)) not in hidden:
+            out.append(seg)
+    return out
 
 
 def _replay_topic(content: Content, question: str, topic: dict[str, Any], voice: voices.Plan) -> dict[str, Any]:
     """Rebuild a pre-generated playlist with fresh signed links."""
     stored = topic["playlist"]
-    segs = [s for s in stored.get("segments", []) if content.record(s.get("slide_id", ""))]
+    segs = _replayable(content, topic)
     chosen = [content.record(s["slide_id"]) for s in segs]
     narrations = {s["slide_id"]: s.get("narration", "") for s in segs}
     result = playlist.build_playlist(content, question, chosen, narrations, stored.get("follow_ups", []), voice)

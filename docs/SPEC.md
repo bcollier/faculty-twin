@@ -608,7 +608,7 @@ Storage serves object reads through a CDN, and a read just after an overwrite ca
 - Each narration is 60 to 90 words, which is about 25 to 40 seconds of speech.
 - Pre-generated clips are static files named by a hash of their narration text, as in the example above. For a live answer, the audio field is a signed link to the audio route instead. *(Changed Oct 5: pre-generated audio is in the bucket under the voice id, served through a signed link.)*
 - Added Oct 5. With the course filter set, only that course's records are scored. With "All courses", an answer can draw on both, and the sources list shows which.
-- Added Oct 5. Records from sessions I have hidden in Settings are never scored.
+- Added Oct 5. Records from sessions I have hidden in Settings are never scored. *Added Oct 8 (code review):* nor replayed from a stored suggested answer; a stored answer with no slide left to show (hidden, or gone from the index) is answered live instead.
 
 **Database tables.** Added Oct 5. All in `supabase/schema.sql`, all reached only by the backend and the worker with the service role key.
 
