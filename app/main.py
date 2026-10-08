@@ -664,7 +664,10 @@ async def audio(
         raise HTTPException(403, "This audio link is from an older voice setting. Please ask again.")
     # Each tier has its own daily cap (ElevenLabs costs money; the free voices are capped higher).
     visitor, address = auth.visitor_key(session), limits.client_hash(request)
-    if not limits.take_voice_chars(len(text), voices.daily_cap(voice), visitor, address, pool=voice.pool):
+    # A signed link is charged once per visitor per day (Safari asks for one link in Range pieces).
+    charged = limits.audio_play_is_charged(s, visitor)
+    if charged and not limits.take_voice_chars(len(text), voices.daily_cap(voice), visitor, address,
+                                               pool=voice.pool):
         raise HTTPException(429, "The voice has reached today's limit. Captions only for now.")
     headers = {"Cache-Control": "private, max-age=86400"}
     try:
@@ -675,7 +678,8 @@ async def audio(
             stream = speech.stream_bytes(client, resp)
     except (edge_voice.FreeVoiceError, speech.VoiceError) as exc:
         # Nothing was spoken: give the characters back, so an outage does not use up today's cap.
-        limits.give_back_voice_chars(len(text), visitor, address, pool=voice.pool)
+        if charged:
+            limits.give_back_voice_chars(len(text), visitor, address, pool=voice.pool)
         config.log.warning("%s failed: %s", "free voice" if voice.provider == voices.EDGE else "voice", exc)
         raise HTTPException(502, "The voice service is not available right now. Captions only.") from exc
     usage.record_tts(voice.kind or "unverified", len(text))  # characters sent, by voice tier (Analytics)

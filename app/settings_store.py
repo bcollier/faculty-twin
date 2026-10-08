@@ -124,18 +124,6 @@ def llm_choice() -> tuple[str, str]:
     return provider, model or config.DEFAULT_LLM_MODELS[provider]
 
 
-def voice_id() -> str | None:
-    """The raw voice setting (or ELEVENLABS_VOICE_ID), or None for captions only.
-
-    Values look like "eleven:<id>", "edge:<ShortName>", or an older bare
-    ElevenLabs id; app/voices.py parses them and decides the label.
-    """
-    value = get("voice_id") or config.env("ELEVENLABS_VOICE_ID")
-    if not value or value == "none":
-        return None
-    return str(value)
-
-
 def daily_voice_char_cap() -> int:
     raw = get("daily_voice_char_cap")
     if raw is not None:

@@ -97,9 +97,11 @@ def test_audio_route_cap_and_voice_change(student, monkeypatch):
     monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice123")
     _install_fake_voice(monkeypatch, [])
     link = speech.audio_link("Twenty characters!!!", "voice123")
+    other = speech.audio_link("Other twenty chars!!", "voice123")
     settings_store.put({"daily_voice_char_cap": 80})  # per-visitor share is 25% = 20 chars
     assert student.get(link).status_code == 200
-    r = student.get(link)
+    assert student.get(link).status_code == 200  # the same link again is not charged again (Oct 8)
+    r = student.get(other)
     assert r.status_code == 429 and "limit" in r.json()["detail"]
 
     settings_store.put({"daily_voice_char_cap": 1000, "voice_id": "voice456"})
@@ -161,3 +163,43 @@ def test_characters_are_given_back_when_the_voice_service_fails(student, monkeyp
     link = speech.audio_link("Twenty characters!!!", "voice123")
     assert student.get(link).status_code == 502
     assert limits.read_counter(limits.voice_key("voice")) == 0
+
+
+# ---------------------------------------------------------------- Range requests (Oct 8 code review)
+
+def test_safari_range_requests_charge_a_signed_link_once(student, monkeypatch):
+    # Safari's <audio> asks for "bytes=0-1" first and then the rest: two or three GETs of one link.
+    # Each used to charge the whole narration against today's cap.
+    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice123")
+    calls: list = []
+    _install_fake_voice(monkeypatch, calls)
+    text = "Signed narration for one slide."
+    link = speech.audio_link(text, "voice123")
+    for rng in ("bytes=0-1", "bytes=0-", "bytes=0-"):
+        assert student.get(link, headers={"Range": rng}).status_code == 200
+    assert limits.read_counter(limits.voice_key("voice")) == len(text)
+    assert len(calls) == 3  # each request still streams (nothing is cached on the server)
+
+
+def test_a_link_replayed_past_the_free_repeats_is_charged_again(student, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice123")
+    _install_fake_voice(monkeypatch, [])
+    text = "Signed narration for one slide."
+    link = speech.audio_link(text, "voice123")
+    for _ in range(1 + limits.AUDIO_FREE_REPEATS):
+        assert student.get(link).status_code == 200
+    assert limits.read_counter(limits.voice_key("voice")) == len(text)
+    assert student.get(link).status_code == 200
+    assert limits.read_counter(limits.voice_key("voice")) == 2 * len(text)
+
+
+def test_each_visitor_is_charged_for_their_own_first_play(client, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice123")
+    _install_fake_voice(monkeypatch, [])
+    text = "Signed narration for one slide."
+    link = speech.audio_link(text, "voice123")
+    for _ in range(2):  # two students, each logs in fresh and plays the same link
+        client.cookies.clear()
+        assert client.post("/api/login", json={"passcode": "student-pass"}).status_code == 204
+        assert client.get(link).status_code == 200
+    assert limits.read_counter(limits.voice_key("voice")) == 2 * len(text)

@@ -250,6 +250,20 @@ def check_login_rate(request: Request, scope: str) -> None:
 VOICE_POOLS = {"voice": "voice", "free": "free_voice"}  # ElevenLabs, free Microsoft voices
 
 
+# Safari's <audio> fetches one link in pieces ("bytes=0-1", then the rest), and /api/audio streams the
+# whole mp3 each time. Added Oct 8 (code review): only the first play of a signed link by a visitor in a
+# day is charged to the voice cap, plus every play after AUDIO_FREE_REPEATS more, so a replay loop
+# still spends the cap.
+AUDIO_FREE_REPEATS = 3
+
+
+def audio_play_is_charged(signature: str, visitor_hash: str | None) -> bool:
+    """True when this request for a signed audio link should be charged to today's voice cap."""
+    who = hashlib.sha256(f"{visitor_hash or '-'}:{signature}".encode()).hexdigest()[:24]
+    _, plays = increment(f"audio_link:{_today()}:{who}", 1, ttl_seconds=172800)
+    return plays <= 1 or plays > 1 + AUDIO_FREE_REPEATS
+
+
 def voice_key(pool: str = "voice") -> str:
     return f"{VOICE_POOLS[pool]}_chars:{_today()}"
 

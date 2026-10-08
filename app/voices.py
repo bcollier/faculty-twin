@@ -151,8 +151,23 @@ def eleven_kind(voice_id: str, lookup: bool = True) -> Optional[str]:
 
 
 def stored_setting() -> Any:
-    """The raw voice setting: the Settings row, else ELEVENLABS_VOICE_ID, else None."""
+    """The raw voice setting: the Settings row, else ELEVENLABS_VOICE_ID, else None.
+
+    The one reader of the voice setting (Oct 8 code review merged settings_store.voice_id() into it).
+    Values look like "eleven:<id>", "edge:<ShortName>", "none" (captions only), or an older bare
+    ElevenLabs id; `parse` reads them.
+    """
     return settings_store.get("voice_id") or config.env("ELEVENLABS_VOICE_ID")
+
+
+def setting_source() -> str:
+    """Where the voice setting comes from: "settings", "env" (ELEVENLABS_VOICE_ID), or "none" (captions only)."""
+    stored = settings_store.get("voice_id")
+    if stored == "none":
+        return "none"
+    if stored:
+        return "settings"
+    return "env" if config.env("ELEVENLABS_VOICE_ID") else "none"
 
 
 def fallback_mode() -> str:
