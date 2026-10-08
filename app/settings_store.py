@@ -21,6 +21,7 @@ CACHE_SECONDS = 30.0
 _lock = threading.Lock()
 _cache: dict[str, Any] = {}
 _cache_at = 0.0
+_generation = 0  # bumped by every write on this instance; a read that started before it is not cached
 _local: dict[str, Any] = {}  # used only when Supabase is not configured
 
 
@@ -30,6 +31,7 @@ def _load() -> dict[str, Any]:
     with _lock:
         if _cache_at and now - _cache_at < CACHE_SECONDS:
             return _cache
+        generation = _generation
     if not config.supabase_configured():
         return dict(_local)
     try:
@@ -39,7 +41,10 @@ def _load() -> dict[str, Any]:
         config.log.warning("settings read failed, using defaults: %s", exc)
         values = dict(_cache)  # last good copy, possibly empty
     with _lock:
-        _cache, _cache_at = values, now
+        # A save on this instance while the read was in flight: the read may predate it, so do not
+        # cache it for 30 s (Oct 8 code review: a saved model or passcode looked unsaved here).
+        if generation == _generation:
+            _cache, _cache_at = values, now
     return values
 
 
@@ -54,7 +59,7 @@ def all_values() -> dict[str, Any]:
 
 def put(values: dict[str, Any]) -> None:
     """Write settings and drop the cache so this instance sees them at once."""
-    global _cache_at
+    global _cache_at, _generation
     if config.supabase_configured():
         rows = [{"key": k, "value": v} for k, v in values.items()]
         supa.insert("settings", rows, upsert_on="key")
@@ -62,13 +67,15 @@ def put(values: dict[str, Any]) -> None:
         _local.update(values)
     with _lock:
         _cache_at = 0.0
+        _generation += 1
 
 
 def clear_cache() -> None:
-    global _cache_at, _cache
+    global _cache_at, _cache, _generation
     with _lock:
         _cache_at = 0.0
         _cache = {}
+        _generation += 1
     _local.clear()
 
 
