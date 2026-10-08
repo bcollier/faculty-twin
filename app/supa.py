@@ -47,7 +47,7 @@ def _headers(extra: dict[str, str] | None = None) -> dict[str, str]:
 class _Client(httpx.Client):
     """httpx client whose transport errors surface as SupabaseError."""
 
-    def request(self, *args, **kwargs):  # type: ignore[override]
+    def request(self, *args: Any, **kwargs: Any) -> httpx.Response:  # type: ignore[override]
         try:
             return super().request(*args, **kwargs)
         except httpx.HTTPError as exc:

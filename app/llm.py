@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -159,7 +159,7 @@ def current_override() -> tuple[str, str] | None:
 
 
 @contextmanager
-def model_override(provider: str, model: str):
+def model_override(provider: str, model: str) -> Iterator[None]:
     """Use this provider and model for every model call inside the block, in this context only."""
     if provider not in PROVIDERS:
         raise LLMError(f"Unknown provider {provider!r}")

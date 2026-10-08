@@ -887,9 +887,9 @@ def step(
     _: auth.Session = Depends(auth.require_admin),
     bucket: eval_store.Bucket = Depends(get_bucket),
     retriever: Retriever = Depends(get_retriever),
-    embedder=Depends(get_embedder),
-    completer=Depends(get_completer),
-    judge_completer=Depends(get_judge_completer),
+    embedder: Callable[[str], np.ndarray] = Depends(get_embedder),
+    completer: Callable[..., str] = Depends(get_completer),
+    judge_completer: Callable[..., str] = Depends(get_judge_completer),
 ) -> dict[str, Any]:
     """Answer and judge the next pair of a run (the page calls this until the run is done)."""
     try:
@@ -985,7 +985,7 @@ class CalibrateBody(BaseModel):
 @router.post("/calibration/step")
 def calibration_step(body: CalibrateBody, _: auth.Session = Depends(auth.require_admin),
                      bucket: eval_store.Bucket = Depends(get_bucket),
-                     judge_completer=Depends(get_judge_completer)) -> dict[str, Any]:
+                     judge_completer: Callable[..., str] = Depends(get_judge_completer)) -> dict[str, Any]:
     """Score the next synthetic case (app/eval_calibration.jsonl) with one judge. The page loops until done.
 
     Each case's result is written once under the attempt (eval_store.write_calibration_row), and which
