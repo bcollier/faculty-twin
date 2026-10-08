@@ -44,7 +44,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 
@@ -187,6 +187,20 @@ def daily_cap() -> int:
     return config.env_int("DAILY_WEB_ANSWER_CAP", DEFAULT_DAILY_CAP)
 
 
+def give_back_budget() -> None:
+    """Return a web answer to today's budget when the search call itself failed (nothing was searched)."""
+    limits._give_back([(limits.web_answers_key(), 172800)], 1)
+
+
+def fallback_reason(exc: Exception) -> str:
+    """The same codes as course info (provider_credits, provider_auth, ...), plus the web answer's own checks."""
+    if isinstance(exc, ValidationError):
+        return "too_long" if re.search(r"answer is \d+ (words|characters)", str(exc)) else "unsafe_text"
+    from . import course_info
+
+    return course_info.fallback_reason(exc)
+
+
 def take_budget() -> bool:
     """Reserve one web answer from today's cap. Fails closed (this spends money)."""
     cap = daily_cap()
@@ -209,8 +223,8 @@ def voice() -> Optional[voices.Voice]:
 
 # ---------------------------------------------------------------- calling the search tool
 
-class WebSearchError(RuntimeError):
-    pass
+class WebSearchError(llm.LLMError):
+    """A provider refused or failed a search call ("anthropic returned 400: ..."), classified like any model error."""
 
 
 @dataclass
@@ -512,6 +526,15 @@ def _host_label(host: str, path: str) -> str:
     return f"{host}: {words.lower()}"
 
 
+def _drop_tracking(url: str) -> str:
+    """Remove utm_* parameters (OpenAI adds utm_source=openai to its citations)."""
+    parsed = urlparse(url or "")
+    if not parsed.query:
+        return url or ""
+    kept = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if not k.lower().startswith("utm_")]
+    return urlunparse(parsed._replace(query=urlencode(kept)))
+
+
 def pick_links(reply: WebReply) -> list[dict[str, str]]:
     """2 to 4 `https://` sources from the tool's own metadata: citations first, then search results."""
     out: list[dict[str, str]] = []
@@ -522,7 +545,7 @@ def pick_links(reply: WebReply) -> list[dict[str, str]]:
         if n and len(out) >= MIN_CITED_LINKS:
             break
         for src in pool:
-            url = src.get("url", "")
+            url = _drop_tracking(src.get("url", ""))
             parsed = urlparse(url)
             if parsed.scheme != "https" or not parsed.hostname or "@" in parsed.netloc or len(url) > MAX_URL_CHARS:
                 continue
@@ -547,9 +570,10 @@ def pick_links(reply: WebReply) -> list[dict[str, str]]:
 
 @dataclass
 class Result:
-    reply: dict[str, Any]
+    reply: Optional[dict[str, Any]]  # None: nothing at all to point to (no link, no course slide), so decline
     source: str  # "llm" or "fallback"
     errors: list[str] = field(default_factory=list)
+    reason: Optional[str] = None  # question_log.fallback_reason when it fell back (provider_credits, no_links, ...)
 
 
 def related_slides(content: Any, ranked: list[tuple[int, float]], records: list[dict[str, Any]],
@@ -588,26 +612,40 @@ def answer(
     searcher: Callable[..., WebReply],
     provider: Optional[str] = None,
     model: Optional[str] = None,
-) -> Optional[Result]:
-    """One web-search call and the checks. None when there is nothing safe to show (the caller declines)."""
-    errors: list[str] = []
-    source = "llm"
+) -> Result:
+    """One web-search call and the checks.
+
+    Anything short of a good answer is the "Here is where to look." card: the search's own links when there
+    are any, and the closest slides in my course (Oct 8 live bug: an out-of-credit provider gave a bare decline).
+    `reply` is None only when there is nothing at all to point to; the caller then declines. `reason` is the
+    fallback code for question_log.fallback_reason.
+    """
     try:
         reply = searcher(prompts.get(ANSWER_PROMPT, max_words=MAX_WORDS), build_user_prompt(question),
                          ANSWER_MAX_TOKENS, provider=provider, model=model)
-    except Exception as exc:  # no reply at all: no links to point at either
-        config.log.warning("web answer failed: %s", str(exc)[:200])
-        return None
+    except Exception as exc:  # the provider refused or failed: nothing was searched
+        reason = fallback_reason(exc)
+        config.log.warning("web answer fell back: fallback_reason=%s (%s)", reason, llm.describe_error(exc))
+        give_back_budget()
+        return _card(question, WHERE_TO_LOOK, [], related, follow_ups, "fallback", reason, llm.describe_error(exc))
     links = pick_links(reply)
     if not links:
-        config.log.warning("web answer had no usable source link; declining")
-        return None
+        config.log.warning("web answer fell back: fallback_reason=no_links (no usable source link)")
+        return _card(question, WHERE_TO_LOOK, [], related, follow_ups, "fallback", "no_links", "no usable source link")
     try:
         text = validate(reply.text, question)
     except ValidationError as exc:
-        errors.append(str(exc)[:200])
-        config.log.warning("web answer fell back: %s", str(exc)[:200])
-        text, source = WHERE_TO_LOOK, "fallback"
+        reason = fallback_reason(exc)
+        config.log.warning("web answer fell back: fallback_reason=%s (%s)", reason, str(exc)[:200])
+        return _card(question, WHERE_TO_LOOK, links, related, follow_ups, "fallback", reason, str(exc)[:200])
+    return _card(question, text, links, related, follow_ups, "llm", None, None)
+
+
+def _card(question: str, text: str, links: list[dict[str, str]], related: list[dict[str, Any]],
+          follow_ups: list[str], source: str, reason: Optional[str], detail: Optional[str]) -> Result:
+    errors = [detail] if detail else []
+    if not links and not related:
+        return Result(None, source, errors, reason)
     spoken = voice()
     audio = speech.audio_link(text, spoken.tag_key) if spoken and source == "llm" else None
     body = {
@@ -626,4 +664,4 @@ def answer(
         "sources": [],
         "follow_ups": follow_ups[:MAX_FOLLOW_UPS],
     }
-    return Result(body, source, errors)
+    return Result(body, source, errors, reason)

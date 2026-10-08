@@ -379,7 +379,9 @@ def _beyond_the_slides(
     with usage.purpose("web_answer"):
         result = web_answer.answer(question, related, _suggested_questions(content, course), searcher,
                                    provider=provider, model=model)
-    if result is None:
+    if result.reason:
+        info["fallback_reason"] = result.reason  # shown in Settings > Activity (e.g. provider_credits)
+    if result.reply is None:  # nothing at all to point to
         return declined, info
     info["kind"] = web_answer.KIND
     info["narration"] = result.source
@@ -550,7 +552,7 @@ def _log_extras(content: Content, result: dict[str, Any], info: dict[str, Any]) 
         # Live voice only (/api/audio links); stored answers play pre-made mp3s.
         "voice_chars": sum(len(s.get("narration") or "") for s in segments
                            if str(s.get("audio") or "").startswith("/api/audio")),
-        "fallback_reason": info.get("fallback_reason"),  # course info only, for now
+        "fallback_reason": info.get("fallback_reason"),  # course info and web answers
     }
 
 
