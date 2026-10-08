@@ -768,11 +768,12 @@ $('#ev-cal-form').addEventListener('submit', async (e) => {
   if (/^jev/i.test(model)) { say(st, 'Jev is calibrated from the command line only.', 'err'); return; }
   btn.disabled = true;
   bar.hidden = false;
-  let restart = true;
+  let restart = true, attempt = null;
   try {
     for (let i = 0; i < 20; i++) {
-      const r = await api('/api/admin/evals/calibration/step', { method: 'POST', body: { provider, model, restart }, timeout: 75000 });
+      const r = await api('/api/admin/evals/calibration/step', { method: 'POST', body: { provider, model, restart, attempt }, timeout: 75000 });
       restart = false;
+      if (r.ok) attempt = r.data.attempt || attempt;
       if (!r.ok) { say(st, detail(r), 'err'); break; }
       const res = r.data.result;
       const done = (res.rows || []).length;

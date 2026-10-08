@@ -192,12 +192,11 @@ def run(private: Path, bucket: eval_store.Bucket, out=print) -> int:
     added = []
     for name, res in README_CALIBRATION.items():
         if name not in cal:
-            cal[name] = {"judge": name, "met": res["met"], "cases": res["cases"], "done": True, "missed": [],
-                         "rows": [], "started_at": "2026-10-05T12:00:00+00:00",
-                         "finished_at": "2026-10-05T12:00:00+00:00",
-                         "source": "evals/README.md (October 5, command line)"}
+            eval_store.write_calibration_entry(bucket, name, {
+                "judge": name, "attempt": None, "met": res["met"], "cases": res["cases"], "done": True, "missed": [],
+                "rows": [], "started_at": "2026-10-05T12:00:00+00:00", "finished_at": "2026-10-05T12:00:00+00:00",
+                "source": "evals/README.md (October 5, command line)"})
             added.append(name)
-    eval_store.write_calibration(bucket, cal)
     out(f"Calibration: added {', '.join(added) or 'nothing (Settings results kept)'}.")
     return 0
 

@@ -554,5 +554,5 @@ October 7 CLI run are imported into the report card by
 | Live smoke check | The terminal, plus three rows in Activity (marked Test) | Yes |
 | Live questions | Supabase `question_log`, shown in Settings > Activity | No: student questions, even scrubbed, stay in Settings |
 | Prompt versions | Supabase `settings` (`prompt:<name>`) and the private bucket `prompts/history/<name>/` | The prompt text, yes; it holds no student data |
-| Settings eval questions, answers and judgements | Private bucket `evals/` (`questions.jsonl`, `runs/<id>/run.json`, `runs/<id>/results.jsonl`), shown in Settings > Evals behind the admin passcode | No |
-| Settings eval aggregates (per-run cards, report card) | Private bucket `evals/index.json` | The numbers, yes; the question text never |
+| Settings eval questions, answers and judgements | Private bucket `evals/` (`questions.jsonl`, `runs/<id>/`: `run.json`, `rows/`, `results.jsonl`), shown in Settings > Evals behind the admin passcode | No |
+| Settings eval aggregates (per-run cards, report card) | Private bucket `evals/index/` and `evals/index.json` | The numbers, yes; the question text never |

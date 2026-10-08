@@ -315,11 +315,12 @@ def test_step_is_idempotent_after_done_and_never_redoes_a_pair(evals):
 
 def test_a_pair_already_recorded_is_skipped(evals):
     run_id = evals.post("/api/admin/evals/runs", json=run_body(top=2)).json()["run"]["id"]
-    eval_store.write_results(evals.bucket, run_id, [{"qid": "q001", "generator": "anthropic:claude-haiku-4-5",
-                                                     "category": "CONCEPT_QUESTION", "answerable": True,
-                                                     "response": {"status": "ok", "latency_ms": 1}, "judgements": []}])
+    eval_store.write_row(evals.bucket, run_id, {"qid": "q001", "pair": 0, "generator": "anthropic:claude-haiku-4-5",
+                                                "category": "CONCEPT_QUESTION", "answerable": True,
+                                                "response": {"status": "ok", "latency_ms": 1}, "judgements": [], "calls": 3})
     out = evals.post(f"/api/admin/evals/runs/{run_id}/step").json()
     assert out["row"]["qid"] != "q001" and out["progress"]["done"] == 2 and out["progress"]["status"] == "done"
+    assert out["progress"]["calls_used"] == 3 + out["row"]["calls"]  # spend counted from the rows themselves
 
 
 def test_a_live_lease_makes_a_second_step_wait(evals):
@@ -378,9 +379,9 @@ def test_evals_leave_a_reserve_of_global_calls_for_students(evals, monkeypatch):
 
 def test_run_cap_is_enforced_per_step(evals):
     run_id = evals.post("/api/admin/evals/runs", json=run_body(top=2)).json()["run"]["id"]
-    run = eval_store.read_run(evals.bucket, run_id)
-    run["calls_used"] = run["call_cap"] - 1
-    eval_store.write_run(evals.bucket, run)
+    cap = eval_store.read_run(evals.bucket, run_id)["call_cap"]
+    eval_store.write_row(evals.bucket, run_id, {"qid": "q001", "pair": 0, "generator": "anthropic:claude-haiku-4-5",
+                                                "response": {"status": "ok"}, "judgements": [], "calls": cap - 1})
     r = evals.post(f"/api/admin/evals/runs/{run_id}/step")
     assert r.status_code == 429 and "EVAL_MAX_CALLS_PER_RUN" in r.text
 
@@ -519,6 +520,10 @@ def test_store_round_trip(tmp_path, kind):
             eval_store.run_path(bad, "run.json")
     with pytest.raises(eval_store.StoreError):
         bucket.put("content/index.json", b"{}")
+    eval_store.write_row(bucket, run["id"], {"pair": 3, "qid": "q002"})
+    assert eval_store.row_pairs(bucket, run["id"]) == {3}
+    assert sorted(bucket.list(f"evals/runs/{run['id']}/")) == ["results.jsonl", "rows", "run.json"]
+    assert [r.get("pair") for r in eval_store.read_results(bucket, run["id"])] == [3, None]
     if kind == "local":
         assert (tmp_path / "evals" / "runs" / run["id"] / "run.json").is_file()
 
@@ -528,11 +533,15 @@ def test_supabase_bucket_uses_the_private_bucket(monkeypatch):
 
     seen = {}
     monkeypatch.setattr(supa, "download_optional", lambda path: seen.setdefault("get", path) and None)
-    monkeypatch.setattr(supa, "upload", lambda path, data, ct, upsert=False: seen.update(put=(path, ct, upsert)))
+    monkeypatch.setattr(supa, "upload", lambda path, data, ct, upsert=False, cache_control=None:
+                        seen.update(put=(path, ct, upsert, cache_control)))
+    monkeypatch.setattr(supa, "list_objects", lambda prefix, limit=100: seen.update(list=(prefix, limit)) or [])
     b = eval_store.SupabaseBucket()
     assert b.get("evals/index.json") is None
     b.put("evals/index.json", b"{}")
-    assert seen == {"get": "evals/index.json", "put": ("evals/index.json", "application/json", True)}
+    assert b.list("evals/runs/x/") == []
+    assert seen == {"get": "evals/index.json", "put": ("evals/index.json", "application/json", True, "no-cache, max-age=0"),
+                    "list": ("evals/runs/x/", 1000)}
 
 
 def test_bad_run_ids_are_refused(evals):
@@ -556,3 +565,54 @@ def test_analytics_model_performance_reads_settings_runs_and_skips_excluded(eval
     (model,) = out["models"]
     assert out["runs"] == 1 and model["model"] == "anthropic:claude-haiku-4-5"
     assert model["answers"] == 2 and model["pass_rate"] == 1.0 and model["median_latency_ms"] is not None
+
+
+class StaleBucket(eval_store.MemoryBucket):
+    """TEST FAKE of the Storage CDN at its worst: every object read returns the first copy ever read.
+
+    Listing stays fresh (it is a database query). Nothing a step depends on may be lost to this.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.served = {}
+
+    def get(self, path):
+        if path not in self.served:
+            self.served[path] = super().get(path)
+        return self.served[path]
+
+
+def test_runs_survive_stale_bucket_reads(admin, monkeypatch):
+    bucket = StaleBucket()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-a-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-not-a-key")
+    app.dependency_overrides[get_retriever] = lambda: Retriever(TEST_FAKE_rank, TEST_FAKE_select, 0.5)
+    app.dependency_overrides[get_embedder] = lambda: TEST_FAKE_embedder
+    app.dependency_overrides[get_completer] = lambda: FakeLLM()
+    app.dependency_overrides[admin_evals.get_judge_completer] = lambda: FakeJudges()
+    app.dependency_overrides[admin_evals.get_bucket] = lambda: bucket
+    monkeypatch.setattr(admin_evals, "_price_listing", lambda: [])
+    eval_store.write_questions_text(bucket, "\n".join(json.dumps(q) for q in QUESTIONS) + "\n")
+    body = run_body(generators=[{"provider": "anthropic", "model": "claude-haiku-4-5"},
+                                {"provider": "openai", "model": "gpt-6-luna"}])
+    first = admin.post("/api/admin/evals/runs", json=body).json()["run"]["id"]
+    out = drive(admin, first)
+    assert out["progress"]["finished"] and out["progress"]["done"] == 6
+    fresh = eval_store.MemoryBucket()
+    fresh.objects = bucket.objects  # what is really stored
+    rows = eval_store.read_results(fresh, first)
+    assert sorted(r["pair"] for r in rows) == list(range(6))
+    assert len(eval_store.read_jsonl(fresh, eval_store.run_path(first, "results.jsonl"))) == 6
+    second = admin.post("/api/admin/evals/runs", json=run_body(top=1, name="Second")).json()["run"]["id"]
+    drive(admin, second)
+    assert {r["id"] for r in eval_store.read_index(fresh)} == {first, second}
+    assert {r["id"] for r in json.loads(fresh.objects["evals/index.json"])["runs"]} == {first, second}
+
+
+def test_cancel_reaches_a_step_through_the_marker(evals):
+    run_id = evals.post("/api/admin/evals/runs", json=run_body(top=3)).json()["run"]["id"]
+    evals.post(f"/api/admin/evals/runs/{run_id}/step")
+    eval_store.mark_cancelled(evals.bucket, run_id, "2026-10-08T00:00:00+00:00")  # as if run.json were stale
+    out = evals.post(f"/api/admin/evals/runs/{run_id}/step").json()
+    assert out["progress"]["status"] == "cancelled" and out["progress"]["done"] == 1

@@ -377,8 +377,9 @@ def estimate_run(body: RunBody, _: auth.Session = Depends(auth.require_admin),
 
 
 def _new_run_id(bucket: eval_store.Bucket) -> str:
+    # Checked with the listing, not a read: a read of a path that does not exist yet could be cached.
     base = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    if eval_store.read_run(bucket, base) is None:
+    if base not in eval_store.bucket_names(bucket, "evals/runs/"):
         return base
     return f"{base}-{secrets.token_hex(3)}"
 
@@ -389,7 +390,7 @@ def create_run(body: RunBody, _: auth.Session = Depends(auth.require_admin),
     if not body.confirm:
         raise HTTPException(400, "Check the estimate and confirm before starting a run.")
     try:
-        active = [r for r in eval_store.read_index(bucket) if r.get("status") == ACTIVE]
+        active = [r for r in current_runs(bucket) if r.get("status") == ACTIVE]
     except eval_store.StoreError as exc:
         raise _store_error(exc) from exc
     if active:
@@ -458,12 +459,29 @@ def public_run(run: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _finish(run: dict[str, Any], rows: list[dict[str, Any]], status: str, note: str | None = None) -> None:
+def current_runs(bucket: eval_store.Bucket) -> list[dict[str, Any]]:
+    """The runs index, with any "running" entry checked against its write-once markers.
+
+    An index copy served from the CDN can be a little old; the markers come from the listing.
+    """
+    runs = eval_store.read_index(bucket)
+    for r in runs:
+        if r.get("status") == ACTIVE:
+            final = eval_store.finished_status(bucket, r["id"])
+            if final:
+                r["status"] = final
+    return runs
+
+
+def _finish(run: dict[str, Any], rows: list[dict[str, Any]], status: str, note: str | None = None,
+            bucket: eval_store.Bucket | None = None) -> None:
     run["status"] = status
     run["status_note"] = note
     run["finished_at"] = run.get("finished_at") or _now()
     run["lease"] = None
     run["summary"] = summarize(run, rows)
+    if bucket is not None and status == "done":
+        eval_store.mark_finished(bucket, run["id"], status, run["finished_at"])
 
 
 # ---------------------------------------------------------------- one step
@@ -625,16 +643,23 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
         raise HTTPException(404, "No such run.")
     if run.get("status") != ACTIVE:
         return {"progress": progress(run), "row": None}
+    # What is done comes from the written rows (listed, never a cached copy); see app/eval_store.py.
     rows = eval_store.read_results(bucket, run_id)
-    done = {(r.get("qid"), r.get("generator")) for r in rows}
-    todo = [(i, q, g) for i, q, g in pairs_of(run) if (q["qid"], model_key(g)) not in done]
+    _sync_progress(run, rows)
+    if eval_store.is_cancelled(bucket, run_id):
+        _finish(run, rows, "cancelled", "Cancelled in Settings.")
+        eval_store.write_run(bucket, run)
+        eval_store.upsert_index(bucket, index_entry(run))
+        return {"progress": progress(run), "row": None}
+    done = {r.get("pair") for r in rows}
+    todo = [(i, q, g) for i, q, g in pairs_of(run) if i not in done]
     if not todo:
-        _finish(run, rows, "done")
+        _finish(run, rows, "done", bucket=bucket)
         eval_store.write_run(bucket, run)
         eval_store.upsert_index(bucket, index_entry(run))
         return {"progress": progress(run), "row": None}
     lease = run.get("lease") or {}
-    if lease and lease.get("until", 0) > time.time():
+    if lease and lease.get("until", 0) > time.time() and lease.get("pair") not in done:
         return {"progress": progress(run), "row": None,
                 "waiting": {"seconds": max(3, int(lease["until"] - time.time()) // 2 or 3),
                             "reason": "Another step of this run is still working (another tab, or a retry)."}}
@@ -697,23 +722,32 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
         "seconds": round(time.monotonic() - started, 1),
         "at": _now(),
     }
-    # Re-read before writing: a pair is recorded once, even if two steps raced for it.
+    # The row is the record: written once under its pair number. Two steps racing for the same pair
+    # write the same file, so a pair is never counted twice.
+    eval_store.write_row(bucket, run_id, row)
     rows = eval_store.read_results(bucket, run_id)
-    run = eval_store.read_run(bucket, run_id) or run
-    if (row["qid"], row["generator"]) not in {(r.get("qid"), r.get("generator")) for r in rows}:
+    if row["pair"] not in {r.get("pair") for r in rows}:  # the listing lagged: keep our own row
         rows.append(row)
-        eval_store.write_results(bucket, run_id, rows)
-        run["calls_used"] = int(run.get("calls_used", 0)) + budget.used
-    run["pairs_done"] = len({(r.get("qid"), r.get("generator")) for r in rows})
+        rows.sort(key=lambda r: r.get("pair") or 0)
+    eval_store.write_results(bucket, run_id, rows)
+    _sync_progress(run, rows)
     run["lease"] = None
     run["updated_at"] = _now()
-    if run.get("status") == ACTIVE and run["pairs_done"] >= run["pairs_total"]:
-        _finish(run, rows, "done")
+    if eval_store.is_cancelled(bucket, run_id):
+        _finish(run, rows, "cancelled", "Cancelled in Settings.")
+    elif run["pairs_done"] >= run["pairs_total"]:
+        _finish(run, rows, "done", bucket=bucket)
     else:
         run["summary"] = summarize(run, rows)
     eval_store.write_run(bucket, run)
     eval_store.upsert_index(bucket, index_entry(run))
     return {"progress": progress(run), "row": public_row(row)}
+
+
+def _sync_progress(run: dict[str, Any], rows: list[dict[str, Any]]) -> None:
+    """Progress and spend from the rows themselves, so a stale run.json can never undercount them."""
+    run["pairs_done"] = len({r.get("pair") for r in rows})
+    run["calls_used"] = sum(int(r.get("calls") or 0) for r in rows)
 
 
 def public_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -750,7 +784,10 @@ def cancel(run_id: str, _: auth.Session = Depends(auth.require_admin),
         if run is None:
             raise HTTPException(404, "No such run.")
         if run.get("status") == ACTIVE:
-            _finish(run, eval_store.read_results(bucket, run_id), "cancelled", "Cancelled in Settings.")
+            eval_store.mark_cancelled(bucket, run_id, _now())  # a step in flight sees this before it writes
+            rows = eval_store.read_results(bucket, run_id)
+            _sync_progress(run, rows)
+            _finish(run, rows, "cancelled", "Cancelled in Settings.")
             eval_store.write_run(bucket, run)
             eval_store.upsert_index(bucket, index_entry(run))
     except eval_store.StoreError as exc:
@@ -762,7 +799,7 @@ def cancel(run_id: str, _: auth.Session = Depends(auth.require_admin),
 def list_runs(_: auth.Session = Depends(auth.require_admin),
               bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
     try:
-        runs = eval_store.read_index(bucket)
+        runs = current_runs(bucket)
     except eval_store.StoreError as exc:
         raise _store_error(exc) from exc
     return {"runs": runs, "active": next((r["id"] for r in runs if r.get("status") == ACTIVE), None)}
@@ -811,46 +848,60 @@ class CalibrateBody(BaseModel):
     provider: str
     model: str
     restart: bool = False
+    attempt: Optional[str] = None  # from the previous step's reply, so a stale read never mixes attempts
 
 
 @router.post("/calibration/step")
 def calibration_step(body: CalibrateBody, _: auth.Session = Depends(auth.require_admin),
                      bucket: eval_store.Bucket = Depends(get_bucket),
                      judge_completer=Depends(get_judge_completer)) -> dict[str, Any]:
-    """Score the next synthetic case (app/eval_calibration.jsonl) with one judge. The page loops until done."""
+    """Score the next synthetic case (app/eval_calibration.jsonl) with one judge. The page loops until done.
+
+    Each case's result is written once under the attempt (eval_store.write_calibration_row), and which
+    cases are done comes from the listing, like run rows.
+    """
     judge = check_model(ModelRef(provider=body.provider, model=body.model), "Judge")
     key = model_key(judge)
     cases = eval_core.load_calibration_cases()
     try:
-        data = eval_store.read_calibration(bucket)
-        entry = data.get(key)
-        if body.restart or not isinstance(entry, dict) or entry.get("done"):
-            if not body.restart and isinstance(entry, dict) and entry.get("done"):
-                return {"judge": key, "result": entry}
+        current = eval_store.read_calibration(bucket).get(key)
+        attempt = body.attempt if body.attempt and eval_store.ATTEMPT_RE.match(body.attempt) else None
+        if body.restart or (attempt is None and not isinstance(current, dict)):
             check_model_price(judge["provider"], judge["model"])
-            entry = {"judge": key, "started_at": _now(), "rows": [], "cases": len(cases), "done": False,
-                     "met": 0, "missed": [], "source": "settings"}
-        seen = {r["cid"] for r in entry["rows"]}
+            attempt = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(2)
+        elif attempt is None:
+            if current.get("done"):
+                return {"judge": key, "attempt": current.get("attempt"), "result": current}
+            attempt = current.get("attempt")
+        seen = eval_store.calibration_rows(bucket, key, attempt)
         nxt = next((c for c in cases if c["cid"] not in seen), None)
         if nxt is not None:
             if limits.read_counter(limits.eval_calls_key()) + 1 > limits.daily_eval_call_cap():
                 raise HTTPException(429, "Today's admin eval budget is used up (DAILY_EVAL_LLM_CALL_CAP).")
-            budget = Budget(1)
-            out = judge_one(judge, nxt, counted(judge_completer, budget), time.monotonic() + STEP_BUDGET_SECONDS,
+            out = judge_one(judge, nxt, counted(judge_completer, Budget(1)), time.monotonic() + STEP_BUDGET_SECONDS,
                             eval_core.judge_system_prompt())
-            misses = eval_core.check(nxt, out)
-            entry["rows"].append({"cid": nxt["cid"], "misses": misses, "verdict": out.get("verdict"),
-                                  "error": out.get("error")})
-        entry["met"] = sum(1 for r in entry["rows"] if not r["misses"])
-        entry["missed"] = [r["cid"] for r in entry["rows"] if r["misses"]]
-        entry["done"] = len(entry["rows"]) >= len(cases)
+            row = {"cid": nxt["cid"], "misses": eval_core.check(nxt, out), "verdict": out.get("verdict"),
+                   "error": out.get("error")}
+            eval_store.write_calibration_row(bucket, key, attempt, row)
+            seen[nxt["cid"]] = row
+        rows = [seen[c["cid"]] for c in cases if c["cid"] in seen]
+        entry = {
+            "judge": key,
+            "attempt": attempt,
+            "started_at": (current or {}).get("started_at") if (current or {}).get("attempt") == attempt else _now(),
+            "rows": rows,
+            "cases": len(cases),
+            "met": sum(1 for r in rows if not r["misses"]),
+            "missed": [r["cid"] for r in rows if r["misses"]],
+            "done": len(rows) >= len(cases),
+            "source": "settings",
+        }
         if entry["done"]:
             entry["finished_at"] = _now()
-        data[key] = entry
-        eval_store.write_calibration(bucket, data)
+        eval_store.write_calibration_entry(bucket, key, entry)
     except eval_store.StoreError as exc:
         raise _store_error(exc) from exc
-    return {"judge": key, "result": entry}
+    return {"judge": key, "attempt": attempt, "result": entry}
 
 
 @router.get("/limits")
