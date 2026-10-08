@@ -623,6 +623,95 @@ def test_runs_survive_stale_bucket_reads(admin, monkeypatch):
     assert {r["id"] for r in json.loads(fresh.objects["evals/index.json"])["runs"]} == {first, second}
 
 
+# ---------------------------------------------------------------- Oct 8 code review: write-once questions, cheap steps
+
+def test_question_edits_survive_stale_bucket_reads(evals):
+    # Before: each add or edit re-read evals/questions.jsonl through the CDN and wrote it back, so a stale
+    # copy silently dropped the previous edit. Now each add or edit is one new object, written once.
+    stale = StaleBucket()
+    eval_store.write_questions_text(stale, "\n".join(json.dumps(q) for q in QUESTIONS) + "\n")
+    app.dependency_overrides[admin_evals.get_bucket] = lambda: stale
+    base = stale.objects[eval_store.QUESTIONS]
+    first = evals.post("/api/admin/evals/questions", json={"question": "How do I read an elbow plot?",
+                                                           "category": "CONCEPT_QUESTION"})
+    assert first.status_code == 200 and first.json()["count"] == 4
+    second = evals.post("/api/admin/evals/questions", json={"question": "What is a silhouette score?",
+                                                            "category": "CONCEPT_QUESTION"})
+    assert second.status_code == 200 and second.json()["count"] == 5
+    edited = evals.put("/api/admin/evals/questions/q004", json={"question": "How do I read an elbow chart?",
+                                                               "category": "CONCEPT_QUESTION"})
+    assert edited.status_code == 200
+    body = evals.get("/api/admin/evals/questions").json()
+    assert [q["question"] for q in body["questions"][3:]] == ["How do I read an elbow chart?",
+                                                               "What is a silhouette score?"]
+    assert [q["qid"] for q in body["questions"]] == ["q001", "q002", "q003", "q004", "q005"]
+    assert stale.objects[eval_store.QUESTIONS] == base  # the uploaded set is never rewritten
+    edits = [k for k in stale.objects if k.startswith(eval_store.QUESTION_EDITS)]
+    assert len(edits) == 3  # one object per add or edit
+
+
+class LaggingListBucket(eval_store.MemoryBucket):
+    """TEST FAKE: the bucket listing has not caught up with the newest question edit yet."""
+
+    def list(self, prefix):
+        names = super().list(prefix)
+        return names[:-1] if prefix.startswith(eval_store.QUESTION_EDITS) and names else names
+
+
+def test_an_edit_shows_at_once_even_when_the_listing_lags(evals):
+    lagging = LaggingListBucket()
+    eval_store.write_questions_text(lagging, "\n".join(json.dumps(q) for q in QUESTIONS) + "\n")
+    app.dependency_overrides[admin_evals.get_bucket] = lambda: lagging
+    r = evals.post("/api/admin/evals/questions", json={"question": "How do I read an elbow plot?",
+                                                       "category": "CONCEPT_QUESTION"})
+    assert r.json()["count"] == 4 and r.json()["questions"][3]["question"] == "How do I read an elbow plot?"
+
+
+def test_a_newly_uploaded_question_set_starts_without_old_edits(evals):
+    evals.post("/api/admin/evals/questions", json={"question": "How do I read an elbow plot?",
+                                                   "category": "CONCEPT_QUESTION"})
+    assert evals.get("/api/admin/evals/questions").json()["count"] == 4
+    eval_store.write_questions_text(evals.bucket, json.dumps(QUESTIONS[0]) + "\n")  # scripts/upload_eval_questions.py
+    assert evals.get("/api/admin/evals/questions").json()["count"] == 1
+
+
+def test_questions_typed_before_any_upload_are_kept(evals):
+    evals.bucket.objects.clear()
+    r = evals.post("/api/admin/evals/questions", json={"question": "How do I read an elbow plot?",
+                                                       "category": "CONCEPT_QUESTION"})
+    assert r.status_code == 200 and r.json()["count"] == 1 and r.json()["uploaded"] is True
+
+
+class CountingBucket(eval_store.MemoryBucket):
+    """TEST FAKE that counts object reads by path prefix."""
+
+    def __init__(self):
+        super().__init__()
+        self.reads: list[str] = []
+
+    def get(self, path):
+        self.reads.append(path)
+        return super().get(path)
+
+
+def test_a_step_does_not_read_every_run_entry(evals):
+    bucket = CountingBucket()
+    bucket.objects = evals.bucket.objects
+    app.dependency_overrides[admin_evals.get_bucket] = lambda: bucket
+    for i in range(5):  # five older runs in the store
+        eval_store.upsert_index(bucket, {"id": f"2026100{i + 1}T000000Z", "created_at": f"2026-10-0{i + 1}T00:00:00Z",
+                                         "status": "done"})
+    run_id = evals.post("/api/admin/evals/runs", json=run_body(top=3)).json()["run"]["id"]
+    bucket.reads.clear()
+    evals.post(f"/api/admin/evals/runs/{run_id}/step")  # a step in the middle of the run
+    assert not [p for p in bucket.reads if p.startswith(eval_store.INDEX_DIR) or p == eval_store.INDEX]
+    out = drive(evals, run_id)
+    assert out["progress"]["finished"]
+    runs = json.loads(bucket.objects[eval_store.INDEX])["runs"]  # rebuilt when the run finished
+    assert {r["id"] for r in runs} == {run_id} | {f"2026100{i + 1}T000000Z" for i in range(5)}
+    assert next(r for r in runs if r["id"] == run_id)["status"] == "done"
+
+
 def test_cancel_reaches_a_step_through_the_marker(evals):
     run_id = evals.post("/api/admin/evals/runs", json=run_body(top=3)).json()["run"]["id"]
     evals.post(f"/api/admin/evals/runs/{run_id}/step")

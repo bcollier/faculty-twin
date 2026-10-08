@@ -238,6 +238,10 @@ def get_questions(_: auth.Session = Depends(auth.require_admin),
             raise
         return {"count": 0, "categories": [], "questions": [], "uploaded": False, "note": exc.detail,
                 "all_categories": list(eval_core.CATEGORIES)}
+    return _view(questions)
+
+
+def _view(questions: list[eval_core.Question]) -> dict[str, Any]:
     return {
         "count": len(questions),
         "categories": _category_summary(questions),
@@ -275,32 +279,35 @@ def _checked_record(body: QuestionBody, line: int) -> dict[str, Any]:
 
 
 def _question_lines(bucket: eval_store.Bucket) -> list[str]:
-    text = eval_store.read_questions_text(bucket) or ""
-    return text.splitlines()
+    return eval_store.read_question_lines(bucket) or []
+
+
+def _questions_view(bucket: eval_store.Bucket, pending: tuple[str, dict[str, Any]]) -> dict[str, Any]:
+    """The question list including the edit just written, even if the bucket listing has not caught up."""
+    lines = eval_store.read_question_lines(bucket, pending) or []
+    try:
+        questions = eval_core.parse_lines("\n".join(lines) + "\n")
+    except eval_core.DatasetError as exc:
+        raise HTTPException(409, f"The uploaded question set failed the privacy check ({exc}). Fix and re-upload it.") from exc
+    return _view(questions)
 
 
 @router.post("/questions")
 def add_question(body: QuestionBody, _: auth.Session = Depends(auth.require_admin),
                  bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
-    """Add one question typed in Settings. Runs the dataset privacy checks first."""
-    import json
-
+    """Add one question typed in Settings. Runs the dataset privacy checks first. One write-once object."""
     try:
         lines = _question_lines(bucket)
-        rec = _checked_record(body, len(lines) + 1)
-        lines.append(json.dumps(rec, ensure_ascii=False))
-        eval_store.write_questions_text(bucket, "\n".join(lines) + "\n")
+        pending = eval_store.write_question_edit(bucket, "add", _checked_record(body, len(lines) + 1))
+        return _questions_view(bucket, pending)
     except eval_store.StoreError as exc:
         raise _store_error(exc) from exc
-    return get_questions(_, bucket)
 
 
 @router.put("/questions/{qid}")
 def edit_question(qid: str, body: QuestionBody, _: auth.Session = Depends(auth.require_admin),
                   bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
     """Edit one question in place (its qid is its line number, so it keeps it). Same privacy checks."""
-    import json
-
     m = re.fullmatch(r"q(\d{3,4})", qid)
     if not m:
         raise HTTPException(400, "Question ids look like q007.")
@@ -309,11 +316,10 @@ def edit_question(qid: str, body: QuestionBody, _: auth.Session = Depends(auth.r
         lines = _question_lines(bucket)
         if not 1 <= n <= len(lines) or not lines[n - 1].strip():
             raise HTTPException(404, "No such question.")
-        lines[n - 1] = json.dumps(_checked_record(body, n), ensure_ascii=False)
-        eval_store.write_questions_text(bucket, "\n".join(lines) + "\n")
+        pending = eval_store.write_question_edit(bucket, "edit", _checked_record(body, n), line=n)
+        return _questions_view(bucket, pending)
     except eval_store.StoreError as exc:
         raise _store_error(exc) from exc
-    return get_questions(_, bucket)
 
 
 # ---------------------------------------------------------------- runs
