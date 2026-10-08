@@ -80,6 +80,41 @@ def related_code(content: Content, rec: dict[str, Any]) -> dict[str, Any] | None
     return None
 
 
+LINKS_MAX_SLIDES = 10
+
+
+def media_links(content: Content, recs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """`{slide_id: {image, clip}}`: signed slide-image links and `{url, start, end}` clips (or None), one batch."""
+    clips = {r["id"]: str(r.get("clip")).lstrip("/") for r in recs if r.get("clip")}
+    urls = storage.media_urls([r.get("image") for r in recs] + list(clips.values()))
+    out: dict[str, dict[str, Any]] = {}
+    for rec in recs:
+        clip = None
+        if urls.get(clips.get(rec["id"], "")):
+            start, end = content.clip_windows.get(rec["id"], (None, None))
+            clip = {"url": urls[clips[rec["id"]]], "start": start, "end": end}
+        out[rec["id"]] = {"image": urls.get(str(rec.get("image") or "").lstrip("/")), "clip": clip}
+    return out
+
+
+def fresh_links(content: Content, slide_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """New signed links for slides already on a student's screen (`POST /api/links`).
+
+    Added Oct 8 (code review): replaces re-asking the whole question when an hour-old link expires.
+    Only slides in the index and in visible sessions; anything else is left out.
+    """
+    hidden = hidden_sessions()
+    recs = []
+    for sid in dict.fromkeys(str(s) for s in slide_ids):
+        rec = content.record(sid)
+        if rec is None or rec.get("kind", "slide") != "slide":
+            continue
+        if (str(rec.get("course")), int(rec.get("session") or 0)) in hidden:
+            continue
+        recs.append(rec)
+    return media_links(content, recs)
+
+
 def build_playlist(
     content: Content,
     question: str,
@@ -96,17 +131,11 @@ def build_playlist(
     """
     primary = voice.primary if voice is not None else None
     fallback = voice.fallback if voice is not None else None
-    clips = {r["id"]: r.get("clip") for r in chosen if r.get("clip")}
-    urls = storage.media_urls([r.get("image") for r in chosen] + list(clips.values()))
+    media = media_links(content, chosen)
     segments = []
     sources = []
     for n, rec in enumerate(chosen, start=1):
-        image = urls.get(str(rec.get("image") or "").lstrip("/"))
-        clip_path = clips.get(rec["id"])
-        clip = None
-        if clip_path and urls.get(clip_path.lstrip("/")):
-            start, end = content.clip_windows.get(rec["id"], (None, None))
-            clip = {"url": urls[clip_path.lstrip("/")], "start": start, "end": end}
+        image, clip = media[rec["id"]]["image"], media[rec["id"]]["clip"]
         narration = narrations.get(rec["id"], "")
         audio = speech.audio_link(narration, primary.tag_key) if primary else None
         audio_fallback = speech.audio_link(narration, fallback.tag_key) if (audio and fallback) else None

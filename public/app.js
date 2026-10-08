@@ -164,12 +164,10 @@ const ui = {
 const app = {
   course: null,          // '70445' | '45884' | null (all)
   topics: [],
-  lastQuestion: '',
   pendingQuestion: null, // asked when the session ran out; asked again after the passcode
   requestId: 0,          // ignores stale /api/ask responses
   sourceCount: 0,
   sourcesBlock: null,    // the newest answer's "Slides used in this answer" list
-  refreshedFor: 0,       // requestId whose expired links were already refreshed once
   voice: null,           // /api/voice: { kind, label, fallback } for the voice that will speak
 };
 
@@ -609,7 +607,7 @@ function makeSilentWav(seconds) {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
-async function ask(raw, { resumeAt = 0, quiet = false, source = null } = {}) {
+async function ask(raw, { source = null } = {}) {
   const question = String(raw || '').trim().slice(0, 300);
   if (!question) {
     (ui.screens.app.dataset.view === 'idle' ? ui.idleQ : ui.dockQ).focus();
@@ -618,11 +616,10 @@ async function ask(raw, { resumeAt = 0, quiet = false, source = null } = {}) {
   unlockAudio();
   stopPlayback();
   const myId = ++app.requestId;
-  app.lastQuestion = question;
   ui.idleQ.value = ''; ui.idleCount.textContent = '0 / 300'; ui.dockQ.value = '';
   ui.followups.hidden = true;
   setView('presenting');
-  if (!quiet) addUserMessage(question);
+  addUserMessage(question);
   showStageMessage({ title: COPY.loading[0], text: COPY.loading[1], spinner: true });
 
   let res;
@@ -655,24 +652,41 @@ async function ask(raw, { resumeAt = 0, quiet = false, source = null } = {}) {
   if (!answer.covered || !Array.isArray(answer.segments) || answer.segments.length === 0) {
     return showStageError('notCovered', question);
   }
-  if (quiet && app.sourcesBlock) {
-    // Fresh links for the same answer: swap the old list instead of adding another message.
+  const msg = addTwinMessage(summarize(answer));
+  renderSourcesList(msg, answer);
+  loadAnswer(answer);
+}
+
+/* Signed slide and clip links expire after an hour. If the slide image fails to load, fetch fresh
+   links for this answer's slides (once per answer) and swap them in: same answer, same segment,
+   no second model call. (Changed Oct 8: it used to ask the whole question again.) */
+async function refreshExpiredLinks() {
+  const answer = player.answer;
+  if (!answer || answer.linksRefreshed) return;
+  answer.linksRefreshed = true;
+  let res;
+  try {
+    res = await api('/api/links', { method: 'POST', body: { slide_ids: answer.segments.map(s => s.slide_id) } });
+  } catch { return; }
+  if (player.answer !== answer || !res.ok || !res.data?.links) return; // a newer answer, or no luck: keep what is shown
+  const fresh = res.data.links;
+  for (const s of answer.segments) {
+    const f = fresh[s.slide_id];
+    if (!f) continue;
+    if (f.image) s.image = f.image;
+    if (s.clip && f.clip?.url) s.clip.url = f.clip.url;
+  }
+  for (const src of answer.sources || []) if (fresh[src.slide_id]?.image) src.image = fresh[src.slide_id].image;
+  const seg = player.segments[player.index];
+  if (seg?.image && ui.slideImg.getAttribute('src') !== seg.image) {
+    ui.slideImg.src = seg.image;
+    ui.srcThumb.src = seg.image;
+  }
+  if (app.sourcesBlock) {
     const parent = app.sourcesBlock.parentElement;
     app.sourcesBlock.remove();
     renderSourcesList(parent, answer);
-  } else {
-    const msg = addTwinMessage(summarize(answer));
-    renderSourcesList(msg, answer);
   }
-  loadAnswer(answer, resumeAt);
-}
-
-/* Signed slide and clip links expire after an hour. If the slide image fails to load, ask the
-   same question again (once per answer) for fresh links and pick up at the same segment. */
-function refreshExpiredLinks() {
-  if (!player.answer || app.refreshedFor === app.requestId) return;
-  app.refreshedFor = app.requestId + 1; // the id the refresh request will get
-  ask(app.lastQuestion, { resumeAt: player.index, quiet: true });
 }
 
 /* =====================================================================
@@ -705,7 +719,7 @@ const player = {
   clipFailed: new Set(), // segment indexes whose class clip would not load: the button stays hidden
 };
 
-/** Load a new answer and start at segment 1 (or `start`, after refreshing expired links). */
+/** Load a new answer and start at segment 1 (or `start`). */
 function loadAnswer(answer, start = 0) {
   stopPlayback();
   player.answer = answer;
