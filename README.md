@@ -295,12 +295,94 @@ flowchart LR
     class IN inbox
 ```
 
+### APIs used
+
+Every external service the project calls, found by searching the code (not from memory): 16 services, plus the package sources CI installs from. The browser never calls a model or voice provider; keyed calls go out from the Vercel function or from the local build machine. Blue is this project's own code, yellow bills per use, green is free, gray (Supabase) bills by project plan.
+
+**What the browsers call.** The pages hold no keys and load no outside scripts or fonts.
+
+```mermaid
+flowchart LR
+    classDef own fill:#eef4f8,stroke:#2c5f73,color:#10303c
+    classDef free fill:#e8f5e9,stroke:#2e7d32,color:#0d3b12
+    classDef plan fill:#f2f2f2,stroke:#666,color:#222
+
+    SB["Student page<br/>public/app.js<br/>no keys"]
+    AB["Settings page<br/>public/admin*.js<br/>no keys"]
+    FN["Vercel function<br/>FastAPI app/"]
+    ST[("Supabase Storage<br/>bucket twin-content")]
+    ELP["ElevenLabs preview mp3s<br/>storage.googleapis.com,<br/>*.elevenlabs.io"]
+
+    SB -- "/api/* with the student cookie" --> FN
+    SB -- "GET signed links: slides,<br/>clips, stored audio" --> ST
+    AB -- "/api/admin/* with the admin cookie" --> FN
+    AB -- "PUT signed upload link:<br/>inbox files" --> ST
+    AB -- "play a stock voice sample" --> ELP
+
+    class SB,AB,FN own
+    class ELP free
+    class ST plan
+```
+
+
+**What the Vercel function calls.** Every keyed call goes out from here.
+
+```mermaid
+flowchart LR
+    classDef own fill:#eef4f8,stroke:#2c5f73,color:#10303c
+    classDef paid fill:#fff3c4,stroke:#b8860b,color:#3a2e00
+    classDef free fill:#e8f5e9,stroke:#2e7d32,color:#0d3b12
+    classDef plan fill:#f2f2f2,stroke:#666,color:#222
+
+    FN["Vercel function<br/>FastAPI app/<br/>holds every key"]
+
+    LLM["Anthropic, OpenAI or OpenRouter<br/>(one active, set in Settings)<br/>chat, web search, model lists"]
+    VOY["Voyage AI<br/>embeddings"]
+    ELV["ElevenLabs<br/>text to speech, voices list"]
+    EDGE["Microsoft edge-tts<br/>Read Aloud WebSocket, no key"]
+    TW["Twilio<br/>Messages API"]
+    ST[("Supabase Storage<br/>twin-content")]
+    PG[("Supabase PostgREST<br/>6 tables, rpc ft_increment")]
+
+    FN -- "narration, classifiers, course info,<br/>helper slides, web answers, judges" --> LLM
+    FN -- "the question, as a query" --> VOY
+    FN -- "signed narration text" --> ELV
+    FN -- "signed narration text,<br/>fixed preview sentence" --> EDGE
+    FN -- "instructor alert text" --> TW
+    FN -- "load index, sign links,<br/>admin records" --> ST
+    FN -- "settings, counters,<br/>question log, courses" --> PG
+
+    class FN own
+    class LLM,VOY,ELV,TW paid
+    class EDGE free
+    class ST,PG plan
+```
+
+| Provider | Purpose | Where it runs |
+| --- | --- | --- |
+| Anthropic, OpenAI, OpenRouter (one active, set in Settings) | Narration, classifiers, course-info answers, helper slides, web answers with each provider's own web search, eval judges, model lists | Vercel function; local build machine (pre-generation, evals) |
+| Voyage AI | Embeddings: the question at ask time, slides and Canvas chunks at index time | Vercel function; local build machine |
+| ElevenLabs | Cloned or stock voice, voice list, preview samples | Vercel function; Ben's browser (preview mp3s only); local build machine (stored mp3s) |
+| Microsoft edge-tts (unofficial, no key) | Free voices and the fallback voice | Vercel function |
+| Supabase | Storage bucket `twin-content` (server, pipeline, and signed links in the browser); PostgREST tables and `rpc/ft_increment` | Vercel function; browsers (signed links only); local build machine |
+| Twilio | Texts Ben when a student reports a broken quiz, submission or API key | Vercel function |
+| Canvas REST API (GET only) | Student-facing course information for course-info answers | Local build machine |
+| Google Drive (`gog` CLI) | Exports Docs and Sheets linked from Canvas | Local build machine |
+| TypeSafe (Jev), and DeepEval's PostHog telemetry | Optional eval judge; DeepEval's own usage events | Local build machine |
+| Hugging Face Hub | Model weights for the local Kokoro and Chatterbox voices, first run only | Local build machine |
+| GitHub and GitHub Actions; PyPI, apt, Playwright downloads | Code, pull requests, the test suite (no network calls in tests) | GitHub Actions |
+| Vercel | Deploys `main`, holds the keys, runs the function | Vercel |
+| Google Fonts | Fonts on the demo page in `docs/demo/` only, not the app | Viewer's browser |
+
+The pipeline, eval and CI diagrams, every endpoint with the file and function that calls it, auth variable, cost basis and what data it receives, all 67 of the app's own routes, and the local tools (ffmpeg, Apple Vision OCR, LibreOffice, Poppler and others): **[docs/APIS.md](docs/APIS.md)**.
+
 ### Docs
 
 | Doc | What it covers |
 | --- | --- |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The seven diagrams, with Ben's hand-written code marked |
 | [docs/DATABASE.md](docs/DATABASE.md) | Postgres tables, the Storage bucket layout, settings and counter keys, and what lives where |
+| [docs/APIS.md](docs/APIS.md) | Every external API (provider, endpoint, calling code, auth variable, cost, data sent), the app's 67 routes, and local tools, with diagrams |
 | [docs/SPEC.md](docs/SPEC.md) | The spec and build guide: scope, data formats, every API route, limits, the build blocks |
 | [docs/TESTING_AND_SCORES.md](docs/TESTING_AND_SCORES.md) | What the Activity numbers mean, how the 0.52 threshold was chosen, and how to run every kind of test |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, findings, spend limits, the pre-launch checklist |
