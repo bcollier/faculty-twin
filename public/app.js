@@ -3,8 +3,6 @@
 // Screens: boot -> (offline | login | app). The app has two views: idle and presenting.
 // The player is a small state machine; see the "Player" section below.
 
-import { renderHelperFigure } from './helper-slide.js';
-
 const DEV_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 if (DEV_HOSTS.includes(location.hostname) && new URLSearchParams(location.search).get('mock') === '1') {
   // Development only (local hosts only): canned responses that match the API contract. Never loaded otherwise.
@@ -495,8 +493,7 @@ function webListen(answer) {
 function showWebAnswer(answer) {
   clearSourcesToggle();
   const chips = topicsForCourse().slice(0, 6);
-  const extra = [webListen(answer), webSourceList(answer.links), relatedSlides(answer.related),
-    answer.generated_slide ? renderHelperFigure(answer.generated_slide) : null].filter(Boolean);
+  const extra = [webListen(answer), webSourceList(answer.links), relatedSlides(answer.related)].filter(Boolean);
   showStageMessage({ title: answer.title || 'Beyond my slides', text: answer.message || '', chips,
     label: COPY.webLabel, labelClass: 'web-label', extra });
   addTwinMessage(`${COPY.webLabel}. ${answer.message || ''}`);
@@ -504,12 +501,38 @@ function showWebAnswer(answer) {
   // A web answer is never in my voice: the dock names the stock voice when there is one, else nothing.
   ui.voiceLabel.textContent = answer.voice?.label || '';
   ui.voiceLabel.hidden = !answer.voice;
+  // An AI-drawn helper slide goes last, after the sources and my closest slides.
+  if (answer.generated_slide) {
+    const myId = app.requestId;
+    helperFigure(answer.generated_slide).then((fig) => {
+      if (!fig || myId !== app.requestId) return;
+      ui.stageExtra.append(fig);
+      ui.stageExtra.hidden = false;
+    });
+  }
+}
+
+/* AI-drawn helper slides (public/helper-slide.js draws a checked spec; never markup from a model).
+   Loaded only when an answer has one. */
+let helperModule = null;
+async function helperFigure(slide) {
+  try {
+    helperModule = helperModule || await import('./helper-slide.js');
+    return helperModule.renderHelperFigure(slide);
+  } catch { return null; }
 }
 
 /* An AI-drawn helper slide under a walkthrough: labeled, dashed border, after the real slides. */
 function showHelperSlide(slide) {
-  ui.helperSlot.replaceChildren(...(slide ? [renderHelperFigure(slide)] : []));
-  ui.helperSlot.hidden = !slide;
+  ui.helperSlot.replaceChildren();
+  ui.helperSlot.hidden = true;
+  if (!slide) return;
+  const myId = app.requestId;
+  helperFigure(slide).then((fig) => {
+    if (!fig || myId !== app.requestId) return;
+    ui.helperSlot.replaceChildren(fig);
+    ui.helperSlot.hidden = false;
+  });
 }
 
 /* The TA's contact details in a small card. The twin never says a TA's name aloud. */
