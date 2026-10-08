@@ -54,14 +54,35 @@ def test_character_cap_independent_of_words():
         narration.validate(reply([seg(long_words)]), IDS)
 
 
-@pytest.mark.parametrize("text", [
-    "See www.example.com for more.",
-    "The notebook is at https://colab.example/x.",
-    "Check kmeans.io for a demo.",
+@pytest.mark.parametrize("text,spoken", [
+    ("See www.example.com for more.", "See the link on the slide for more."),
+    ("The notebook is at https://colab.example/x.", "The notebook is at the link on the slide."),
+    ("Check kmeans.io for a demo.", "Check the link on the slide for a demo."),
+    ("Install it from https://docs.n8n.io/hosting/installation/npm/, then open the editor.",
+     "Install it from the link on the slide, then open the editor."),
+    ("The free version is at n8n.io (or docs.n8n.io).", "The free version is at the link on the slide (or the link on the slide)."),
+    ("Try n8n.io or make.com for this.", "Try the links on the slide for this."),
 ])
-def test_web_addresses_are_rejected(text):
+def test_web_addresses_become_the_link_on_the_slide(text, spoken):
+    # Changed Oct 8: the voice never speaks a web address, but a slide that shows one (n8n slide
+    # 45884-s08-069) no longer throws away the whole narration and falls back to the notes.
+    out, _ = narration.validate(reply([seg(text)]), IDS)
+    assert out["70445-s01-002"] == spoken
+    assert narration.speakable_links(spoken) == spoken
+    assert not narration._URLISH.search(spoken)
+
+
+def test_web_address_rule_still_holds_after_the_swap(monkeypatch):
+    # The swap runs before validation; the old check still runs after it, so anything it misses is refused.
+    monkeypatch.setattr(narration, "speakable_links", lambda text: text)
     with pytest.raises(narration.ValidationError, match="web address"):
-        narration.validate(reply([seg(text)]), IDS)
+        narration.validate(reply([seg("See www.example.com for more.")]), IDS)
+
+
+def test_fallback_narration_never_speaks_a_web_address():
+    rec = {"id": "45884-s08-069", "title": "Agents Toolkits", "notes": "",
+           "transcript": "", "text": "Agents Toolkits\n\nhttps://n8n.io/"}
+    assert narration.fallback_narration(rec) == "Agents Toolkits the link on the slide"
 
 
 @pytest.mark.parametrize("text,why", [
@@ -105,7 +126,7 @@ def test_follow_ups_not_a_list_are_ignored():
 
 
 def test_one_bad_segment_fails_the_whole_reply():
-    raw = reply([seg("Apples are fruit."), seg("See www.x.com", "70445-s01-003")])
+    raw = reply([seg("Apples are fruit."), seg("This damn slide.", "70445-s01-003")])
     with pytest.raises(narration.ValidationError):
         narration.validate(raw, IDS)
 

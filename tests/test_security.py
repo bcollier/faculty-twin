@@ -89,12 +89,14 @@ def test_grounding_rejects_parroted_question():
     assert "repeats the question" in g.problem("Centroids random choose random centroids choose at random now.")
 
 
-def test_validate_rejects_urls_and_long_text_and_drops_url_follow_ups():
+def test_validate_never_speaks_urls_rejects_long_text_and_drops_url_follow_ups():
     ok = json.dumps({"segments": [{"slide_id": "a", "narration": "Apples."}], "follow_ups": ["See www.x.com", "Why?"]})
     out, follow = narration.validate(ok, ["a"])
     assert follow == ["Why?"]
-    with pytest.raises(narration.ValidationError):
-        narration.validate(json.dumps({"segments": [{"slide_id": "a", "narration": "Go to https://x.y now."}]}), ["a"])
+    # Changed Oct 8: a web address in narration is said as "the link on the slide", never read out.
+    out, _ = narration.validate(json.dumps({"segments": [{"slide_id": "a", "narration": "Go to https://x.y now."}]}),
+                                ["a"])
+    assert out == {"a": "Go to the link on the slide now."}
     long_words = " ".join(["supercalifragilistic"] * 50)  # 50 words, about 1,000 characters
     with pytest.raises(narration.ValidationError):
         narration.validate(json.dumps({"segments": [{"slide_id": "a", "narration": long_words}]}), ["a"])
