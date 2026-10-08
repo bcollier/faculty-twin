@@ -576,6 +576,8 @@ async function ask(raw, { resumeAt = 0, quiet = false, source = null } = {}) {
   if (answer.kind === 'faq') return showFaqAnswer(answer);
   // Syllabus, policies, assignments and due dates, answered from my Canvas pages, with links to them.
   if (answer.kind === 'course_info') return showFaqAnswer(answer, 'From Canvas');
+  // A broken quiz, submission or API key: flagged for me (or "please email"), then stop. No slides.
+  if (answer.kind === 'alert') return showFaqAnswer(answer, answer.label || 'Tech problem');
   // Meetings, absences, grades, deadlines: a referral to me, never narrated slides.
   if (answer.kind === 'logistics') return showStageError('logistics', question, answer);
   if (!answer.covered || !Array.isArray(answer.segments) || answer.segments.length === 0) {

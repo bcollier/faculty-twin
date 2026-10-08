@@ -40,6 +40,12 @@ KEYS_TO_CLEAR = [
     "LLM_MAX_PROMPT_PRICE_PER_MTOK",
     "LLM_MAX_COMPLETION_PRICE_PER_MTOK",
     "PUBLIC_SITE_URL",
+    # Instructor alerts: no test may ever reach a real Twilio account.
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "TWILIO_FROM",
+    "ALERT_TO_PHONE",
+    "ALERT_DAILY_CAP",
 ]
 
 
@@ -58,7 +64,7 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("ADMIN_PASSCODE", "admin-pass")
     monkeypatch.delenv("CONTENT_DIR", raising=False)
 
-    from app import edge_voice, limits, playlist, prompts, settings_store, speech, storage
+    from app import alerts, edge_voice, limits, playlist, prompts, settings_store, speech, storage
 
     storage.store.reset()
     settings_store.clear_cache()
@@ -67,6 +73,7 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     playlist.clear_hidden_cache()
     speech.clear_cache()
     edge_voice.clear_cache()
+    alerts.reset_memory()
     yield
     storage.store.reset()
     settings_store.clear_cache()

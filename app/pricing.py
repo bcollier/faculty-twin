@@ -8,7 +8,8 @@ characters) times this table. It is not a bill.
 
 Units: models in USD per million input / output tokens; Voyage in USD per
 million tokens; ElevenLabs in USD per thousand characters for the chosen plan;
-edge-tts (the free Microsoft voices) costs nothing. OpenRouter models missing
+edge-tts (the free Microsoft voices) costs nothing; Twilio texts (instructor alerts) in USD per
+SMS segment, base price plus an average carrier fee. OpenRouter models missing
 from the table use OpenRouter's own live price list when it has been loaded.
 """
 
@@ -25,6 +26,7 @@ SRC_OPENROUTER = "https://openrouter.ai/api/v1/models"
 SRC_VOYAGE = "https://docs.voyageai.com/docs/pricing"
 SRC_ELEVENLABS = "https://elevenlabs.io/pricing/api"
 SRC_EDGE = "https://github.com/rany2/edge-tts"
+SRC_TWILIO = "https://www.twilio.com/en-us/sms/pricing/us"
 
 
 def _llm(provider: str, model: str, p_in: float, p_out: float, source: str) -> dict[str, Any]:
@@ -66,6 +68,18 @@ DEFAULT_PRICING: dict[str, Any] = {
         "note": "Multilingual v2. Plans include monthly characters (Creator: 275,000), so the real bill can be "
                 "lower than this estimate until the allowance is used up.",
     },
+    # Added Oct 8 (instructor alerts). Twilio bills per outbound segment (a 300-character alert is 2).
+    "sms": {
+        "provider": "twilio",
+        "per_segment": 0.0083,
+        "carrier_fee_per_segment": 0.005,
+        "source": SRC_TWILIO,
+        "checked": "2026-10-08",
+        "verify": True,
+        "note": "US base price per outbound segment (local 10DLC or toll-free). Carrier fees vary by network "
+                "(AT&T $0.0035, T-Mobile $0.0045, Verizon $0.005); the highest is used. The phone number's "
+                "monthly fee ($1.15 local, $2.15 toll-free) is not included.",
+    },
 }
 
 PROVIDERS = ("anthropic", "openai", "openrouter")
@@ -101,7 +115,7 @@ def validate(raw: Any) -> dict[str, Any]:
     """Check a price table sent by the Settings page and return the clean copy to store."""
     if not isinstance(raw, dict):
         raise BadPricing("The price table must be an object.")
-    out: dict[str, Any] = {"llm": [], "embed": [], "tts": {}}
+    out: dict[str, Any] = {"llm": [], "embed": [], "tts": {}, "sms": {}}
     rows = raw.get("llm") or []
     if not isinstance(rows, list) or len(rows) > MAX_ROWS:
         raise BadPricing(f"llm must be a list of at most {MAX_ROWS} rows.")
@@ -156,6 +170,18 @@ def validate(raw: Any) -> dict[str, Any]:
         "checked": _text(tts.get("checked"), 20), "verify": bool(tts.get("verify", False)),
         "note": _text(tts.get("note"), 500),
     }
+    sms = raw.get("sms") or {}
+    if not isinstance(sms, dict):
+        raise BadPricing("sms must be an object.")
+    default_sms = DEFAULT_PRICING["sms"]
+    out["sms"] = {
+        "provider": "twilio",
+        "per_segment": _price(sms.get("per_segment", default_sms["per_segment"]), "Twilio price per segment"),
+        "carrier_fee_per_segment": _price(sms.get("carrier_fee_per_segment", default_sms["carrier_fee_per_segment"]),
+                                          "Twilio carrier fee per segment"),
+        "source": _text(sms.get("source", default_sms["source"])), "checked": _text(sms.get("checked"), 20),
+        "verify": bool(sms.get("verify", False)), "note": _text(sms.get("note"), 500),
+    }
     return out
 
 
@@ -179,6 +205,8 @@ def current(stored: Any = None) -> dict[str, Any]:
     clean["llm"] += [r for r in table["llm"] if (r["provider"], r["model"]) not in saved_llm]
     saved_embed = {r["model"] for r in clean["embed"]}
     clean["embed"] += [r for r in table["embed"] if r["model"] not in saved_embed]
+    if not (isinstance(stored, dict) and stored.get("sms")):  # a table saved before texts were priced
+        clean["sms"] = table["sms"]
     clean["saved"] = True
     return clean
 
@@ -219,6 +247,12 @@ def embed_cost(table: dict[str, Any], model: str, tokens: int) -> Optional[float
         if row["model"] == model:
             return tokens / 1_000_000 * float(row["per_mtok"])
     return None
+
+
+def sms_cost(table: dict[str, Any], segments: int) -> float:
+    """Twilio texts: segments times (base price + carrier fee) per segment."""
+    sms = table.get("sms") or DEFAULT_PRICING["sms"]
+    return segments * (float(sms.get("per_segment") or 0.0) + float(sms.get("carrier_fee_per_segment") or 0.0))
 
 
 def tts_cost(table: dict[str, Any], tier: str, chars: int) -> float:

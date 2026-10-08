@@ -51,7 +51,7 @@ const fmtWhen = (iso) => {
 };
 const PURPOSE_NAMES = {
   narration: 'Narration', logistics: 'Logistics check', course_info: 'Course-info answers', prompt_test: 'Model and prompt tests',
-  smoke_test: 'Smoke checks', eval_generate: 'Eval answers', eval_judge: 'Eval judges', topic_label: 'Topic labeling',
+  smoke_test: 'Smoke checks', eval_generate: 'Eval answers', eval_judge: 'Eval judges', topic_label: 'Topic labeling', incident_classifier: 'Student alerts check',
   embed_query: 'Question embeddings', tts: 'Voice', other: 'Other',
 };
 const TIER_NAMES = { clone: 'My voice clone (ElevenLabs)', stock: 'ElevenLabs stock voice', unverified: 'ElevenLabs (unverified)', free: 'Free Microsoft voices' };
@@ -249,7 +249,7 @@ function tiles(d) {
     tile('Referred to me', fmtInt(by.logistics || 0), 'logistics'),
     tile('Declined', fmtInt(by.not_covered || 0), 'not covered'),
     tile('Avg latency', k.avg_latency_ms == null ? 'n/a' : `${(k.avg_latency_ms / 1000).toFixed(1)} s`, k.median_latency_ms == null ? null : `median ${(k.median_latency_ms / 1000).toFixed(1)} s`),
-    tile('Est. spend', fmtUsd(k.est_spend_usd), `models ${fmtUsd(k.spend_parts?.models)}, voice ${fmtUsd(k.spend_parts?.voice)}, embeddings ${fmtUsd(k.spend_parts?.embeddings)}`),
+    tile('Est. spend', fmtUsd(k.est_spend_usd), `models ${fmtUsd(k.spend_parts?.models)}, voice ${fmtUsd(k.spend_parts?.voice)}, embeddings ${fmtUsd(k.spend_parts?.embeddings)}, texts ${fmtUsd(k.spend_parts?.sms || 0)}`),
   );
 }
 
@@ -518,13 +518,20 @@ function renderPricing(message) {
       el('td', {}, num(tts.edge_per_1k_chars, v => { tts.edge_per_1k_chars = v; }, 'edge-tts price per 1K characters')), el('td', {}),
       el('td', { class: 'small muted' }, tts.edge_source ? el('a', { href: tts.edge_source, target: '_blank', rel: 'noopener', text: 'source' }) : '', ' no key, no price')),
   ];
+  const sms = t.sms || (t.sms = { per_segment: 0, carrier_fee_per_segment: 0 });
+  const smsRows = [
+    el('tr', {}, el('td', { text: 'Twilio' }), el('td', { class: 'small', text: 'SMS, per segment (student alerts)' }),
+      el('td', {}, num(sms.per_segment, v => { sms.per_segment = v; }, 'Twilio price per SMS segment')),
+      el('td', {}, num(sms.carrier_fee_per_segment, v => { sms.carrier_fee_per_segment = v; }, 'Carrier fee per SMS segment')),
+      el('td', { class: 'small muted' }, sms.source ? el('a', { href: sms.source, target: '_blank', rel: 'noopener', text: 'source' }) : '', sms.checked ? ` ${sms.checked}` : '', ' base price, then carrier fee', sms.note ? `. ${sms.note}` : '')),
+  ];
   const head = (cols) => el('thead', {}, el('tr', {}, ...cols.map(h => el('th', { scope: 'col', text: h }))));
   const st = el('p', { class: 'status-line', role: 'status', text: message || (t.saved ? 'Saved table (defaults fill any model it lacks).' : 'Showing the researched defaults (not saved).') });
   $('#an-pricing').replaceChildren(
     el('h4', { class: 'h-sub', text: 'Models (USD per 1M tokens)' }),
     el('div', { class: 'table-wrap an-price' }, el('table', { class: 'data' }, head(['Provider', 'Model', 'Input', 'Output', 'Source']), el('tbody', {}, ...llmRows, add))),
-    el('h4', { class: 'h-sub', text: 'Embeddings (USD per 1M tokens) and voice (USD per 1K characters)' }),
-    el('div', { class: 'table-wrap an-price' }, el('table', { class: 'data' }, head(['Provider', 'Model or plan', 'Price', '', 'Source']), el('tbody', {}, ...embRows, ...ttsRows))),
+    el('h4', { class: 'h-sub', text: 'Embeddings (USD per 1M tokens), voice (USD per 1K characters), texts (USD per SMS segment)' }),
+    el('div', { class: 'table-wrap an-price' }, el('table', { class: 'data' }, head(['Provider', 'Model or plan', 'Price', 'Carrier fee (texts)', 'Source']), el('tbody', {}, ...embRows, ...ttsRows, ...smsRows))),
     el('div', { class: 'actions', style: 'margin-top:.75rem' },
       el('button', { type: 'button', class: 'btn btn-primary', text: 'Save prices', onclick: () => savePricing(false, st) }),
       el('button', { type: 'button', class: 'btn', text: 'Reset to defaults', onclick: () => savePricing(true, st) })),

@@ -126,6 +126,17 @@ Settings > Prompts lets an admin edit every model-facing prompt (`app/prompts.py
 - **Audit trail.** Every save writes a hash-chained history file to the private bucket, so a bad edit can be traced and undone.
 - **Residual risk.** A prompt can still make answers worse without breaking a rule (vaguer, shorter, or more often falling back to notes), and a logistics prompt can send too many questions to the referral. That is a quality risk, caught by testing the draft and running an eval after saving (docs/TESTING_AND_SCORES.md, Prompt changes).
 
+### Instructor alerts (added Oct 8, PR `feat/instructor-alerts`)
+
+A student's question can now text Ben's cell through Twilio (docs/SPEC.md, "Instructor alerts"). What changed for the threat model:
+
+- **New asset and secret.** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `ALERT_TO_PHONE` live only in Vercel and the local `.env`. Settings shows each as set or not set and the destination as its last 4 digits; a Twilio error message is stored with any copy of the token replaced. `test_admin_view_masks_the_destination_and_hides_the_token`, `test_twilio_errors_keep_the_code_and_never_the_token`.
+- **Abuse: texting Ben's phone from the question box.** Only a real student request can text (Settings tests, prompt tests, evals and smoke checks are dry runs). One alert per visitor per day, the same problem texted once per 2 hours (repeats counted), and `ALERT_DAILY_CAP` texts a day (default 10, at most 50), on top of the existing question limits per visitor and per address. Counters fail closed. A Settings switch turns texting off. `test_one_alert_per_visitor_per_day`, `test_daily_cap`, `test_dedupe_counts_repeats_into_the_next_text`, `test_ask_test_traffic_never_alerts`.
+- **Privacy of what leaves.** The text carries the course, the problem type, the Canvas item and link, a time, and at most about 120 characters of the question after `app/privacy.py`'s scrub plus API-key-like tokens, access-code-like tokens and web addresses removed, in plain ASCII. Never a visitor id, an address, or a cookie. A bare first name typed by a student can still get through (the same residual risk as the question log). `test_scrub_removes_names_ids_keys_codes_and_links`, `test_text_is_short_plain_and_has_no_ids`.
+- **Prompt injection.** The classifier sees the question as JSON data; its reply is parsed strictly (only the four types, the two course codes, a 120-character item, a 0 to 1 confidence), and the text Ben gets is built in code, never by the model. A hostile question can at most cause or skip one alert, within the caps above.
+- **Same access rules as the rest of Settings.** `/api/admin/alerts*` needs the admin cookie and writes are refused cross-site (M5); a test text is limited to 5 a day and counts against the cap. `test_admin_routes_need_the_admin_cookie`, `test_admin_writes_refuse_cross_site_requests`.
+- **Fail safe.** If Twilio is missing or fails, the alert is stored in the private bucket (`alerts/<UTC>.json`) and shown in Settings; the student is told "flagged" only when a text was sent or the alert was stored.
+
 ## 6. Frontend changes (follow-up PR after PR #5 merged)
 
 1. **Name hint** (M7). Under the main question box: "Please leave out names, yours or anyone else's. I keep questions, without names, to improve the twin." The compact dock input carries the same hint for screen readers. Both inputs already had `maxlength="300"`.
