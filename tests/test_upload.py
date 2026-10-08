@@ -6,9 +6,9 @@ import base64
 import json
 from pathlib import Path
 
+import pipeline_fixture as pf
 import pytest
 
-import pipeline_fixture as pf
 from indexer import build_index, common, upload
 from indexer.leakcheck import RosterChecker
 

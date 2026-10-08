@@ -39,6 +39,8 @@ class EngineUnavailable(RuntimeError):
 
 
 class Engine(Protocol):
+    """A local text-to-speech model. `label` is what a listener is told the voice is."""
+
     name: str
     is_clone_of_ben: bool
 

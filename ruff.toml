@@ -8,19 +8,6 @@
 target-version = "py312"
 line-length = 120
 
-# Areas not yet brought in line with these rules. Each clean-code pull request removes its
-# area from this list, so the list shrinks to the permanent entries below.
-extend-exclude = [
-    # app/ modules another agent is changing right now, or not cleaned yet:
-    "app/storage.py",
-    "app/playlist.py",
-    "app/speech.py",
-    "app/helper_slide.py",
-    "app/web_answer.py",
-    "localvoice/",
-    "tests/",
-]
-
 [lint]
 select = [
     "E",    # pycodestyle errors
@@ -44,6 +31,8 @@ ignore = [
 "app/retrieval.py" = ["ALL"]
 # Prompt text the models read as written: wrapping a line would change the prompt.
 "app/prompts.py" = ["E501"]
+# Test data, fake model replies and assertion messages read better on one line.
+"tests/**" = ["E501"]
 
 [lint.flake8-bugbear]
 # FastAPI's dependency markers are meant to be called in argument defaults.

@@ -169,10 +169,9 @@ def test_restart_puts_processing_rows_back(archive):
 
 
 def test_single_instance_lock(tmp_path):
-    with worker.Lock(tmp_path / "worker.lock"):
-        with pytest.raises(worker.AlreadyRunning):
-            with worker.Lock(tmp_path / "worker.lock"):
-                pass
+    with worker.Lock(tmp_path / "worker.lock"), pytest.raises(worker.AlreadyRunning), \
+            worker.Lock(tmp_path / "worker.lock"):
+        pass
     with worker.Lock(tmp_path / "worker.lock"):  # free again after release
         pass
 

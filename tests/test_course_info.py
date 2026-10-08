@@ -11,12 +11,14 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
-from app import course_info, limits, llm, logistics, retrieval, settings_store, storage
-from app.main import Retriever, app, get_completer, get_embedder, get_retriever, get_searcher
-from app.admin import activity_row  # after app.main (admin imports from it)
-
 from test_api import TEST_FAKE_llm, TEST_FAKE_select
+
+# app.main first: it wires the routers that the admin modules import from.
+from app.main import Retriever, app, get_completer, get_embedder, get_retriever, get_searcher
+
+# isort: split
+from app import course_info, limits, llm, logistics, retrieval, settings_store, storage
+from app.admin import activity_row
 
 ROOT = Path(__file__).resolve().parents[1]
 DIM = 8
@@ -253,7 +255,7 @@ def test_all_courses_answer_stays_in_the_top_chunks_course():
     result = course_info.answer("What does the syllabus say about AI tools?", None, hits, [], model)
     sent = json.loads(model.info_users[-1].split("Canvas material:\n", 1)[1])
     assert {c["course"] for c in sent} == {"70-445"}
-    assert [l["url"] for l in result.reply["links"]] == [
+    assert [link["url"] for link in result.reply["links"]] == [
         "https://canvas.cmu.edu/courses/55124/assignments/syllabus",
         "https://canvas.cmu.edu/courses/55124/pages/fruit-lab",
     ]
@@ -608,7 +610,7 @@ def test_frontend_reuses_faq_card_for_course_info():
     html = (ROOT / "public" / "index.html").read_text()
     assert 'id="stage-message-label"' in html
     for text in (app_js, admin_js):
-        line = next(l for l in text.splitlines() if "course_info" in l)
+        line = next(ln for ln in text.splitlines() if "course_info" in ln)
         assert "—" not in line
 
 

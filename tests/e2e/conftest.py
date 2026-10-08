@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import functools
 import threading
+from collections.abc import Iterator
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 

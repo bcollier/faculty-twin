@@ -89,7 +89,7 @@ def test_audio_route(student, monkeypatch):
     assert calls == [("Signed narration.", "voice123")]
 
     q = _parts(link)
-    forged = speech._b64e("Say something else.".encode())
+    forged = speech._b64e(b"Say something else.")
     assert student.get(f"/api/audio?t={forged}&v={q['v']}&s={q['s']}").status_code == 403
 
 

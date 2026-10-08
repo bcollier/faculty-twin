@@ -7,20 +7,34 @@ FastAPI dependency overrides (or passed in directly). Nothing calls a provider.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-import numpy as np
 import pytest
-
-from app import analytics, edge_voice, limits, llm, logistics, narration, pricing, prompts, settings_store, speech, usage, web_answer
-from app.main import LOG_KINDS, Retriever, app, get_completer, get_embedder, get_retriever, get_searcher
-from app.admin import activity_row  # after app.main (admin imports from it)
-
 from test_api import TEST_FAKE_embedder, TEST_FAKE_llm, TEST_FAKE_rank, TEST_FAKE_select
 from test_voice_tiers import FakeCommunicate, fake_edge  # noqa: F401  (pytest fixture)
+
+# app.main first: it wires the routers that the admin modules import from.
+from app.main import LOG_KINDS, Retriever, app, get_completer, get_embedder, get_retriever, get_searcher
+
+# isort: split
+from app import (
+    analytics,
+    edge_voice,
+    limits,
+    llm,
+    logistics,
+    narration,
+    pricing,
+    prompts,
+    settings_store,
+    speech,
+    usage,
+    web_answer,
+)
+from app.admin import activity_row
 
 GOOD = ("n8n is a workflow automation tool. You can run it with one command on your own computer, then open the "
         "editor in your browser and connect a trigger node to action nodes to build a workflow.")
@@ -176,7 +190,10 @@ def test_faq_still_wins(student):
 
 
 def test_canvas_course_info_still_wins(student, content_dir):
-    from test_course_info import FakeModel as InfoModel, TEST_FAKE_embedder as info_embedder, write_info
+    from test_course_info import FakeModel as InfoModel
+    from test_course_info import TEST_FAKE_embedder as info_embedder
+    from test_course_info import write_info
+
     from app import retrieval, storage
 
     write_info(content_dir)
@@ -455,7 +472,7 @@ def test_clone_voice_never_reads_a_web_answer(student, monkeypatch):
     assert body["audio"] is None and body["voice"] is None
 
 
-def test_speak_web_answers_uses_a_free_voice_with_the_stock_label(student, monkeypatch, fake_edge):
+def test_speak_web_answers_uses_a_free_voice_with_the_stock_label(student, monkeypatch, fake_edge):  # noqa: F811 (the imported pytest fixture)
     monkeypatch.setenv("ELEVENLABS_VOICE_ID", "clonevoice1")
     settings_store.put({"voice_kind": {"voice_id": "clonevoice1", "kind": "clone"},
                         "web_answer_voice": "edge:en-US-AvaMultilingualNeural"})
@@ -471,7 +488,7 @@ def test_speak_web_answers_uses_a_free_voice_with_the_stock_label(student, monke
     assert GOOD.encode() in r.content
 
 
-def test_web_voice_link_stops_working_when_the_setting_is_off(student, fake_edge):
+def test_web_voice_link_stops_working_when_the_setting_is_off(student, fake_edge):  # noqa: F811 (the imported pytest fixture)
     settings_store.put({"web_answer_voice": "edge:en-US-AvaMultilingualNeural"})
     model, search = FakeModel(), FakeSearch()
     _use(model, search)
@@ -541,12 +558,12 @@ def test_prompt_test_route_runs_the_scope_check(admin, monkeypatch):
 
 def test_search_usage_is_counted_and_priced():
     usage.record_search_call("anthropic", "claude-sonnet-5-5", 10_000, 500, 2, purpose_name="web_answer")
-    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    day = datetime.now(UTC).strftime("%Y-%m-%d")
     counters = limits.counters_since(usage.PREFIXES, day)
     assert counters[usage.usage_key(day, "web_answer", "anthropic", "claude-sonnet-5-5", "searches")] == 2
     table = pricing.current({})
     assert pricing.search_cost(table, "anthropic", 2) == pytest.approx(0.02)
-    out = analytics.aggregate([], counters, table, 7, datetime.now(timezone.utc))
+    out = analytics.aggregate([], counters, table, 7, datetime.now(UTC))
     tokens = 10_000 / 1e6 * 2.0 + 500 / 1e6 * 10.0
     purpose = next(r for r in out["purposes"] if r["purpose"] == "web_answer")
     assert purpose["searches"] == 2 and purpose["cost"] == pytest.approx(tokens + 0.02, abs=1e-6)

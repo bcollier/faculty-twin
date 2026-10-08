@@ -139,6 +139,7 @@ class Collector:
         self._last = max(self._last, starts[-1])
 
     def result(self, text: str) -> Words:
+        """Timings for each word of `text`, from everything collected so far."""
         spoken = list(self.spoken)
         if self._chars:
             spoken += words_from_characters(self._chars, self._starts)

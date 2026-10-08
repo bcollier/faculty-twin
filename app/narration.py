@@ -325,7 +325,7 @@ def clean_speech(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _extract_json(raw: str) -> Any:
+def reply_json(raw: str) -> Any:
     """The reply's JSON (llm.extract_json), as a ValidationError when there is none so narration retries."""
     try:
         return llm.extract_json(raw)
@@ -377,7 +377,7 @@ def validate(
     problem (unknown slide, length, web address, PG, access code, name token,
     and repeating the question) still fails the whole reply.
     """
-    data = _extract_json(raw)
+    data = reply_json(raw)
     if not isinstance(data, dict) or not isinstance(data.get("segments"), list):
         raise ValidationError("missing segments list")
     allowed = set(sent_ids)
@@ -402,7 +402,8 @@ def _checked_segment(seg: Any, allowed: set[str], grounding: Grounding | None,
     if not isinstance(seg, dict):
         raise ValidationError("segment is not an object")
     sid, text = seg.get("slide_id"), seg.get("narration")
-    if sid not in allowed:
+    # A slide id that is not a string (a list, say) is unknown too, not a crash (found by tests/test_properties.py).
+    if not isinstance(sid, str) or sid not in allowed:
         raise ValidationError(f"unknown slide_id {sid!r}")
     if not isinstance(text, str) or not text.strip():
         raise ValidationError(f"empty narration for {sid}")

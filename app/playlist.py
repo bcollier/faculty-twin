@@ -18,7 +18,7 @@ from . import config, speech, storage, supa
 from .storage import Content
 
 if TYPE_CHECKING:
-    from .voices import Plan
+    from .voices import Plan, Voice
 
 _hidden_lock = threading.Lock()
 _hidden: tuple[float, set[tuple[str, int]]] = (0.0, set())
@@ -49,6 +49,7 @@ def hidden_sessions() -> set[tuple[str, int]]:
 
 
 def clear_hidden_cache() -> None:
+    """Drop the cached hidden-session list, and make any read in flight discard what it fetched."""
     global _hidden, _hidden_generation
     with _hidden_lock:
         _hidden = (0.0, set())
@@ -139,7 +140,7 @@ def build_playlist(
     chosen: list[dict[str, Any]],
     narrations: dict[str, str],
     follow_ups: list[str],
-    voice: "Plan | None",
+    voice: Plan | None,
 ) -> dict[str, Any]:
     """`voice` is the answer's voice plan (app/voices.py); None or an empty plan means captions only.
 
@@ -150,53 +151,56 @@ def build_playlist(
     primary = voice.primary if voice is not None else None
     fallback = voice.fallback if voice is not None else None
     media = media_links(content, chosen)
-    segments = []
-    sources = []
-    for n, rec in enumerate(chosen, start=1):
-        image, clip = media[rec["id"]]["image"], media[rec["id"]]["clip"]
-        narration = narrations.get(rec["id"], "")
-        audio = speech.audio_link(narration, primary.tag_key) if primary else None
-        audio_fallback = speech.audio_link(narration, fallback.tag_key) if (audio and fallback) else None
-        segments.append(
-            {
-                "n": n,
-                "slide_id": rec["id"],
-                "course": rec.get("course"),
-                "course_title": rec.get("course_title"),
-                "session": rec.get("session"),
-                "session_title": rec.get("session_title"),
-                "date": rec.get("date"),
-                "slide_number": rec.get("slide_number"),
-                "image": image,
-                "narration": narration,
-                "audio": audio,
-                "voice": primary.public() if (audio and primary) else None,
-                "audio_fallback": audio_fallback,
-                "voice_fallback": fallback.public() if (audio_fallback and fallback) else None,
-                "code": related_code(content, rec),
-                "clip": clip,
-                # Read-along (added Oct 8): word timings for each audio link, and the slide's word boxes.
-                "timings": speech.timings_link(audio),
-                "timings_fallback": speech.timings_link(audio_fallback),
-                "boxes": media[rec["id"]]["boxes"],
-            }
-        )
-        sources.append(
-            {
-                "slide_id": rec["id"],
-                "course": rec.get("course"),
-                "session": rec.get("session"),
-                "date": rec.get("date"),
-                "slide_number": rec.get("slide_number"),
-                "image": image,
-            }
-        )
+    segments = [_segment(content, n, rec, media[rec["id"]], narrations.get(rec["id"], ""), primary, fallback)
+                for n, rec in enumerate(chosen, start=1)]
+    sources = [_source(rec, media[rec["id"]]["image"]) for rec in chosen]
     return {
         "question": question,
         "covered": bool(segments),
         "segments": segments,
         "sources": sources,
         "follow_ups": follow_ups,
+    }
+
+
+def _segment(content: Content, n: int, rec: dict[str, Any], media: dict[str, Any], narration: str,
+             primary: Voice | None, fallback: Voice | None) -> dict[str, Any]:
+    """One walkthrough step: the slide, its narration, signed audio links (and fallback), code, clip, read-along."""
+    audio = speech.audio_link(narration, primary.tag_key) if primary else None
+    audio_fallback = speech.audio_link(narration, fallback.tag_key) if (audio and fallback) else None
+    return {
+        "n": n,
+        "slide_id": rec["id"],
+        "course": rec.get("course"),
+        "course_title": rec.get("course_title"),
+        "session": rec.get("session"),
+        "session_title": rec.get("session_title"),
+        "date": rec.get("date"),
+        "slide_number": rec.get("slide_number"),
+        "image": media["image"],
+        "narration": narration,
+        "audio": audio,
+        "voice": primary.public() if (audio and primary) else None,
+        "audio_fallback": audio_fallback,
+        "voice_fallback": fallback.public() if (audio_fallback and fallback) else None,
+        "code": related_code(content, rec),
+        "clip": media["clip"],
+        # Read-along (added Oct 8): word timings for each audio link, and the slide's word boxes.
+        "timings": speech.timings_link(audio),
+        "timings_fallback": speech.timings_link(audio_fallback),
+        "boxes": media["boxes"],
+    }
+
+
+def _source(rec: dict[str, Any], image: str | None) -> dict[str, Any]:
+    """The source card for one slide."""
+    return {
+        "slide_id": rec["id"],
+        "course": rec.get("course"),
+        "session": rec.get("session"),
+        "date": rec.get("date"),
+        "slide_number": rec.get("slide_number"),
+        "image": image,
     }
 
 

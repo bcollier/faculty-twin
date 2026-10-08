@@ -118,7 +118,7 @@ def test_judge_prompt_comes_from_the_prompt_registry():
     try:
         assert eval_core.system_prompt().endswith("Keep it short.") and "- grounded:" in eval_core.system_prompt()
         assert rubric.system_prompt() == eval_core.system_prompt()
-        assert eval_core.SYSTEM_PROMPT == prompts.default("eval_judge", dimensions=eval_core.dimensions_text())
+        assert prompts.default("eval_judge", dimensions=eval_core.dimensions_text()) == eval_core.SYSTEM_PROMPT
     finally:
         prompts.save("eval_judge", "", "reset", reset=True)
 

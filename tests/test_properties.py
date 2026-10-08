@@ -18,6 +18,7 @@ Every name and sentence here is invented. Runs are derandomized so CI is determi
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 from collections import Counter
@@ -357,10 +358,8 @@ json_value = st.recursive(
 @FAST
 @given(st.dictionaries(st.sampled_from(["segments", "follow_ups", "other"]), json_value, max_size=3))
 def test_validate_any_json_shape_never_crashes(data):
-    try:
+    with contextlib.suppress(narration.ValidationError):
         narration.validate(json.dumps(data), [SLIDE], GROUNDING)
-    except narration.ValidationError:
-        pass
 
 
 @FAST

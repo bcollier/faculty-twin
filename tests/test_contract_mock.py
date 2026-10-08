@@ -20,14 +20,21 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
-from app import limits, retrieval, storage
-from app.main import Retriever, app, get_completer, get_embedder, get_retriever
-from app import admin_evals, eval_store  # noqa: E402  (after app.main: admin imports from it)
-
 import test_admin_evals
 import test_api
 import test_course_info
+
+# app.main first: it wires the routers that the admin modules import from.
+from app.main import Retriever, app, get_completer, get_embedder, get_retriever
+
+# isort: split
+from app import (  # noqa: E402
+    admin_evals,
+    eval_store,
+    limits,
+    retrieval,
+    storage,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 DUMPER = ROOT / "tests" / "contract" / "dump_mock.mjs"

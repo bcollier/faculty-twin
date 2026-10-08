@@ -7,19 +7,21 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 import pytest
-
-from app.main import Retriever, app, get_completer, get_embedder, get_retriever  # before app.admin
-from app import admin, analytics, embed, limits, llm, logistics, pricing, supa, usage  # noqa: E402,I001
-
 from test_api import TEST_FAKE_embedder, TEST_FAKE_llm, TEST_FAKE_rank, TEST_FAKE_select
 
+# app.main first: it wires the routers that the admin modules import from.
+from app.main import Retriever, app, get_completer, get_embedder, get_retriever
+
+# isort: split
+from app import admin, analytics, embed, limits, llm, logistics, pricing, supa, usage  # noqa: E402,I001
+
 ROOT = Path(__file__).resolve().parents[1]
-TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+TODAY = datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 @pytest.fixture(autouse=True)
@@ -132,9 +134,8 @@ def test_eval_judges_record_their_tokens(monkeypatch):
 
 
 def test_sticky_purpose_wins_over_inner_tags():
-    with usage.purpose("prompt_test", sticky=True):
-        with usage.purpose("narration"):
-            assert usage.current_purpose() == "prompt_test"
+    with usage.purpose("prompt_test", sticky=True), usage.purpose("narration"):
+        assert usage.current_purpose() == "prompt_test"
     with usage.purpose("narration"):
         assert usage.current_purpose() == "narration"
     assert usage.current_purpose() == "other"
@@ -389,7 +390,7 @@ def test_counters_since_reads_only_analytics_keys():
     limits.increment(f"event:{TODAY}:chip_tap", 1)
     limits.increment(f"questions:{TODAY}", 1)
     limits.increment("usage:2001-01-01:narration:anthropic:m:in", 5)
-    out = limits.counters_since(usage.PREFIXES, (datetime.now(timezone.utc) - timedelta(days=6)).date().isoformat())
+    out = limits.counters_since(usage.PREFIXES, (datetime.now(UTC) - timedelta(days=6)).date().isoformat())
     assert set(out) == {f"usage:{TODAY}:narration:anthropic:m:in", f"event:{TODAY}:chip_tap"}
 
 
@@ -432,7 +433,7 @@ def _row(at: str, kind: str, **kw) -> dict:
 
 
 def test_aggregate_on_fake_rows():
-    now = datetime(2026, 10, 7, 18, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 7, 18, 0, tzinfo=UTC)
     rows = [
         _row("2026-10-07T15:00:00+00:00", "course_content", top_slide_id="70445-s06-014", session_title="Neural nets",
              source="chip"),
@@ -488,7 +489,7 @@ def test_aggregate_on_fake_rows():
 
 
 def test_spend_series_fold_into_other():
-    now = datetime(2026, 10, 7, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 7, tzinfo=UTC)
     counters = {f"usage:2026-10-07:narration:openai:gpt-6-luna-{i}:in": 1_000_000 * (i + 1) for i in range(10)}
     table = pricing.defaults()
     table["llm"] += [{"provider": "openai", "model": f"gpt-6-luna-{i}", "in": 1.0, "out": 1.0} for i in range(10)]
@@ -522,7 +523,7 @@ def test_analytics_route_end_to_end(admin):
 
 
 def test_csv_export_escapes_formulas(admin):
-    limits._mem_log.append({"at": datetime.now(timezone.utc).isoformat(), "question": "=HYPERLINK(\"x\")",
+    limits._mem_log.append({"at": datetime.now(UTC).isoformat(), "question": "=HYPERLINK(\"x\")",
                             "covered": False, "kind": "not_covered"})
     r = admin.get("/api/admin/analytics/export.csv?days=7")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
@@ -562,12 +563,12 @@ def test_eval_performance_without_data():
 # ---------------------------------------------------------------- topic labeling
 
 def _seed_questions(n: int, smoke: int = 0) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for i in range(n):
         limits._mem_log.append({"at": (now - timedelta(minutes=n - i)).isoformat(),
                                 "question": f"What is topic {i}? email me at a{i}@b.com", "covered": True,
                                 "kind": "course_content", "source": "typed"})
-    for i in range(smoke):
+    for _ in range(smoke):
         limits._mem_log.append({"at": now.isoformat(), "question": "SMOKE ONLY QUESTION", "covered": False,
                                 "kind": "faq", "source": "smoke"})
 
@@ -639,7 +640,7 @@ def test_admin_page_has_the_analytics_section():
 def test_content_gaps_with_equal_counts_show_the_most_recent_first():
     # Oct 8 code review: ties were sorted oldest first, so with more than TOP_N one-off gaps the
     # table kept the oldest and dropped the newest, the ones Ben most needs to see.
-    now = datetime(2026, 10, 8, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 8, 12, tzinfo=UTC)
     rows = [{"question": f"unanswered question number {i}", "kind": "not_covered", "covered": False,
              "at": (now - timedelta(hours=i)).isoformat()} for i in range(analytics.TOP_N + 5)]
     out = analytics.aggregate(rows, {}, pricing.defaults(), 7, now)

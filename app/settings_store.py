@@ -125,27 +125,32 @@ def llm_choice() -> tuple[str, str]:
     return provider, model or config.DEFAULT_LLM_MODELS[provider]
 
 
-def daily_voice_char_cap() -> int:
-    """Today's ElevenLabs character cap: the Settings value, else DAILY_VOICE_CHAR_CAP."""
-    raw = get("daily_voice_char_cap")
-    if raw is not None:
+def int_setting(key: str, env_name: str, default: int, *, bool_is_unset: bool = False) -> int:
+    """A whole-number Settings value, else the environment variable `env_name`, else `default`.
+
+    A stored value that is not a number falls back (logged) instead of failing the request: a cap read
+    happens on every question. `bool_is_unset` treats true/false as missing, for the caps that have
+    always ignored a stored boolean.
+    """
+    raw = get(key)
+    if raw is not None and not (bool_is_unset and isinstance(raw, bool)):
         try:
             return int(raw)
         except (TypeError, ValueError):
-            pass
-    return config.env_int("DAILY_VOICE_CHAR_CAP", config.DEFAULT_DAILY_VOICE_CHAR_CAP)
+            config.log.warning("setting %s is not a whole number; using %s", key, env_name)
+    return config.env_int(env_name, default)
+
+
+def daily_voice_char_cap() -> int:
+    """Today's ElevenLabs character cap: the Settings value, else DAILY_VOICE_CHAR_CAP."""
+    return int_setting("daily_voice_char_cap", "DAILY_VOICE_CHAR_CAP", config.DEFAULT_DAILY_VOICE_CHAR_CAP)
 
 
 def daily_free_voice_char_cap() -> int:
     """Daily characters for the free Microsoft voices: higher than ElevenLabs (no cost), but still
     capped to be a good citizen to a free service."""
-    raw = get("daily_free_voice_char_cap")
-    if raw is not None:
-        try:
-            return int(raw)
-        except (TypeError, ValueError):
-            pass
-    return config.env_int("DAILY_FREE_VOICE_CHAR_CAP", config.DEFAULT_DAILY_FREE_VOICE_CHAR_CAP)
+    return int_setting("daily_free_voice_char_cap", "DAILY_FREE_VOICE_CHAR_CAP",
+                       config.DEFAULT_DAILY_FREE_VOICE_CHAR_CAP)
 
 
 def index_version() -> str | None:

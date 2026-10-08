@@ -36,12 +36,10 @@ def test_model_override_is_scoped_and_validated():
             assert llm.current_override() == ("anthropic", "claude-opus-5-5")
         assert llm.current_override() == ("openai", "gpt-6-luna")
     assert llm.current_override() is None
-    with pytest.raises(llm.LLMError, match="Unknown provider"):
-        with llm.model_override("mystery", "m"):
-            pass
-    with pytest.raises(llm.LLMError, match="model id"):
-        with llm.model_override("openai", ""):
-            pass
+    with pytest.raises(llm.LLMError, match="Unknown provider"), llm.model_override("mystery", "m"):
+        pass
+    with pytest.raises(llm.LLMError, match="model id"), llm.model_override("openai", ""):
+        pass
 
 
 def test_key_configured(monkeypatch):

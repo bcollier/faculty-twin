@@ -17,7 +17,10 @@ import pytest
 pytest.importorskip("rapidfuzz")
 
 import pipeline_fixture as pf  # noqa: E402
-from indexer import build_index, build_info_index, canvas_import as ci, common, deidentify as d, upload  # noqa: E402
+
+from indexer import build_index, build_info_index, common, upload  # noqa: E402
+from indexer import canvas_import as ci
+from indexer import deidentify as d
 from indexer.leakcheck import RosterChecker  # noqa: E402
 
 CID = ci.COURSES["70445"]

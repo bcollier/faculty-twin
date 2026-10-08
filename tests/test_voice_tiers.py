@@ -10,9 +10,9 @@ import asyncio
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from test_api import use_fakes
 
 from app import edge_voice, limits, settings_store, speech, voices
-from test_api import use_fakes
 
 CLONE_LABEL = "AI voice made from my recordings."
 STOCK_LABEL = "AI voice (a stock voice, not mine)."

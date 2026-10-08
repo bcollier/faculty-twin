@@ -11,7 +11,7 @@ The conventions the code follows, so a change reads like the code around it. The
 
 ## Python
 
-**Lint.** `ruff check .` with the rules in `ruff.toml` (pycodestyle errors, pyflakes, import order, bugbear, pyupgrade, simplify; lines up to 120 characters). CI runs it on every pull request. Ruff is a lint gate only; the code is not machine-formatted.
+**Lint.** `ruff check .` with the rules in `ruff.toml` (pycodestyle errors, pyflakes, import order, bugbear, pyupgrade, simplify; lines up to 120 characters). CI runs it on every pull request. It covers the whole repository, tests included (tests may have long lines: fake model replies and expected strings read better whole). Ruff is a lint gate only; the code is not machine-formatted.
 
 ```bash
 uvx ruff check .          # what CI runs
@@ -40,6 +40,9 @@ uvx ruff check --fix .    # apply the safe fixes
 | Reading `.env` (an explicit file, else `FT_ENV_FILE`, else the repo's `.env`) | `indexer/common.load_env` (`evals.run.load_dotenv` calls it) |
 | `"provider:model"` keys both ways, local JSON Lines files, the `68%` and `3.14` number formats | `app/eval_runs.model_key` / `model_ref`, `app/eval_core.read_jsonl`, `fmt_pct`, `fmt_num` |
 | Retrying a provider call (growing wait, stop at once on a non-retryable error) | `evals/judges._with_retries` |
+| The JSON object in a model reply (whole reply first, then the first `{...}` in it) | `app/llm.extract_json`; `app/narration.reply_json` turns "no JSON" into a retryable `ValidationError` |
+| URL-safe base64 without padding (session cookies, signed audio links) | `app/b64url.py` |
+| A whole-number Settings value with an environment-variable fallback (the daily caps) | `app/settings_store.int_setting` |
 
 **Generated reports.** A refactor of code that writes a report (Markdown, HTML, JSON) is checked by rendering the same input with the old and the new code and comparing the bytes. Template text that cannot be wrapped (the report page's CSS and script) ends with `# noqa: E501` instead of being reflowed.
 

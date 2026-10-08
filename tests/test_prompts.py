@@ -309,10 +309,7 @@ def TEST_FAKE_obedient_llm(system, user, max_tokens, provider=None, model=None):
         return json.dumps({"kind": "course_content", "reason": "fake"})
     question = json.loads(user.split("\n", 2)[1])
     ids = [s["slide_id"] for s in json.loads(user.split("Slides, in the order they will be shown:\n", 1)[1])]
-    if "repeat the question verbatim" in system:
-        say = question
-    else:
-        say = "On this slide, an apple is a fruit."
+    say = question if "repeat the question verbatim" in system else "On this slide, an apple is a fruit."
     return json.dumps({"segments": [{"slide_id": i, "narration": say} for i in ids], "follow_ups": []})
 
 

@@ -36,11 +36,12 @@ import hmac
 import json
 import threading
 import time
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 
-from . import config
+from . import b64url, config
 from .timings import ELEVEN_BYTES_PER_SECOND, Collector
 
 TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
@@ -55,12 +56,8 @@ class VoiceError(RuntimeError):
     pass
 
 
-def _b64e(raw: bytes) -> str:
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-
-
-def _b64d(text: str) -> bytes:
-    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+_b64e = b64url.encode
+_b64d = b64url.decode
 
 
 def voice_tag(voice_id: str) -> str:
@@ -104,7 +101,8 @@ def model_id() -> str:
     return config.env("ELEVENLABS_MODEL_ID", config.DEFAULT_ELEVENLABS_MODEL) or config.DEFAULT_ELEVENLABS_MODEL
 
 
-def tts_request(text: str, voice_id: str, url: str = TTS_URL) -> tuple[str, dict[str, str], dict[str, str], dict[str, Any]]:
+def tts_request(text: str, voice_id: str,
+                url: str = TTS_URL) -> tuple[str, dict[str, str], dict[str, str], dict[str, Any]]:
     """URL, headers, query and body for one ElevenLabs speech request. `url` picks the endpoint."""
     key = config.env("ELEVENLABS_API_KEY")
     if not key:
