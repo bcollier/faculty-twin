@@ -397,6 +397,7 @@ class _ComparisonRun:
             return
 
         def rejudge(item: tuple[dict[str, Any], str]) -> None:
+            """Ask again only this answer's judges that hit a provider error, if their provider is back."""
             r, field = item
             if self._over_budget():
                 return
@@ -514,6 +515,11 @@ def _not_ready(generators: list[dict[str, str]], judges: list[Judge]) -> list[st
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: plan a model comparison, print its cost estimate, then run it within the budget.
+
+    It stops before any paid call when the estimate is over the budget left, on --dry-run, or when a
+    key is missing; --report-only rewrites the report of an existing run folder for free.
+    """
     args = _arguments(argv)
     load_dotenv()
     if args.report_only:
@@ -524,25 +530,16 @@ def main(argv: list[str] | None = None) -> int:
     if not (args.questions and args.generator and args.judge):
         print("--questions, at least one --generator and at least one --judge are required", file=sys.stderr)
         return 2
-    try:
-        questions = dataset.load(args.questions)
-    except (OSError, dataset.DatasetError) as exc:
-        print(f"Cannot use {args.questions}: {exc}", file=sys.stderr)
-        return 2
     only = _comma_set(args.only_types)
-    if only:
-        questions = [q for q in questions if (q.qtype or "") in only]
+    questions = _load_questions(args.questions, only)
+    if questions is None:
+        return 2
     generators, judges, code = _models(args)
     if code:
         return code
     retest = _comma_set(args.retest_types) or None
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    out = Path(args.out) if args.out else PRIVATE / "runs" / stamp
-    done = done_keys(out / "results.jsonl")
-    tasks = [t for t in plan_tasks(questions, generators, max(1, args.reps), retest)
-             if (t[0].qid, key(t[1]), t[2]) not in done]
-    if done:
-        print(f"Resuming {out}: {len(done)} answers already there.")
+    out = Path(args.out) if args.out else PRIVATE / "runs" / datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    tasks = _tasks_left(out, questions, generators, max(1, args.reps), retest)
     live = _live_prices()
     est = estimate(tasks, [{"provider": j.provider, "model": j.model} for j in judges], args.judge_retest, live)
     print(f"{len(questions)} questions from {Path(args.questions).name}; {len(generators)} generators; "
@@ -555,13 +552,9 @@ def main(argv: list[str] | None = None) -> int:
         return 4
     if args.dry_run:
         return 0
-    missing = _not_ready(generators, judges)
-    if missing:
-        print("Not ready:\n  " + "\n  ".join(missing), file=sys.stderr)
-        return 3
-    if not args.yes and input("Start? [y/N] ").strip().lower() != "y":
-        return 1
-
+    code = _ready_to_start(generators, judges, args.yes)
+    if code:
+        return code
     make_target = _target_factory(questions)
     spend = Spend(live)
     started = time.monotonic()
@@ -570,6 +563,39 @@ def main(argv: list[str] | None = None) -> int:
     _write_meta(out, args, generators, judges, retest, only, spend, est, started)
     print(f"Spend: ${spend.total:.2f} (all sessions of this run folder).")
     return report_only(out)
+
+
+def _load_questions(path: str, only: set[str]) -> list[dataset.Question] | None:
+    """The question set, cut to the `only` question types when given; None (after saying why) if unusable."""
+    try:
+        questions = dataset.load(path)
+    except (OSError, dataset.DatasetError) as exc:
+        print(f"Cannot use {path}: {exc}", file=sys.stderr)
+        return None
+    if only:
+        questions = [q for q in questions if (q.qtype or "") in only]
+    return questions
+
+
+def _tasks_left(out: Path, questions: list[dataset.Question], generators: list[dict[str, str]], reps: int,
+                retest: set[str] | None) -> list[tuple[dataset.Question, dict[str, str], int]]:
+    """The planned answers not already in the run folder, so a stopped run resumes where it left off."""
+    done = done_keys(out / "results.jsonl")
+    tasks = [t for t in plan_tasks(questions, generators, reps, retest) if (t[0].qid, key(t[1]), t[2]) not in done]
+    if done:
+        print(f"Resuming {out}: {len(done)} answers already there.")
+    return tasks
+
+
+def _ready_to_start(generators: list[dict[str, str]], judges: list[Judge], yes: bool) -> int:
+    """0 when every key is set and the run is confirmed (or --yes); else the exit code: 3 keys missing, 1 declined."""
+    missing = _not_ready(generators, judges)
+    if missing:
+        print("Not ready:\n  " + "\n  ".join(missing), file=sys.stderr)
+        return 3
+    if not yes and input("Start? [y/N] ").strip().lower() != "y":
+        return 1
+    return 0
 
 
 def _target_factory(questions: list[dataset.Question]) -> Callable[[dict[str, str]], Any]:

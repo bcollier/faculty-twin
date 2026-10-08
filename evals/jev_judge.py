@@ -166,7 +166,10 @@ class JevJudge:
             metric.measure(LLMTestCase(**fields))
         except Exception as exc:  # a failed call is recorded, the run carries on
             return {"judge": self.name, "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        return self._judgement(metric, names)
 
+    def _judgement(self, metric: Any, names: list[tuple[str, str]]) -> dict[str, Any]:
+        """Read Jev's answers (in `names` order) back into the rubric's judgement, or an {"error"} entry."""
         outcomes = metric.score_breakdown or []
         if len(outcomes) != len(names):
             return {"judge": self.name, "error": f"expected {len(names)} answers, got {len(outcomes)}"}

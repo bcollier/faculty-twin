@@ -97,6 +97,7 @@ class KokoroEngine:
         return self._pipeline
 
     def render(self, text: str) -> tuple[np.ndarray, int]:
+        """(mono float32 samples, 24000 Hz) for `text` in the stock Kokoro voice."""
         pipeline = self._load()
         parts = []
         for _graphemes, _phonemes, audio in pipeline(text, voice=self.voice, speed=self.speed):
@@ -146,6 +147,7 @@ class ChatterboxEngine:
         return self._model
 
     def render(self, text: str) -> tuple[np.ndarray, int]:
+        """(mono float32 samples, sample rate) for `text`, cloned from the reference clip."""
         model = self._load()
         kwargs: dict[str, Any] = {"audio_prompt_path": str(self.sample)}
         if not self.turbo:

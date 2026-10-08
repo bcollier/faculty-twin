@@ -289,6 +289,10 @@ def render_json(report: Report, base_url: str) -> str:
 
 
 def main(argv: list[str] | None = None, transport: httpx.BaseTransport | None = None) -> int:
+    """Command line: run the smoke steps against a site and print the report. Exit 0 only if every step passed.
+
+    Requests carry X-FT-Source: smoke, so Settings > Analytics can leave them out.
+    """
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--base-url", default=os.environ.get("SMOKE_BASE_URL", DEFAULT_BASE_URL))
     p.add_argument("--env-file",

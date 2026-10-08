@@ -53,6 +53,10 @@ def calibrate(cases: list[dict[str, Any]], judges: list[Judge]) -> dict[str, Any
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: run the calibration cases through each judge, print the misses, save the result.
+
+    A judge that misses a case should not be trusted with the twin's real answers.
+    """
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--judge", action="append", default=[], metavar="PROVIDER:MODEL", required=True)
     p.add_argument("--cases", type=Path, default=CASES)

@@ -72,7 +72,7 @@ def clean_windows(cues: list[dict], target: float = 45.0) -> list[Window]:
     run: list[dict] = []
 
     def flush() -> None:
-        # Drop cues from either end until the padded span is clean, then cap at target.
+        """Add the current run as a window: trim either end until the padded span is clean, then cap it at target."""
         r = list(run)
         while r and not padded_clean(r[0]["start"], r[-1]["end"]):
             # Remove whichever end is nearer a bad span.
@@ -130,6 +130,10 @@ def cut(video: Path, window: Window, out: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: list the clean instructor-only windows in a session, and cut the chosen one.
+
+    The sample is written readable only by its owner: it is Ben's voice and must stay private.
+    """
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--transcript", required=True, type=Path)
     p.add_argument("--video", type=Path, help="session video (a single-part recording)")

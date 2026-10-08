@@ -189,6 +189,10 @@ def load_slides(course: str | None) -> tuple[list[dict[str, Any]], np.ndarray]:
 
 
 def main(argv: list[str] | None = None, embed_many: Callable | None = None) -> int:
+    """Command line: score on- and off-topic questions against the slides and print the threshold table.
+
+    Exit 1 when no threshold separates the two groups, so a changed index that blurs them is noticed.
+    """
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--questions", help="JSON Lines file of {question, label: on|off} (default: 10 invented ones)")
     p.add_argument("--course", choices=config.COURSE_CODES, help="score against one course only (default: all)")

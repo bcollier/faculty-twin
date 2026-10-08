@@ -124,6 +124,10 @@ def _load_judges(specs: list[str]) -> tuple[list[Judge], int]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: ask the twin the top questions, have the judges score each answer, write the run folder.
+
+    Judges and the target are checked before any question is asked, so a missing key stops the run early.
+    """
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--questions", default=str(PRIVATE / "questions.jsonl"))
     p.add_argument("--top", type=int, default=25)
