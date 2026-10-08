@@ -611,25 +611,23 @@ async def audio(
             raise HTTPException(404, "The voice is turned off. Captions only.")
         raise HTTPException(403, "This audio link is from an older voice setting. Please ask again.")
     # Each tier has its own daily cap (ElevenLabs costs money; the free voices are capped higher).
-    if not limits.take_voice_chars(
-        len(text), voices.daily_cap(voice), auth.visitor_key(session), limits.client_hash(request), pool=voice.pool
-    ):
+    visitor, address = auth.visitor_key(session), limits.client_hash(request)
+    if not limits.take_voice_chars(len(text), voices.daily_cap(voice), visitor, address, pool=voice.pool):
         raise HTTPException(429, "The voice has reached today's limit. Captions only for now.")
-    usage.record_tts(voice.kind or "unverified", len(text))  # characters sent, by voice tier (Analytics)
     headers = {"Cache-Control": "private, max-age=86400"}
-    if voice.provider == voices.EDGE:
-        try:
-            stream = await edge_voice.open_stream(text, voice.voice_id)
-        except edge_voice.FreeVoiceError as exc:
-            config.log.warning("free voice failed: %s", exc)
-            raise HTTPException(502, "The voice service is not available right now. Captions only.") from exc
-        return StreamingResponse(stream, media_type="audio/mpeg", headers=headers)
     try:
-        client, resp = await speech.open_stream(text, voice.voice_id)
-    except speech.VoiceError as exc:
-        config.log.warning("voice failed: %s", exc)
+        if voice.provider == voices.EDGE:
+            stream = await edge_voice.open_stream(text, voice.voice_id)
+        else:
+            client, resp = await speech.open_stream(text, voice.voice_id)
+            stream = speech.stream_bytes(client, resp)
+    except (edge_voice.FreeVoiceError, speech.VoiceError) as exc:
+        # Nothing was spoken: give the characters back, so an outage does not use up today's cap.
+        limits.give_back_voice_chars(len(text), visitor, address, pool=voice.pool)
+        config.log.warning("%s failed: %s", "free voice" if voice.provider == voices.EDGE else "voice", exc)
         raise HTTPException(502, "The voice service is not available right now. Captions only.") from exc
-    return StreamingResponse(speech.stream_bytes(client, resp), media_type="audio/mpeg", headers=headers)
+    usage.record_tts(voice.kind or "unverified", len(text))  # characters sent, by voice tier (Analytics)
+    return StreamingResponse(stream, media_type="audio/mpeg", headers=headers)
 
 
 @app.get("/api/files/{path:path}")

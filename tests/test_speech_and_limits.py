@@ -120,3 +120,44 @@ def test_tts_request_shape(monkeypatch):
     assert headers["xi-api-key"] == "el-test"
     assert params == {"output_format": "mp3_44100_128"}
     assert body == {"text": "Hi", "model_id": "eleven_multilingual_v2"}
+
+
+# ---------------------------------------------------------------- cap math (Oct 8 code review)
+
+def test_a_question_refused_by_the_network_limit_does_not_use_the_visitors_quota(monkeypatch):
+    # Each bucket was charged before the next was checked, so a question refused by the per-address
+    # limit (a classroom behind one NAT) still used up the student's own minute and day quota.
+    monkeypatch.setattr(limits.config, "PER_ADDRESS_MINUTE_LIMIT", 1)
+    limits.check_ask_rate("visitor-a", "room-1")
+    with pytest.raises(HTTPException) as exc:
+        limits.check_ask_rate("visitor-b", "room-1")
+    assert exc.value.status_code == 429
+    import time
+
+    minute = time.strftime("%Y%m%d%H%M", time.gmtime())
+    day = time.strftime("%Y%m%d", time.gmtime())
+    assert limits.read_counter(f"rl:min:visitor-b:{minute}") == 0
+    assert limits.read_counter(f"rl:day:visitor-b:{day}") == 0
+
+
+def test_voice_characters_refused_by_the_daily_cap_do_not_use_the_visitors_share():
+    cap = 1000  # share is 250 per visitor
+    assert limits.take_voice_chars(100, cap, "v1", "a1")
+    limits.increment(limits.voice_key("voice"), 850)  # everyone else used most of today's cap
+    assert not limits.take_voice_chars(100, cap, "v1", "a1")  # within the share, over the daily cap
+    day = limits._today()
+    assert limits.read_counter(f"voice_share:v:v1:{day}") == 100
+    assert limits.read_counter(f"voice_share:a:a1:{day}") == 100
+
+
+def test_characters_are_given_back_when_the_voice_service_fails(student, monkeypatch):
+    # An ElevenLabs outage used to burn today's paid cap: every failed play was charged.
+    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice123")
+
+    async def down(text, voice_id):
+        raise speech.VoiceError("voice service returned 503")
+
+    monkeypatch.setattr(speech, "open_stream", down)
+    link = speech.audio_link("Twenty characters!!!", "voice123")
+    assert student.get(link).status_code == 502
+    assert limits.read_counter(limits.voice_key("voice")) == 0
