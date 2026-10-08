@@ -8,7 +8,9 @@ app/admin.py and need the admin cookie.
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import re
+from concurrent.futures import ThreadPoolExecutor
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
@@ -30,6 +32,7 @@ from . import (
     edge_voice,
     embed,
     faq,
+    helper_slide,
     limits,
     llm,
     logistics,
@@ -331,10 +334,43 @@ def answer(
 
     codes = {r["id"]: (playlist.related_code(content, r) or {}).get("source") for r in chosen}
     used_model()
+    # The helper-slide self-check runs beside narration, so it adds no wait (spec "AI-drawn helper slides").
+    helper = _start_helper(question, "check", helper_slide.slide_material(chosen), completer, provider, model)
     result = narration.narrate(question, chosen, codes, provider=provider, model=model, complete=completer)
     info["narration"] = result.source
     info["errors"] = result.errors
-    return playlist.build_playlist(content, question, chosen, result.narrations, result.follow_ups, voice), info
+    reply = playlist.build_playlist(content, question, chosen, result.narrations, result.follow_ups, voice)
+    _attach_helper(reply, helper, info)
+    return reply, info
+
+
+_helper_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ft-helper")
+
+
+def _start_helper(question: str, mode: str, material: list[dict[str, Any]], completer: Callable[..., str],
+                  provider: str, model: str):
+    """Start the helper-slide call in this request's context (usage purpose and tally carry over).
+
+    Eval runs skip it: they grade the answer, and the extra call would only spend the eval budget.
+    """
+    if not helper_slide.enabled() or usage.current_purpose() == "eval_generate":
+        return None
+    ctx = contextvars.copy_context()
+    return _helper_pool.submit(ctx.run, helper_slide.for_answer, question, mode, material, completer, provider, model)
+
+
+def _attach_helper(reply: dict[str, Any], future, info: dict[str, Any], timeout: float = 25.0) -> None:
+    """Add `generated_slide` when the helper call produced one. A slow or failed call adds nothing."""
+    if future is None:
+        return
+    try:
+        slide = future.result(timeout=timeout)
+    except Exception as exc:  # timeout or anything else: the answer goes out without a helper slide
+        config.log.info("helper slide not attached: %s", type(exc).__name__)
+        return
+    if slide:
+        reply["generated_slide"] = slide
+        info["helper_slide"] = slide.get("origin")
 
 
 def _referral(question: str, course: Optional[str], content: Content) -> dict[str, Any]:
@@ -383,6 +419,10 @@ def _beyond_the_slides(
         info["fallback_reason"] = result.reason  # shown in Settings > Activity (e.g. provider_credits)
     if result.reply is None:  # nothing at all to point to
         return declined, info
+    if result.source == "llm":  # a web answer can come with one AI-drawn slide, drawn from that answer only
+        material = [{"web_answer": result.reply.get("message"),
+                     "sources": [link["url"] for link in result.reply.get("links") or []]}]
+        _attach_helper(result.reply, _start_helper(question, "draft", material, completer, provider, model), info)
     info["kind"] = web_answer.KIND
     info["narration"] = result.source
     info["errors"] = result.errors
@@ -661,6 +701,8 @@ app.include_router(thresholds.router)
 app.include_router(analytics_router)
 
 from .admin_evals import router as admin_evals_router  # noqa: E402  (Settings > Evals)
+
+app.include_router(helper_slide.router)  # Settings > Draft slides
 
 app.include_router(admin_evals_router)
 

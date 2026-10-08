@@ -163,6 +163,18 @@ def list_objects(prefix: str, limit: int = 100) -> list[str]:
     return [item["name"] for item in _check(r, f"list {folder}").json() if item.get("name")]
 
 
+def delete_objects(paths: list[str]) -> None:
+    """Remove objects by full path (Settings > Draft slides). Missing objects are not an error."""
+    with _client() as c:
+        r = c.request(
+            "DELETE",
+            f"{_base()}/storage/v1/object/{config.bucket()}",
+            json={"prefixes": [p.lstrip("/") for p in paths]},
+            headers=_headers({"Content-Type": "application/json"}),
+        )
+    _check(r, f"delete {len(paths)} objects")
+
+
 def object_exists(path: str) -> bool:
     with _client() as c:
         r = c.head(f"{_base()}/storage/v1/object/{config.bucket()}/{_obj_path(path)}", headers=_headers())

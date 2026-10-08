@@ -3,6 +3,8 @@
 // Screens: boot -> (offline | login | app). The app has two views: idle and presenting.
 // The player is a small state machine; see the "Player" section below.
 
+import { renderHelperFigure } from './helper-slide.js';
+
 const DEV_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 if (DEV_HOSTS.includes(location.hostname) && new URLSearchParams(location.search).get('mock') === '1') {
   // Development only (local hosts only): canned responses that match the API contract. Never loaded otherwise.
@@ -147,7 +149,7 @@ const ui = {
   idleCourse: $('#idle-course'), dockCourse: $('#dock-course'),
   stageMsg: $('#stage-message'), stageSpinner: $('#stage-spinner'), stageTitle: $('#stage-message-title'), stageLabel: $('#stage-message-label'),
   stageText: $('#stage-message-text'), stageActions: $('#stage-message-actions'), stageChips: $('#stage-message-chips'),
-  stageExtra: $('#stage-message-extra'),
+  stageExtra: $('#stage-message-extra'), helperSlot: $('#helper-slot'),
   player: $('#player'), media: $('#media'), slideImg: $('#slide-img'), slideAlt: $('#slide-alt'), clipVideo: $('#clip-video'),
   clipBtn: $('#clip-btn'), clipBack: $('#clip-back'), clipNote: $('#clip-note'),
   caption: $('#caption'), btnPrev: $('#btn-prev'), btnPlay: $('#btn-play'), btnNext: $('#btn-next'),
@@ -493,7 +495,8 @@ function webListen(answer) {
 function showWebAnswer(answer) {
   clearSourcesToggle();
   const chips = topicsForCourse().slice(0, 6);
-  const extra = [webListen(answer), webSourceList(answer.links), relatedSlides(answer.related)].filter(Boolean);
+  const extra = [webListen(answer), webSourceList(answer.links), relatedSlides(answer.related),
+    answer.generated_slide ? renderHelperFigure(answer.generated_slide) : null].filter(Boolean);
   showStageMessage({ title: answer.title || 'Beyond my slides', text: answer.message || '', chips,
     label: COPY.webLabel, labelClass: 'web-label', extra });
   addTwinMessage(`${COPY.webLabel}. ${answer.message || ''}`);
@@ -501,6 +504,12 @@ function showWebAnswer(answer) {
   // A web answer is never in my voice: the dock names the stock voice when there is one, else nothing.
   ui.voiceLabel.textContent = answer.voice?.label || '';
   ui.voiceLabel.hidden = !answer.voice;
+}
+
+/* An AI-drawn helper slide under a walkthrough: labeled, dashed border, after the real slides. */
+function showHelperSlide(slide) {
+  ui.helperSlot.replaceChildren(...(slide ? [renderHelperFigure(slide)] : []));
+  ui.helperSlot.hidden = !slide;
 }
 
 /* The TA's contact details in a small card. The twin never says a TA's name aloud. */
@@ -655,6 +664,7 @@ async function ask(raw, { source = null } = {}) {
   const msg = addTwinMessage(summarize(answer));
   renderSourcesList(msg, answer);
   loadAnswer(answer);
+  showHelperSlide(answer.generated_slide || null);
 }
 
 /* Signed slide and clip links expire after an hour. If the slide image fails to load, fetch fresh
