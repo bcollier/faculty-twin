@@ -63,11 +63,16 @@ def _segments(playlist: dict[str, Any], evidence_for: Callable[[dict[str, Any]],
 
 
 class InProcessTarget:
-    """Runs `app.main.answer` with the real content, retriever, embedder, and model."""
+    """Runs `app.main.answer` with the real content, retriever, embedder, and model.
 
-    name = "in-process"
+    With `provider` and `model` it answers with that model instead of the active one (the same per-call
+    override Settings > Evals uses), so one process can compare several models. Every answer records
+    what answered (`outcome`, answer()'s kind), its tokens and estimated cost (`usage`), and, like a
+    Settings run, a FAQ answer or a referral is shown to the judges in words.
+    """
 
-    def __init__(self, retriever=None, embedder=None, completer=None, content=None):
+    def __init__(self, retriever=None, embedder=None, completer=None, content=None,
+                 provider: str | None = None, model: str | None = None, searcher=None):
         from app import main
 
         self._main = main
@@ -75,6 +80,9 @@ class InProcessTarget:
         self.embedder = embedder or main.get_embedder()
         self.completer = completer or main.get_completer()
         self._content = content
+        self.provider, self.model = provider, model
+        self.searcher = searcher  # the web search call for "beyond the slides" answers (None: the app's own)
+        self.name = f"in-process {provider}:{model}" if provider and model else "in-process"
 
     def content(self):
         if self._content is None:
@@ -84,42 +92,45 @@ class InProcessTarget:
         return self._content
 
     def ask(self, question: str) -> dict[str, Any]:
+        import contextlib
+
         from fastapi import HTTPException
 
-        from app import narration
+        from app import llm, usage
+        from app.admin_evals import answer_usage, response_from
 
         started = time.monotonic()
+        override = (llm.model_override(self.provider, self.model) if self.provider and self.model
+                    else contextlib.nullcontext())
         try:
             content = self.content()
-            from app import usage
-
-            with usage.purpose("eval_generate", sticky=True):  # counted as eval spend, not student narration
+            # Counted as eval spend, not student narration (sticky: inner tags keep it).
+            with override, usage.purpose("eval_generate", sticky=True), usage.tally() as spent:
+                extra = {"searcher": self.searcher} if self.searcher is not None else {}
                 playlist, info = self._main.answer(
-                    question, None, content, self.retriever, self.embedder, self.completer
+                    question, None, content, self.retriever, self.embedder, self.completer, self.provider, self.model,
+                    **extra,
                 )
         except self._main.RetrievalNotReady:
             return _result("retrieval_not_ready", "retrieval not implemented yet")
         except HTTPException as exc:
-            return _result("error", str(exc.detail))
+            return _result("error", str(exc.detail), latency_ms=int((time.monotonic() - started) * 1000))
         latency = int((time.monotonic() - started) * 1000)
+        out = response_from(playlist, info, content, latency)
+        out = {**_result(out["status"]), **out}
+        if self.provider and self.model:
+            out["usage"] = answer_usage({"provider": self.provider, "model": self.model}, spent)
+        elif info.get("provider") and info.get("model"):
+            out["usage"] = answer_usage({"provider": info["provider"], "model": info["model"]}, spent)
+        if info.get("errors"):
+            out["narration_errors"] = [str(e)[:200] for e in info["errors"][:3]]
+        if self.provider and self.completer is not None and getattr(self.completer, "__name__", "") == "direct_complete":
+            from .judges import route_of
 
-        def evidence(seg: dict[str, Any]) -> dict[str, Any] | None:
-            rec = content.record(seg.get("slide_id") or "")
-            if rec is None:
-                return None
-            code = (seg.get("code") or {}).get("source")
-            return narration.slide_payload(rec, code)
-
-        if not playlist.get("covered"):
-            return _result("not_covered", None, top_score=info.get("top_score"), latency_ms=latency)
-        return _result(
-            "ok",
-            segments=_segments(playlist, evidence),
-            follow_ups=playlist.get("follow_ups") or [],
-            narration_source=info.get("narration"),
-            top_score=info.get("top_score"),
-            latency_ms=latency,
-        )
+            via = route_of(self.provider, self.model or "")[0]
+            if via != self.provider:
+                out["via"] = via
+        return out
 
 
 class HttpTarget:

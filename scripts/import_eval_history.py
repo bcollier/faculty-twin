@@ -19,6 +19,11 @@ describes (safe to run again; it replaces its own entries):
   Settings has not calibrated itself.
 
 It prints counts only, never question text.
+
+With `--compare <run folder>` it instead uploads one model comparison run from `evals/compare.py`
+(docs/SPEC.md, Block 8c): run 1 of every question x answering model, as a finished run with up to six
+answering models, so it appears on the Settings report card next to admin runs. Repeated answers
+(test-retest) stay in the run folder's report; the run's notes carry the headline reliability numbers.
 """
 
 from __future__ import annotations
@@ -201,10 +206,107 @@ def run(private: Path, bucket: eval_store.Bucket, out=print) -> int:
     return 0
 
 
+def convert_compare(run_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """A comparison run folder (evals/compare.py) -> (run.json, rows) in the Settings format. Run 1 only."""
+    rows_in = [json.loads(line) for line in (run_dir / "results.jsonl").read_text(encoding="utf-8").splitlines()
+               if line.strip()]
+    try:
+        meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        meta = {}
+    run_id = eval_store.check_run_id(run_dir.name)
+    rep1 = [r for r in rows_in if r.get("rep", 1) == 1]
+    gens_keys = meta.get("generators") or sorted({r["generator"] for r in rep1})
+    generators = [_judge_ref(g) for g in gens_keys]
+    judges = [_judge_ref(j) for j in (meta.get("judges") or sorted({j["judge"] for r in rep1 for j in r["judgements"]}))]
+    qids = sorted({r["qid"] for r in rep1})
+    by = {(r["qid"], r["generator"]): r for r in rep1}
+    questions, rows = [], []
+    for qi, qid in enumerate(qids):
+        first = next(r for r in rep1 if r["qid"] == qid)
+        questions.append({k: first.get(k) for k in ("qid", "category", "course", "answerable", "question",
+                                                    "reference_answer", "type", "expected_kind", "expected_slides")
+                          if first.get(k) is not None})
+        for gi, g in enumerate(gens_keys):
+            r = by.get((qid, g))
+            if r is None:
+                continue
+            rows.append({
+                "qid": qid, "pair": qi * len(gens_keys) + gi, "category": r["category"], "course": r.get("course"),
+                "answerable": r["answerable"], "question": r["question"], "reference_answer": r.get("reference_answer"),
+                **{k: r[k] for k in ("type", "expected_kind", "expected_slides", "must_include", "must_not") if r.get(k)},
+                "web_path": r.get("web_path", True), "generator": g, "outcome": r["response"].get("outcome"),
+                "response": r["response"], "judgements": [{k: v for k, v in j.items() if k != "usage"}
+                                                          for j in r.get("judgements", [])],
+                "calls": (r["response"].get("usage") or {}).get("calls"), "at": None,
+            })
+    finished = meta.get("finished_at") or _stamp(run_id.split("-")[0]).isoformat(timespec="seconds")
+    notes = [f"Model comparison from the command line (evals/compare.py): {meta.get('questions_file', 'question set')}, "
+             f"run 1 of each question x model. Spend for the whole comparison: ${meta.get('spend_usd', 0):.2f}."]
+    if meta.get("web_path") is False:
+        notes.append("The \"beyond the slides\" web path was not in the app yet: web questions were expected to be declined.")
+    try:
+        summary = json.loads((run_dir / "compare_summary.json").read_text(encoding="utf-8"))
+        icc = {k.split(":", 1)[-1]: v.get("icc") for k, v in (summary.get("generator_retest") or {}).get("models", {}).items()}
+        if any(v is not None for v in icc.values()):
+            notes.append("Test-retest ICC (run 1 vs run 2): " + ", ".join(f"{k} {v}" for k, v in icc.items()) + ".")
+    except (OSError, ValueError):
+        pass
+    run = {
+        "id": run_id,
+        "name": meta.get("label") or f"Model comparison {run_id}",
+        "kind": "imported",
+        "source": f"evals/private/runs/{run_id}",
+        "created_at": _stamp(run_id.split("-")[0]).isoformat(timespec="seconds"),
+        "updated_at": finished,
+        "finished_at": finished,
+        "status": "done",
+        "status_note": None,
+        "excluded": False,
+        "generators": generators,
+        "generator_labels": {},
+        "judges": judges,
+        "top": len(qids),
+        "categories": None,
+        "questions": questions,
+        "pairs_total": len(rows),
+        "pairs_done": len(rows),
+        "calls_used": None,
+        "call_cap": None,
+        "self_grading": eval_runs.self_grading(generators, judges),
+        "notes": notes,
+        "lease": None,
+    }
+    if meta.get("only_types"):
+        # A subset (for example only the web questions) is not comparable with full runs: listed, never plotted.
+        run["status"] = "excluded"
+        run["excluded"] = True
+        run["status_note"] = (f"Only the {', '.join(meta['only_types'])} questions of {meta.get('questions_file')}: "
+                              "listed for its results, left out of the report card's lines.")
+        run["notes"].insert(0, run["status_note"])
+    run["summary"] = eval_runs.summarize(run, rows)
+    return run, rows
+
+
+def import_compare(run_dir: Path, bucket: eval_store.Bucket, out=print) -> int:
+    run_json, rows = convert_compare(run_dir)
+    eval_store.write_run(bucket, run_json)
+    for row in rows:
+        eval_store.write_row(bucket, run_json["id"], row)
+    eval_store.write_results(bucket, run_json["id"], rows)
+    eval_store.mark_finished(bucket, run_json["id"], run_json["status"], run_json["finished_at"])
+    eval_store.upsert_index(bucket, eval_runs.index_entry(run_json))
+    out(f"{run_json['id']}: {len(rows)} rows, {len(run_json['generators'])} answering models, "
+        f"{len(run_json['judges'])} judges.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--private", type=Path, default=PRIVATE, help="the evals/private folder that holds runs/")
     p.add_argument("--env-file", type=Path, default=ROOT / ".env")
+    p.add_argument("--compare", type=Path, action="append", default=[],
+                   help="a model comparison run folder (evals/compare.py) to upload instead")
     args = p.parse_args(argv)
     load_dotenv(args.env_file)
     from app import config
@@ -213,6 +315,9 @@ def main(argv: list[str] | None = None) -> int:
         print("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (environment or .env).", file=sys.stderr)
         return 3
     try:
+        if args.compare:
+            bucket = eval_store.SupabaseBucket()
+            return max(import_compare(folder, bucket) for folder in args.compare)
         return run(args.private, eval_store.SupabaseBucket())
     except eval_store.StoreError as exc:
         print(f"Bucket write failed: {exc}", file=sys.stderr)

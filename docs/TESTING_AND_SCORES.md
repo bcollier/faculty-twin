@@ -416,6 +416,27 @@ This is the "how good are the answers" test. Details are in
    and October 7 twin results are in the README.
 5. **Results** go to `evals/private/runs/<UTC time>/` (see "Where results live").
 
+### (b2) Model comparison
+
+Compares answering models on one question set with the same three judges for all, with teaching-quality
+scores, route and retrieval metrics, cost, latency, and test-retest reliability. The command, what each
+number means and the latest results are in [evals/README.md](../evals/README.md#model-comparison). From a
+second checkout of the repo that has no `.env`, point at the main checkout's file with `FT_ENV_FILE=<path to .env>`.
+
+```bash
+uv run --no-project --python 3.12 --with-requirements requirements.txt python -m evals.compare \
+  --questions evals/questions.course.jsonl \
+  --generator anthropic:claude-sonnet-5-5 --generator openai:gpt-6.1-sol \
+  --judge anthropic:claude-opus-5-5 --judge openai:gpt-6.1-sol --judge openrouter:google/gemini-3.8-flash \
+  --reps 2 --judge-retest 0.25 --budget 40
+```
+
+It prints the estimate and refuses a plan over `--budget`; `--dry-run` stops there. Answering calls go
+straight to the providers like the judges' calls, so a comparison never uses the site's
+`DAILY_LLM_CALL_CAP`; both still show in Settings > Analytics as `eval_generate` and `eval_judge`.
+`python -m scripts.import_eval_history --compare evals/private/runs/<run>` puts run 1 of a comparison
+on the Settings report card.
+
 ### (c) Threshold table
 
 Prints each question's top score and best slide, using my `rank()` unchanged
@@ -582,7 +603,7 @@ comparable.
 2. **Calibrate any judge you have not used before.** "Calibrate a judge
    first" scores the 8 invented cases; a judge should meet all 8 before you
    trust it. The result shows in the calibration table under the report card.
-3. **Start a run.** Pick up to 3 models that answer and up to 3 judges (from
+3. **Start a run.** Pick up to 6 models that answer and up to 3 judges (from
    another model family than the answering model: a judge grading its own
    model is lenient, and the page warns when you pick one), the number of
    questions (1 to 30) and the categories. "Check the estimate" shows the model

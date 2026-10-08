@@ -110,6 +110,10 @@ def summarize(run: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]
 
 
 REPORT_METRICS = ("pass_rate", "decline_accuracy", "fallback_rate", "judge_agreement")
+# Added Oct 8 (docs/SPEC.md, Block 8c): measured without a judge, plus the pass rate without same-family judges.
+EXTRA_METRICS = ("pass_rate_excluding_same_family", "route_accuracy", "retrieval_hit_rate", "slide_precision",
+                 "course_purity", "cost_per_answer", "mean_latency_ms", "route_n", "hit_n", "cost_n", "latency_n",
+                 "judgements_excluding_same_family", "group_means")
 
 
 def report_card(runs: list[dict[str, Any]], calibration: dict[str, Any]) -> dict[str, Any]:
@@ -140,6 +144,7 @@ def report_card(runs: list[dict[str, Any]], calibration: dict[str, Any]) -> dict
                 "decline_accuracy": m.get("decline_accuracy"),
                 "fallback_rate": m.get("fallback_rate"),
                 "judge_agreement": m.get("judge_agreement"),
+                **{k: m.get(k) for k in EXTRA_METRICS},
                 "scores": m.get("scores") or {},
                 "per_judge": m.get("per_judge") or {},
             })
@@ -150,7 +155,9 @@ def report_card(runs: list[dict[str, Any]], calibration: dict[str, Any]) -> dict
         judges.append({"judge": name, "met": c.get("met"), "cases": c.get("cases"), "done": c.get("done"),
                        "missed": c.get("missed", []), "at": c.get("finished_at") or c.get("started_at"),
                        "source": c.get("source", "settings")})
-    return {"series": list(series.values()), "dimensions": list(eval_core.DIMENSIONS), "metrics": list(REPORT_METRICS),
+    return {"series": list(series.values()), "dimensions": list(eval_core.DIMENSIONS),
+            "dimension_groups": {g: list(d) for g, d in eval_core.DIMENSION_GROUPS.items()},
+            "metrics": list(REPORT_METRICS) + list(EXTRA_METRICS[:7]),
             "calibration": judges, "legend": legend()}
 
 
@@ -158,7 +165,10 @@ def legend() -> dict[str, Any]:
     """What every eval table and chart on the Settings page explains under it (app/eval_core.py)."""
     return {
         "dimensions": [{"key": d, "label": eval_core.DIMENSION_LABELS[d], "header": eval_core.dimension_header(d),
-                        "description": text} for d, text in eval_core.DIMENSIONS.items()],
+                        "description": text,
+                        "group": next(g for g, ds in eval_core.DIMENSION_GROUPS.items() if d in ds)}
+                       for d, text in eval_core.DIMENSIONS.items()],
+        "groups": dict(eval_core.GROUP_LABELS),
         "scale": eval_core.SCALE_NOTE,
         "mean": eval_core.MEAN_NOTE,
         "na": eval_core.NA_NOTE,

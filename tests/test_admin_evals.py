@@ -226,7 +226,7 @@ def test_rough_cost_uses_openrouter_prices_for_the_same_model():
 
 @pytest.mark.parametrize("change, status, text", [
     ({"confirm": False}, 400, "confirm"),
-    ({"generators": [{"provider": "anthropic", "model": f"m{i}"} for i in range(4)]}, 400, "1 to 3 models"),
+    ({"generators": [{"provider": "anthropic", "model": f"m{i}"} for i in range(7)]}, 400, "1 to 6 models"),
     ({"judges": [{"provider": "openai", "model": f"j{i}"} for i in range(4)]}, 400, "1 to 3 judges"),
     ({"judges": []}, 400, "1 to 3 judges"),
     ({"top": 31}, 400, "1 to 30"),
@@ -434,7 +434,8 @@ def test_runs_list_and_report_card_over_two_runs(evals):
     (series,) = card["series"]
     assert series["generator"] == "anthropic:claude-haiku-4-5"
     assert [p["pass_rate"] for p in series["points"]] == [1.0, 0.0]
-    assert card["metrics"] == ["pass_rate", "decline_accuracy", "fallback_rate", "judge_agreement"]
+    assert card["metrics"][:4] == ["pass_rate", "decline_accuracy", "fallback_rate", "judge_agreement"]
+    assert {"route_accuracy", "retrieval_hit_rate", "cost_per_answer", "pass_rate_excluding_same_family"} <= set(card["metrics"])
 
 
 def test_report_card_skips_excluded_runs_and_labels_series():
@@ -628,3 +629,22 @@ def test_cancel_reaches_a_step_through_the_marker(evals):
     eval_store.mark_cancelled(evals.bucket, run_id, "2026-10-08T00:00:00+00:00")  # as if run.json were stale
     out = evals.post(f"/api/admin/evals/runs/{run_id}/step").json()
     assert out["progress"]["status"] == "cancelled" and out["progress"]["done"] == 1
+
+
+def test_six_answering_models_run_with_usage_and_route_metrics(evals):
+    """Oct 8 (Block 8c): up to 6 answering models per run; rows carry tokens, cost and whether the web path exists."""
+    six = [{"provider": "anthropic", "model": f"claude-test-{i}"} for i in range(6)]
+    est = evals.post("/api/admin/evals/runs/estimate", json=run_body(generators=six, top=1))
+    assert est.status_code == 200, est.text
+    assert est.json()["estimate"]["pairs"] == 6
+    r = evals.post("/api/admin/evals/runs", json=run_body(generators=six, top=1))
+    assert r.status_code == 201, r.text
+    run_id = r.json()["run"]["id"]
+    out = drive(evals, run_id)
+    assert out["progress"]["finished"] and out["progress"]["done"] == 6
+    detail = evals.get(f"/api/admin/evals/runs/{run_id}").json()
+    assert all("usage" in row["response"] and "web_path" in row for row in detail["rows"])
+    by_gen = detail["run"]["summary"]["by_generator"]
+    assert len(by_gen) == 6 and all("route_accuracy" in m and "pass_rate_excluding_same_family" in m for m in by_gen.values())
+    limits = evals.get("/api/admin/evals/limits").json()
+    assert limits["max_generators"] == 6 and limits["max_judges"] == 3

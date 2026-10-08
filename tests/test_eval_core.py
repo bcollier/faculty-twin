@@ -18,11 +18,23 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "eval_parity.json").read_text())
 
 
+NEW_DIMS = eval_core.TEACHING_DIMENSIONS + eval_core.WEB_DIMENSIONS  # added Oct 8 (Block 8c)
+
+
 def _without_new_keys(s: dict) -> dict:
-    """The summary minus what was added after the move (per-dimension counts, score_n)."""
+    """The summary minus what was added after the move (per-dimension counts, score_n, the Oct 8 dimensions)."""
     out = json.loads(json.dumps(s))
     for j in out["judges"].values():
         j.pop("score_n", None)
+        for d in NEW_DIMS:
+            j["scores"].pop(d, None)
+    return out
+
+
+def _core_scores(parsed: dict) -> dict:
+    out = json.loads(json.dumps(parsed))
+    for d in NEW_DIMS:
+        assert out["scores"].pop(d) is None  # an old-style reply leaves the new dimensions null
     return out
 
 
@@ -63,9 +75,12 @@ def test_missing_dimensions_show_as_n_a():
 
 
 def test_prompts_and_parser_match_the_old_cli():
-    assert eval_core.SYSTEM_PROMPT == rubric.SYSTEM_PROMPT == FIXTURE["system_prompt"]
+    # The judge prompt changed on purpose on Oct 8 (teaching dimensions, Block 8c); the six core lines remain.
+    assert eval_core.SYSTEM_PROMPT == rubric.SYSTEM_PROMPT
+    for d in eval_core.CORE_DIMENSIONS:
+        assert f"- {d}: {eval_core.DIMENSIONS[d]}" in eval_core.SYSTEM_PROMPT
     assert [eval_core.build_user_prompt(r) for r in FIXTURE["results"]] == FIXTURE["prompts"]
-    assert [eval_core.parse(x) for x in FIXTURE["parse_inputs"]] == FIXTURE["parse"]
+    assert [_core_scores(eval_core.parse(x)) for x in FIXTURE["parse_inputs"]] == FIXTURE["parse"]
 
 
 def test_dataset_and_calibration_match_the_old_cli():
@@ -102,7 +117,7 @@ def test_judge_prompt_comes_from_the_prompt_registry():
     try:
         assert eval_core.system_prompt().endswith("Keep it short.") and "- grounded:" in eval_core.system_prompt()
         assert rubric.system_prompt() == eval_core.system_prompt()
-        assert eval_core.SYSTEM_PROMPT == FIXTURE["system_prompt"]  # the default is unchanged
+        assert eval_core.SYSTEM_PROMPT == prompts.default("eval_judge", dimensions=eval_core.dimensions_text())
     finally:
         prompts.save("eval_judge", "", "reset", reset=True)
 

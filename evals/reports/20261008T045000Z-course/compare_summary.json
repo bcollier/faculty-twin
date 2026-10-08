@@ -1,0 +1,6733 @@
+{
+ "meta": {
+  "label": "Course set, five models",
+  "run_id": "20261008T045000Z-course",
+  "questions_file": "questions.course.jsonl",
+  "private": false,
+  "generators": [
+   "anthropic:claude-sonnet-5-5",
+   "anthropic:claude-opus-5-5",
+   "anthropic:claude-fable-5-1",
+   "openai:gpt-5.6-sol",
+   "openai:gpt-6.1-sol"
+  ],
+  "judges": [
+   "anthropic:claude-opus-5-5",
+   "openai:gpt-6.1-sol",
+   "openrouter:google/gemini-3.8-flash"
+  ],
+  "reps": 2,
+  "retest_types": "all",
+  "judge_retest": 0.25,
+  "only_types": null,
+  "web_path": false,
+  "minutes": 1.6,
+  "spend_usd": 22.51,
+  "spend_by_model": {
+   "anthropic:claude-fable-5-1": 3.745,
+   "anthropic:claude-opus-5-5": 12.053,
+   "anthropic:claude-sonnet-5-5": 0.585,
+   "openai:gpt-5.6-sol": 0.819,
+   "openai:gpt-6.1-sol": 3.6,
+   "openrouter:google/gemini-3.8-flash": 1.713
+  },
+  "estimate_usd": 2.9,
+  "finished_at": "2026-10-08T04:55:21+00:00",
+  "sessions": 2
+ },
+ "web_path": false,
+ "generators": [
+  "anthropic:claude-sonnet-5-5",
+  "anthropic:claude-opus-5-5",
+  "anthropic:claude-fable-5-1",
+  "openai:gpt-5.6-sol",
+  "openai:gpt-6.1-sol"
+ ],
+ "judges": [
+  "anthropic:claude-opus-5-5",
+  "openai:gpt-6.1-sol",
+  "openrouter:google/gemini-3.8-flash"
+ ],
+ "reps": 2,
+ "questions": 40,
+ "answers": 400,
+ "types": [
+  "beyond",
+  "concept",
+  "logistics",
+  "off_topic"
+ ],
+ "models": {
+  "anthropic:claude-sonnet-5-5": {
+   "route_accuracy": 0.68,
+   "route_n": 40,
+   "retrieval_hit_rate": 0.75,
+   "hit_n": 20,
+   "slide_precision": 0.56,
+   "precision_n": 15,
+   "course_purity": 0.65,
+   "purity_n": 17,
+   "mean_latency_ms": 3667,
+   "p90_latency_ms": 7346,
+   "latency_n": 40,
+   "cost_per_answer": 0.00729,
+   "total_cost": 0.2914,
+   "cost_n": 40,
+   "routes": {
+    "course_info": 9,
+    "declined": 10,
+    "faq": 3,
+    "logistics": 1,
+    "slides": 17
+   },
+   "pass_rate_excluding_same_family": 0.59,
+   "judgements_excluding_same_family": 80,
+   "group_means": {
+    "core": 3.98,
+    "teaching": 3.57,
+    "web": 1
+   },
+   "questions": 40,
+   "answered": 26,
+   "errors": 0,
+   "judgements": 120,
+   "judge_errors": 0,
+   "pass_rate": 0.57,
+   "scores": {
+    "grounded": 3.98,
+    "answers_question": 3.64,
+    "correct_scope": 4.35,
+    "matches_reference": 3.62,
+    "speech_quality": 3.57,
+    "safety_tone": 4.73,
+    "good_teaching": 3.35,
+    "explains_concept_effectively": 3.25,
+    "accurate": 4.03,
+    "engaging_voice": 3.63,
+    "appropriate_depth": 3.61,
+    "cites_sources": 1,
+    "labeled_beyond_slides": 1
+   },
+   "score_n": {
+    "grounded": 51,
+    "answers_question": 120,
+    "correct_scope": 120,
+    "matches_reference": 120,
+    "speech_quality": 76,
+    "safety_tone": 120,
+    "good_teaching": 71,
+    "explains_concept_effectively": 71,
+    "accurate": 71,
+    "engaging_voice": 71,
+    "appropriate_depth": 71,
+    "cites_sources": 4,
+    "labeled_beyond_slides": 4
+   },
+   "decline_accuracy": 0.8,
+   "answerable_declined": 1,
+   "fallback_rate": 0.0,
+   "judge_agreement": 0.72,
+   "median_latency_ms": 2248,
+   "per_judge": {
+    "anthropic:claude-opus-5-5": {
+     "pass_rate": 0.55,
+     "judged": 40
+    },
+    "openai:gpt-6.1-sol": {
+     "pass_rate": 0.4,
+     "judged": 40
+    },
+    "openrouter:google/gemini-3.8-flash": {
+     "pass_rate": 0.78,
+     "judged": 40
+    }
+   },
+   "pass_ci": {
+    "mean": 0.575,
+    "low": 0.453,
+    "high": 0.697,
+    "n": 40
+   },
+   "pass_ci_excluding_same_family": {
+    "mean": 0.588,
+    "low": 0.467,
+    "high": 0.708,
+    "n": 40
+   },
+   "dim_ci": {
+    "grounded": {
+     "mean": 3.98,
+     "low": 3.567,
+     "high": 4.393,
+     "n": 17
+    },
+    "answers_question": {
+     "mean": 3.642,
+     "low": 3.274,
+     "high": 4.01,
+     "n": 40
+    },
+    "correct_scope": {
+     "mean": 4.35,
+     "low": 3.928,
+     "high": 4.772,
+     "n": 40
+    },
+    "matches_reference": {
+     "mean": 3.625,
+     "low": 3.19,
+     "high": 4.06,
+     "n": 40
+    },
+    "speech_quality": {
+     "mean": 3.506,
+     "low": 3.056,
+     "high": 3.957,
+     "n": 26
+    },
+    "safety_tone": {
+     "mean": 4.733,
+     "low": 4.553,
+     "high": 4.913,
+     "n": 40
+    },
+    "good_teaching": {
+     "mean": 3.227,
+     "low": 2.809,
+     "high": 3.645,
+     "n": 25
+    },
+    "explains_concept_effectively": {
+     "mean": 3.133,
+     "low": 2.709,
+     "high": 3.557,
+     "n": 25
+    },
+    "accurate": {
+     "mean": 3.867,
+     "low": 3.428,
+     "high": 4.305,
+     "n": 25
+    },
+    "engaging_voice": {
+     "mean": 3.52,
+     "low": 3.131,
+     "high": 3.909,
+     "n": 25
+    },
+    "appropriate_depth": {
+     "mean": 3.467,
+     "low": 3.035,
+     "high": 3.898,
+     "n": 25
+    }
+   },
+   "dim_ci_excluding_same_family": {
+    "grounded": {
+     "mean": 4.059,
+     "low": 3.634,
+     "high": 4.484,
+     "n": 17
+    },
+    "answers_question": {
+     "mean": 3.763,
+     "low": 3.386,
+     "high": 4.139,
+     "n": 40
+    },
+    "correct_scope": {
+     "mean": 4.375,
+     "low": 3.962,
+     "high": 4.788,
+     "n": 40
+    },
+    "matches_reference": {
+     "mean": 3.7,
+     "low": 3.265,
+     "high": 4.135,
+     "n": 40
+    },
+    "speech_quality": {
+     "mean": 3.654,
+     "low": 3.184,
+     "high": 4.124,
+     "n": 26
+    },
+    "safety_tone": {
+     "mean": 4.763,
+     "low": 4.587,
+     "high": 4.938,
+     "n": 40
+    },
+    "good_teaching": {
+     "mean": 3.36,
+     "low": 2.916,
+     "high": 3.804,
+     "n": 25
+    },
+    "explains_concept_effectively": {
+     "mean": 3.3,
+     "low": 2.846,
+     "high": 3.754,
+     "n": 25
+    },
+    "accurate": {
+     "mean": 3.92,
+     "low": 3.475,
+     "high": 4.365,
+     "n": 25
+    },
+    "engaging_voice": {
+     "mean": 3.64,
+     "low": 3.221,
+     "high": 4.059,
+     "n": 25
+    },
+    "appropriate_depth": {
+     "mean": 3.6,
+     "low": 3.138,
+     "high": 4.062,
+     "n": 25
+    }
+   },
+   "teaching_ci": {
+    "mean": 3.443,
+    "low": 3.046,
+    "high": 3.839,
+    "n": 25
+   },
+   "core_ci": {
+    "mean": 4.032,
+    "low": 3.742,
+    "high": 4.322,
+    "n": 40
+   },
+   "by_type": {
+    "beyond": {
+     "questions": 8,
+     "route_accuracy": 0.25,
+     "route_n": 8,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 0.167,
+     "pass_rate_excluding_same_family": 0.25,
+     "teaching_mean": 2.089,
+     "routes": {
+      "course_info": 4,
+      "declined": 2,
+      "slides": 2
+     }
+    },
+    "concept": {
+     "questions": 20,
+     "route_accuracy": 0.75,
+     "route_n": 20,
+     "retrieval_hit_rate": 0.75,
+     "hit_n": 20,
+     "pass_rate": 0.55,
+     "pass_rate_excluding_same_family": 0.55,
+     "teaching_mean": 3.87,
+     "routes": {
+      "course_info": 4,
+      "declined": 1,
+      "slides": 15
+     }
+    },
+    "logistics": {
+     "questions": 6,
+     "route_accuracy": 0.67,
+     "route_n": 6,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 0.778,
+     "pass_rate_excluding_same_family": 0.75,
+     "teaching_mean": null,
+     "routes": {
+      "course_info": 1,
+      "declined": 1,
+      "faq": 3,
+      "logistics": 1
+     }
+    },
+    "off_topic": {
+     "questions": 6,
+     "route_accuracy": 1.0,
+     "route_n": 6,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 1.0,
+     "pass_rate_excluding_same_family": 1.0,
+     "teaching_mean": null,
+     "routes": {
+      "declined": 6
+     }
+    }
+   },
+   "latencies_ms": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    5,
+    5,
+    5,
+    5,
+    8,
+    9,
+    10,
+    13,
+    15,
+    15,
+    16,
+    18,
+    21,
+    131,
+    149,
+    1087,
+    1129,
+    1166,
+    1778,
+    1854,
+    1921,
+    1938,
+    2008,
+    2053,
+    2061,
+    2064,
+    2167,
+    2216,
+    2248,
+    2405,
+    2433,
+    2620,
+    3420,
+    4454,
+    4820,
+    4840,
+    4966,
+    5242,
+    5308,
+    5460,
+    5537,
+    5720,
+    5752,
+    5973,
+    6090,
+    6121,
+    6160,
+    6258,
+    6322,
+    6453,
+    6479,
+    6636,
+    6806,
+    6810,
+    6902,
+    7081,
+    7158,
+    7346,
+    7350,
+    7582,
+    7660,
+    7815,
+    7969,
+    8248,
+    11814,
+    18067,
+    20788
+   ],
+   "latencies_model_ms": [
+    1087,
+    1129,
+    1166,
+    1778,
+    1854,
+    1921,
+    1938,
+    2008,
+    2053,
+    2061,
+    2064,
+    2167,
+    2216,
+    2248,
+    2405,
+    2433,
+    2620,
+    3420,
+    4454,
+    4820,
+    4840,
+    4966,
+    5242,
+    5308,
+    5460,
+    5537,
+    5720,
+    5752,
+    5973,
+    6090,
+    6121,
+    6160,
+    6258,
+    6322,
+    6453,
+    6479,
+    6636,
+    6806,
+    6810,
+    6902,
+    7081,
+    7158,
+    7346,
+    7350,
+    7582,
+    7660,
+    7815,
+    7969,
+    8248,
+    11814,
+    18067,
+    20788
+   ],
+   "median_latency_model_ms": 5628.5,
+   "cost_per_model_answer": 0.01125,
+   "model_answers": 52,
+   "per_judge_pass": {
+    "anthropic:claude-opus-5-5": {
+     "rate": 0.55,
+     "n": 40
+    },
+    "openai:gpt-6.1-sol": {
+     "rate": 0.4,
+     "n": 40
+    },
+    "openrouter:google/gemini-3.8-flash": {
+     "rate": 0.775,
+     "n": 40
+    }
+   }
+  },
+  "anthropic:claude-opus-5-5": {
+   "route_accuracy": 0.68,
+   "route_n": 40,
+   "retrieval_hit_rate": 0.75,
+   "hit_n": 20,
+   "slide_precision": 0.56,
+   "precision_n": 15,
+   "course_purity": 0.65,
+   "purity_n": 17,
+   "mean_latency_ms": 6295,
+   "p90_latency_ms": 14547,
+   "latency_n": 40,
+   "cost_per_answer": 0.01725,
+   "total_cost": 0.69,
+   "cost_n": 40,
+   "routes": {
+    "course_info": 9,
+    "declined": 10,
+    "faq": 3,
+    "logistics": 1,
+    "slides": 17
+   },
+   "pass_rate_excluding_same_family": 0.54,
+   "judgements_excluding_same_family": 80,
+   "group_means": {
+    "core": 3.87,
+    "teaching": 3.39,
+    "web": null
+   },
+   "questions": 40,
+   "answered": 26,
+   "errors": 0,
+   "judgements": 120,
+   "judge_errors": 0,
+   "pass_rate": 0.51,
+   "scores": {
+    "grounded": 3.98,
+    "answers_question": 3.31,
+    "correct_scope": 4.28,
+    "matches_reference": 3.29,
+    "speech_quality": 3.62,
+    "safety_tone": 4.72,
+    "good_teaching": 3.11,
+    "explains_concept_effectively": 3.16,
+    "accurate": 3.86,
+    "engaging_voice": 3.69,
+    "appropriate_depth": 3.15,
+    "cites_sources": null,
+    "labeled_beyond_slides": null
+   },
+   "score_n": {
+    "grounded": 51,
+    "answers_question": 120,
+    "correct_scope": 120,
+    "matches_reference": 120,
+    "speech_quality": 77,
+    "safety_tone": 120,
+    "good_teaching": 70,
+    "explains_concept_effectively": 70,
+    "accurate": 70,
+    "engaging_voice": 71,
+    "appropriate_depth": 71,
+    "cites_sources": 0,
+    "labeled_beyond_slides": 0
+   },
+   "decline_accuracy": 0.8,
+   "answerable_declined": 1,
+   "fallback_rate": 0.0,
+   "judge_agreement": 0.74,
+   "median_latency_ms": 5433,
+   "per_judge": {
+    "anthropic:claude-opus-5-5": {
+     "pass_rate": 0.45,
+     "judged": 40
+    },
+    "openai:gpt-6.1-sol": {
+     "pass_rate": 0.38,
+     "judged": 40
+    },
+    "openrouter:google/gemini-3.8-flash": {
+     "pass_rate": 0.7,
+     "judged": 40
+    }
+   },
+   "pass_ci": {
+    "mean": 0.508,
+    "low": 0.382,
+    "high": 0.634,
+    "n": 40
+   },
+   "pass_ci_excluding_same_family": {
+    "mean": 0.537,
+    "low": 0.409,
+    "high": 0.666,
+    "n": 40
+   },
+   "dim_ci": {
+    "grounded": {
+     "mean": 3.98,
+     "low": 3.509,
+     "high": 4.452,
+     "n": 17
+    },
+    "answers_question": {
+     "mean": 3.308,
+     "low": 2.881,
+     "high": 3.736,
+     "n": 40
+    },
+    "correct_scope": {
+     "mean": 4.283,
+     "low": 3.858,
+     "high": 4.709,
+     "n": 40
+    },
+    "matches_reference": {
+     "mean": 3.292,
+     "low": 2.806,
+     "high": 3.777,
+     "n": 40
+    },
+    "speech_quality": {
+     "mean": 3.596,
+     "low": 3.119,
+     "high": 4.073,
+     "n": 26
+    },
+    "safety_tone": {
+     "mean": 4.725,
+     "low": 4.538,
+     "high": 4.912,
+     "n": 40
+    },
+    "good_teaching": {
+     "mean": 3.056,
+     "low": 2.583,
+     "high": 3.528,
+     "n": 24
+    },
+    "explains_concept_effectively": {
+     "mean": 3.097,
+     "low": 2.573,
+     "high": 3.621,
+     "n": 24
+    },
+    "accurate": {
+     "mean": 3.778,
+     "low": 3.407,
+     "high": 4.148,
+     "n": 24
+    },
+    "engaging_voice": {
+     "mean": 3.573,
+     "low": 3.053,
+     "high": 4.094,
+     "n": 25
+    },
+    "appropriate_depth": {
+     "mean": 3.04,
+     "low": 2.543,
+     "high": 3.537,
+     "n": 25
+    }
+   },
+   "dim_ci_excluding_same_family": {
+    "grounded": {
+     "mean": 4.029,
+     "low": 3.536,
+     "high": 4.523,
+     "n": 17
+    },
+    "answers_question": {
+     "mean": 3.438,
+     "low": 2.995,
+     "high": 3.88,
+     "n": 40
+    },
+    "correct_scope": {
+     "mean": 4.338,
+     "low": 3.929,
+     "high": 4.746,
+     "n": 40
+    },
+    "matches_reference": {
+     "mean": 3.362,
+     "low": 2.876,
+     "high": 3.849,
+     "n": 40
+    },
+    "speech_quality": {
+     "mean": 3.75,
+     "low": 3.268,
+     "high": 4.232,
+     "n": 26
+    },
+    "safety_tone": {
+     "mean": 4.725,
+     "low": 4.524,
+     "high": 4.926,
+     "n": 40
+    },
+    "good_teaching": {
+     "mean": 3.229,
+     "low": 2.739,
+     "high": 3.719,
+     "n": 24
+    },
+    "explains_concept_effectively": {
+     "mean": 3.25,
+     "low": 2.697,
+     "high": 3.803,
+     "n": 24
+    },
+    "accurate": {
+     "mean": 3.854,
+     "low": 3.444,
+     "high": 4.265,
+     "n": 24
+    },
+    "engaging_voice": {
+     "mean": 3.64,
+     "low": 3.109,
+     "high": 4.171,
+     "n": 25
+    },
+    "appropriate_depth": {
+     "mean": 3.12,
+     "low": 2.589,
+     "high": 3.651,
+     "n": 25
+    }
+   },
+   "teaching_ci": {
+    "mean": 3.265,
+    "low": 2.813,
+    "high": 3.718,
+    "n": 25
+   },
+   "core_ci": {
+    "mean": 3.883,
+    "low": 3.562,
+    "high": 4.204,
+    "n": 40
+   },
+   "by_type": {
+    "beyond": {
+     "questions": 8,
+     "route_accuracy": 0.25,
+     "route_n": 8,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 0.167,
+     "pass_rate_excluding_same_family": 0.25,
+     "teaching_mean": 2.283,
+     "routes": {
+      "course_info": 4,
+      "declined": 2,
+      "slides": 2
+     }
+    },
+    "concept": {
+     "questions": 20,
+     "route_accuracy": 0.75,
+     "route_n": 20,
+     "retrieval_hit_rate": 0.75,
+     "hit_n": 20,
+     "pass_rate": 0.433,
+     "pass_rate_excluding_same_family": 0.45,
+     "teaching_mean": 3.575,
+     "routes": {
+      "course_info": 4,
+      "declined": 1,
+      "slides": 15
+     }
+    },
+    "logistics": {
+     "questions": 6,
+     "route_accuracy": 0.67,
+     "route_n": 6,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 0.722,
+     "pass_rate_excluding_same_family": 0.75,
+     "teaching_mean": null,
+     "routes": {
+      "course_info": 1,
+      "declined": 1,
+      "faq": 3,
+      "logistics": 1
+     }
+    },
+    "off_topic": {
+     "questions": 6,
+     "route_accuracy": 1.0,
+     "route_n": 6,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 1.0,
+     "pass_rate_excluding_same_family": 1.0,
+     "teaching_mean": null,
+     "routes": {
+      "declined": 6
+     }
+    }
+   },
+   "latencies_ms": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    5,
+    5,
+    5,
+    5,
+    5,
+    6,
+    6,
+    7,
+    8,
+    9,
+    13,
+    14,
+    16,
+    137,
+    139,
+    142,
+    1985,
+    2262,
+    2598,
+    2925,
+    2928,
+    3358,
+    3532,
+    3577,
+    3828,
+    3933,
+    4001,
+    4043,
+    4584,
+    5433,
+    5447,
+    6037,
+    6313,
+    6855,
+    7477,
+    7638,
+    7654,
+    7803,
+    7854,
+    7999,
+    8215,
+    8215,
+    8337,
+    9348,
+    9523,
+    9608,
+    9624,
+    9718,
+    9851,
+    9856,
+    10164,
+    10389,
+    11192,
+    11598,
+    11906,
+    12140,
+    12572,
+    12734,
+    13049,
+    13422,
+    14531,
+    14547,
+    15720,
+    16235,
+    17181,
+    19577,
+    23054,
+    25473
+   ],
+   "latencies_model_ms": [
+    1985,
+    2262,
+    2598,
+    2925,
+    2928,
+    3358,
+    3532,
+    3577,
+    3828,
+    3933,
+    4001,
+    4043,
+    4584,
+    5433,
+    5447,
+    6037,
+    6313,
+    6855,
+    7477,
+    7638,
+    7654,
+    7803,
+    7854,
+    7999,
+    8215,
+    8215,
+    8337,
+    9348,
+    9523,
+    9608,
+    9624,
+    9718,
+    9851,
+    9856,
+    10164,
+    10389,
+    11192,
+    11598,
+    11906,
+    12140,
+    12572,
+    12734,
+    13049,
+    13422,
+    14531,
+    14547,
+    15720,
+    16235,
+    17181,
+    19577,
+    23054,
+    25473
+   ],
+   "median_latency_model_ms": 8276.0,
+   "cost_per_model_answer": 0.02685,
+   "model_answers": 52,
+   "per_judge_pass": {
+    "anthropic:claude-opus-5-5": {
+     "rate": 0.45,
+     "n": 40
+    },
+    "openai:gpt-6.1-sol": {
+     "rate": 0.375,
+     "n": 40
+    },
+    "openrouter:google/gemini-3.8-flash": {
+     "rate": 0.7,
+     "n": 40
+    }
+   }
+  },
+  "anthropic:claude-fable-5-1": {
+   "route_accuracy": 0.68,
+   "route_n": 40,
+   "retrieval_hit_rate": 0.75,
+   "hit_n": 20,
+   "slide_precision": 0.56,
+   "precision_n": 15,
+   "course_purity": 0.65,
+   "purity_n": 17,
+   "mean_latency_ms": 7440,
+   "p90_latency_ms": 17185,
+   "latency_n": 40,
+   "cost_per_answer": 0.04598,
+   "total_cost": 1.8393,
+   "cost_n": 40,
+   "routes": {
+    "course_info": 9,
+    "declined": 10,
+    "faq": 3,
+    "logistics": 1,
+    "slides": 17
+   },
+   "pass_rate_excluding_same_family": 0.54,
+   "judgements_excluding_same_family": 80,
+   "group_means": {
+    "core": 3.84,
+    "teaching": 3.33,
+    "web": null
+   },
+   "questions": 40,
+   "answered": 26,
+   "errors": 0,
+   "judgements": 120,
+   "judge_errors": 0,
+   "pass_rate": 0.51,
+   "scores": {
+    "grounded": 3.84,
+    "answers_question": 3.36,
+    "correct_scope": 4.25,
+    "matches_reference": 3.41,
+    "speech_quality": 3.44,
+    "safety_tone": 4.77,
+    "good_teaching": 3.01,
+    "explains_concept_effectively": 3.1,
+    "accurate": 3.85,
+    "engaging_voice": 3.58,
+    "appropriate_depth": 3.11,
+    "cites_sources": null,
+    "labeled_beyond_slides": null
+   },
+   "score_n": {
+    "grounded": 51,
+    "answers_question": 120,
+    "correct_scope": 120,
+    "matches_reference": 120,
+    "speech_quality": 77,
+    "safety_tone": 120,
+    "good_teaching": 72,
+    "explains_concept_effectively": 72,
+    "accurate": 72,
+    "engaging_voice": 72,
+    "appropriate_depth": 72,
+    "cites_sources": 0,
+    "labeled_beyond_slides": 0
+   },
+   "decline_accuracy": 0.8,
+   "answerable_declined": 1,
+   "fallback_rate": 0.0,
+   "judge_agreement": 0.73,
+   "median_latency_ms": 5843,
+   "per_judge": {
+    "anthropic:claude-opus-5-5": {
+     "pass_rate": 0.45,
+     "judged": 40
+    },
+    "openai:gpt-6.1-sol": {
+     "pass_rate": 0.35,
+     "judged": 40
+    },
+    "openrouter:google/gemini-3.8-flash": {
+     "pass_rate": 0.72,
+     "judged": 40
+    }
+   },
+   "pass_ci": {
+    "mean": 0.508,
+    "low": 0.382,
+    "high": 0.634,
+    "n": 40
+   },
+   "pass_ci_excluding_same_family": {
+    "mean": 0.537,
+    "low": 0.414,
+    "high": 0.661,
+    "n": 40
+   },
+   "dim_ci": {
+    "grounded": {
+     "mean": 3.843,
+     "low": 3.427,
+     "high": 4.259,
+     "n": 17
+    },
+    "answers_question": {
+     "mean": 3.358,
+     "low": 2.924,
+     "high": 3.792,
+     "n": 40
+    },
+    "correct_scope": {
+     "mean": 4.25,
+     "low": 3.803,
+     "high": 4.697,
+     "n": 40
+    },
+    "matches_reference": {
+     "mean": 3.408,
+     "low": 2.928,
+     "high": 3.889,
+     "n": 40
+    },
+    "speech_quality": {
+     "mean": 3.41,
+     "low": 2.936,
+     "high": 3.885,
+     "n": 26
+    },
+    "safety_tone": {
+     "mean": 4.767,
+     "low": 4.645,
+     "high": 4.889,
+     "n": 40
+    },
+    "good_teaching": {
+     "mean": 3.014,
+     "low": 2.549,
+     "high": 3.479,
+     "n": 24
+    },
+    "explains_concept_effectively": {
+     "mean": 3.097,
+     "low": 2.627,
+     "high": 3.568,
+     "n": 24
+    },
+    "accurate": {
+     "mean": 3.847,
+     "low": 3.56,
+     "high": 4.135,
+     "n": 24
+    },
+    "engaging_voice": {
+     "mean": 3.583,
+     "low": 3.003,
+     "high": 4.163,
+     "n": 24
+    },
+    "appropriate_depth": {
+     "mean": 3.111,
+     "low": 2.631,
+     "high": 3.591,
+     "n": 24
+    }
+   },
+   "dim_ci_excluding_same_family": {
+    "grounded": {
+     "mean": 3.971,
+     "low": 3.549,
+     "high": 4.392,
+     "n": 17
+    },
+    "answers_question": {
+     "mean": 3.525,
+     "low": 3.076,
+     "high": 3.974,
+     "n": 40
+    },
+    "correct_scope": {
+     "mean": 4.275,
+     "low": 3.838,
+     "high": 4.712,
+     "n": 40
+    },
+    "matches_reference": {
+     "mean": 3.487,
+     "low": 2.998,
+     "high": 3.977,
+     "n": 40
+    },
+    "speech_quality": {
+     "mean": 3.481,
+     "low": 3.001,
+     "high": 3.96,
+     "n": 26
+    },
+    "safety_tone": {
+     "mean": 4.775,
+     "low": 4.659,
+     "high": 4.891,
+     "n": 40
+    },
+    "good_teaching": {
+     "mean": 3.208,
+     "low": 2.722,
+     "high": 3.694,
+     "n": 24
+    },
+    "explains_concept_effectively": {
+     "mean": 3.271,
+     "low": 2.789,
+     "high": 3.753,
+     "n": 24
+    },
+    "accurate": {
+     "mean": 3.917,
+     "low": 3.583,
+     "high": 4.25,
+     "n": 24
+    },
+    "engaging_voice": {
+     "mean": 3.625,
+     "low": 3.037,
+     "high": 4.213,
+     "n": 24
+    },
+    "appropriate_depth": {
+     "mean": 3.229,
+     "low": 2.716,
+     "high": 3.743,
+     "n": 24
+    }
+   },
+   "teaching_ci": {
+    "mean": 3.331,
+    "low": 2.899,
+    "high": 3.762,
+    "n": 24
+   },
+   "core_ci": {
+    "mean": 3.885,
+    "low": 3.565,
+    "high": 4.205,
+    "n": 40
+   },
+   "by_type": {
+    "beyond": {
+     "questions": 8,
+     "route_accuracy": 0.25,
+     "route_n": 8,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 0.208,
+     "pass_rate_excluding_same_family": 0.25,
+     "teaching_mean": 2.293,
+     "routes": {
+      "course_info": 4,
+      "declined": 2,
+      "slides": 2
+     }
+    },
+    "concept": {
+     "questions": 20,
+     "route_accuracy": 0.75,
+     "route_n": 20,
+     "retrieval_hit_rate": 0.75,
+     "hit_n": 20,
+     "pass_rate": 0.4,
+     "pass_rate_excluding_same_family": 0.425,
+     "teaching_mean": 3.604,
+     "routes": {
+      "course_info": 4,
+      "declined": 1,
+      "slides": 15
+     }
+    },
+    "logistics": {
+     "questions": 6,
+     "route_accuracy": 0.67,
+     "route_n": 6,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 0.778,
+     "pass_rate_excluding_same_family": 0.833,
+     "teaching_mean": null,
+     "routes": {
+      "course_info": 1,
+      "declined": 1,
+      "faq": 3,
+      "logistics": 1
+     }
+    },
+    "off_topic": {
+     "questions": 6,
+     "route_accuracy": 1.0,
+     "route_n": 6,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 1.0,
+     "pass_rate_excluding_same_family": 1.0,
+     "teaching_mean": null,
+     "routes": {
+      "declined": 6
+     }
+    }
+   },
+   "latencies_ms": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    5,
+    5,
+    9,
+    11,
+    12,
+    13,
+    13,
+    13,
+    14,
+    126,
+    131,
+    166,
+    3002,
+    3026,
+    3100,
+    3115,
+    3143,
+    3200,
+    3446,
+    3478,
+    3925,
+    5278,
+    5446,
+    5600,
+    5843,
+    5934,
+    5982,
+    6366,
+    8086,
+    8219,
+    8513,
+    9304,
+    9517,
+    12067,
+    12142,
+    12191,
+    12224,
+    12431,
+    12691,
+    12914,
+    13106,
+    13351,
+    13544,
+    14069,
+    14260,
+    14298,
+    14370,
+    14505,
+    14731,
+    14976,
+    15345,
+    15549,
+    15774,
+    15970,
+    16496,
+    17185,
+    18603,
+    18746,
+    20022,
+    20166,
+    20594,
+    20804,
+    22173,
+    29936
+   ],
+   "latencies_model_ms": [
+    3002,
+    3026,
+    3100,
+    3115,
+    3143,
+    3200,
+    3446,
+    3478,
+    3925,
+    5278,
+    5446,
+    5600,
+    5843,
+    5934,
+    5982,
+    6366,
+    8086,
+    8219,
+    8513,
+    9304,
+    9517,
+    12067,
+    12142,
+    12191,
+    12224,
+    12431,
+    12691,
+    12914,
+    13106,
+    13351,
+    13544,
+    14069,
+    14260,
+    14298,
+    14370,
+    14505,
+    14731,
+    14976,
+    15345,
+    15549,
+    15774,
+    15970,
+    16496,
+    17185,
+    18603,
+    18746,
+    20022,
+    20166,
+    20594,
+    20804,
+    22173,
+    29936
+   ],
+   "median_latency_model_ms": 12561.0,
+   "cost_per_model_answer": 0.07202,
+   "model_answers": 52,
+   "per_judge_pass": {
+    "anthropic:claude-opus-5-5": {
+     "rate": 0.45,
+     "n": 40
+    },
+    "openai:gpt-6.1-sol": {
+     "rate": 0.35,
+     "n": 40
+    },
+    "openrouter:google/gemini-3.8-flash": {
+     "rate": 0.725,
+     "n": 40
+    }
+   }
+  },
+  "openai:gpt-5.6-sol": {
+   "route_accuracy": 0.68,
+   "route_n": 40,
+   "retrieval_hit_rate": 0.75,
+   "hit_n": 20,
+   "slide_precision": 0.56,
+   "precision_n": 15,
+   "course_purity": 0.65,
+   "purity_n": 17,
+   "mean_latency_ms": 9174,
+   "p90_latency_ms": 33919,
+   "latency_n": 40,
+   "cost_per_answer": 0.01058,
+   "total_cost": 0.423,
+   "cost_n": 40,
+   "routes": {
+    "course_info": 9,
+    "declined": 10,
+    "faq": 3,
+    "logistics": 1,
+    "slides": 17
+   },
+   "pass_rate_excluding_same_family": 0.72,
+   "judgements_excluding_same_family": 80,
+   "group_means": {
+    "core": 4.13,
+    "teaching": 3.7,
+    "web": 1
+   },
+   "questions": 40,
+   "answered": 26,
+   "errors": 0,
+   "judgements": 120,
+   "judge_errors": 0,
+   "pass_rate": 0.68,
+   "scores": {
+    "grounded": 4.37,
+    "answers_question": 3.78,
+    "correct_scope": 4.3,
+    "matches_reference": 3.74,
+    "speech_quality": 3.83,
+    "safety_tone": 4.76,
+    "good_teaching": 3.54,
+    "explains_concept_effectively": 3.39,
+    "accurate": 4.13,
+    "engaging_voice": 3.7,
+    "appropriate_depth": 3.75,
+    "cites_sources": 1,
+    "labeled_beyond_slides": 1
+   },
+   "score_n": {
+    "grounded": 51,
+    "answers_question": 120,
+    "correct_scope": 120,
+    "matches_reference": 120,
+    "speech_quality": 77,
+    "safety_tone": 120,
+    "good_teaching": 71,
+    "explains_concept_effectively": 71,
+    "accurate": 71,
+    "engaging_voice": 71,
+    "appropriate_depth": 71,
+    "cites_sources": 5,
+    "labeled_beyond_slides": 5
+   },
+   "decline_accuracy": 0.8,
+   "answerable_declined": 1,
+   "fallback_rate": 0.08,
+   "judge_agreement": 0.85,
+   "median_latency_ms": 4051,
+   "per_judge": {
+    "anthropic:claude-opus-5-5": {
+     "pass_rate": 0.68,
+     "judged": 40
+    },
+    "openai:gpt-6.1-sol": {
+     "pass_rate": 0.6,
+     "judged": 40
+    },
+    "openrouter:google/gemini-3.8-flash": {
+     "pass_rate": 0.78,
+     "judged": 40
+    }
+   },
+   "pass_ci": {
+    "mean": 0.683,
+    "low": 0.555,
+    "high": 0.811,
+    "n": 40
+   },
+   "pass_ci_excluding_same_family": {
+    "mean": 0.725,
+    "low": 0.594,
+    "high": 0.856,
+    "n": 40
+   },
+   "dim_ci": {
+    "grounded": {
+     "mean": 4.373,
+     "low": 4.058,
+     "high": 4.687,
+     "n": 17
+    },
+    "answers_question": {
+     "mean": 3.783,
+     "low": 3.365,
+     "high": 4.202,
+     "n": 40
+    },
+    "correct_scope": {
+     "mean": 4.3,
+     "low": 3.854,
+     "high": 4.746,
+     "n": 40
+    },
+    "matches_reference": {
+     "mean": 3.742,
+     "low": 3.274,
+     "high": 4.209,
+     "n": 40
+    },
+    "speech_quality": {
+     "mean": 3.808,
+     "low": 3.333,
+     "high": 4.282,
+     "n": 26
+    },
+    "safety_tone": {
+     "mean": 4.758,
+     "low": 4.557,
+     "high": 4.96,
+     "n": 40
+    },
+    "good_teaching": {
+     "mean": 3.4,
+     "low": 2.891,
+     "high": 3.909,
+     "n": 25
+    },
+    "explains_concept_effectively": {
+     "mean": 3.267,
+     "low": 2.779,
+     "high": 3.755,
+     "n": 25
+    },
+    "accurate": {
+     "mean": 3.96,
+     "low": 3.457,
+     "high": 4.463,
+     "n": 25
+    },
+    "engaging_voice": {
+     "mean": 3.587,
+     "low": 3.201,
+     "high": 3.972,
+     "n": 25
+    },
+    "appropriate_depth": {
+     "mean": 3.6,
+     "low": 3.09,
+     "high": 4.11,
+     "n": 25
+    }
+   },
+   "dim_ci_excluding_same_family": {
+    "grounded": {
+     "mean": 4.412,
+     "low": 4.136,
+     "high": 4.688,
+     "n": 17
+    },
+    "answers_question": {
+     "mean": 3.875,
+     "low": 3.454,
+     "high": 4.296,
+     "n": 40
+    },
+    "correct_scope": {
+     "mean": 4.263,
+     "low": 3.798,
+     "high": 4.727,
+     "n": 40
+    },
+    "matches_reference": {
+     "mean": 3.75,
+     "low": 3.277,
+     "high": 4.223,
+     "n": 40
+    },
+    "speech_quality": {
+     "mean": 3.808,
+     "low": 3.29,
+     "high": 4.325,
+     "n": 26
+    },
+    "safety_tone": {
+     "mean": 4.775,
+     "low": 4.586,
+     "high": 4.964,
+     "n": 40
+    },
+    "good_teaching": {
+     "mean": 3.52,
+     "low": 2.989,
+     "high": 4.051,
+     "n": 25
+    },
+    "explains_concept_effectively": {
+     "mean": 3.38,
+     "low": 2.877,
+     "high": 3.883,
+     "n": 25
+    },
+    "accurate": {
+     "mean": 4.02,
+     "low": 3.531,
+     "high": 4.509,
+     "n": 25
+    },
+    "engaging_voice": {
+     "mean": 3.68,
+     "low": 3.272,
+     "high": 4.088,
+     "n": 25
+    },
+    "appropriate_depth": {
+     "mean": 3.74,
+     "low": 3.213,
+     "high": 4.267,
+     "n": 25
+    }
+   },
+   "teaching_ci": {
+    "mean": 3.563,
+    "low": 3.1,
+    "high": 4.025,
+    "n": 25
+   },
+   "core_ci": {
+    "mean": 4.134,
+    "low": 3.816,
+    "high": 4.452,
+    "n": 40
+   },
+   "by_type": {
+    "beyond": {
+     "questions": 8,
+     "route_accuracy": 0.25,
+     "route_n": 8,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 0.167,
+     "pass_rate_excluding_same_family": 0.125,
+     "teaching_mean": 2.078,
+     "routes": {
+      "course_info": 4,
+      "declined": 2,
+      "slides": 2
+     }
+    },
+    "concept": {
+     "questions": 20,
+     "route_accuracy": 0.75,
+     "route_n": 20,
+     "retrieval_hit_rate": 0.75,
+     "hit_n": 20,
+     "pass_rate": 0.767,
+     "pass_rate_excluding_same_family": 0.85,
+     "teaching_mean": 4.032,
+     "routes": {
+      "course_info": 4,
+      "declined": 1,
+      "slides": 15
+     }
+    },
+    "logistics": {
+     "questions": 6,
+     "route_accuracy": 0.67,
+     "route_n": 6,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 0.778,
+     "pass_rate_excluding_same_family": 0.833,
+     "teaching_mean": null,
+     "routes": {
+      "course_info": 1,
+      "declined": 1,
+      "faq": 3,
+      "logistics": 1
+     }
+    },
+    "off_topic": {
+     "questions": 6,
+     "route_accuracy": 1.0,
+     "route_n": 6,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 1.0,
+     "pass_rate_excluding_same_family": 1.0,
+     "teaching_mean": null,
+     "routes": {
+      "declined": 6
+     }
+    }
+   },
+   "latencies_ms": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    5,
+    6,
+    6,
+    6,
+    7,
+    10,
+    12,
+    13,
+    13,
+    14,
+    17,
+    142,
+    143,
+    154,
+    1568,
+    1637,
+    1956,
+    2652,
+    2675,
+    2776,
+    2965,
+    3187,
+    3227,
+    3394,
+    3398,
+    3699,
+    3778,
+    3839,
+    4051,
+    4328,
+    4576,
+    5073,
+    6402,
+    6841,
+    8424,
+    8623,
+    8633,
+    8869,
+    10362,
+    10599,
+    10761,
+    10766,
+    11171,
+    11237,
+    11470,
+    11665,
+    12706,
+    12733,
+    14301,
+    15074,
+    16233,
+    16380,
+    17277,
+    17643,
+    19729,
+    21183,
+    21913,
+    22208,
+    28864,
+    28870,
+    33919,
+    36416,
+    42937,
+    46030,
+    50037,
+    55293
+   ],
+   "latencies_model_ms": [
+    1568,
+    1637,
+    1956,
+    2652,
+    2675,
+    2776,
+    2965,
+    3187,
+    3227,
+    3394,
+    3398,
+    3699,
+    3778,
+    3839,
+    4051,
+    4328,
+    4576,
+    5073,
+    6402,
+    6841,
+    8424,
+    8623,
+    8633,
+    8869,
+    10362,
+    10599,
+    10761,
+    10766,
+    11171,
+    11237,
+    11470,
+    11665,
+    12706,
+    12733,
+    14301,
+    15074,
+    16233,
+    16380,
+    17277,
+    17643,
+    19729,
+    21183,
+    21913,
+    22208,
+    28864,
+    28870,
+    33919,
+    36416,
+    42937,
+    46030,
+    50037,
+    55293
+   ],
+   "median_latency_model_ms": 10680.0,
+   "cost_per_model_answer": 0.01575,
+   "model_answers": 52,
+   "per_judge_pass": {
+    "anthropic:claude-opus-5-5": {
+     "rate": 0.675,
+     "n": 40
+    },
+    "openai:gpt-6.1-sol": {
+     "rate": 0.6,
+     "n": 40
+    },
+    "openrouter:google/gemini-3.8-flash": {
+     "rate": 0.775,
+     "n": 40
+    }
+   }
+  },
+  "openai:gpt-6.1-sol": {
+   "route_accuracy": 0.68,
+   "route_n": 40,
+   "retrieval_hit_rate": 0.75,
+   "hit_n": 20,
+   "slide_precision": 0.56,
+   "precision_n": 15,
+   "course_purity": 0.65,
+   "purity_n": 17,
+   "mean_latency_ms": 8526,
+   "p90_latency_ms": 17672,
+   "latency_n": 40,
+   "cost_per_answer": 0.00657,
+   "total_cost": 0.2628,
+   "cost_n": 40,
+   "routes": {
+    "course_info": 9,
+    "declined": 10,
+    "faq": 3,
+    "logistics": 1,
+    "slides": 17
+   },
+   "pass_rate_excluding_same_family": 0.69,
+   "judgements_excluding_same_family": 80,
+   "group_means": {
+    "core": 4.12,
+    "teaching": 3.8,
+    "web": 1
+   },
+   "questions": 40,
+   "answered": 26,
+   "errors": 0,
+   "judgements": 120,
+   "judge_errors": 0,
+   "pass_rate": 0.65,
+   "scores": {
+    "grounded": 4.41,
+    "answers_question": 3.68,
+    "correct_scope": 4.28,
+    "matches_reference": 3.67,
+    "speech_quality": 3.86,
+    "safety_tone": 4.79,
+    "good_teaching": 3.5,
+    "explains_concept_effectively": 3.51,
+    "accurate": 4.39,
+    "engaging_voice": 3.87,
+    "appropriate_depth": 3.71,
+    "cites_sources": 1,
+    "labeled_beyond_slides": 1
+   },
+   "score_n": {
+    "grounded": 51,
+    "answers_question": 120,
+    "correct_scope": 120,
+    "matches_reference": 120,
+    "speech_quality": 78,
+    "safety_tone": 120,
+    "good_teaching": 70,
+    "explains_concept_effectively": 70,
+    "accurate": 70,
+    "engaging_voice": 70,
+    "appropriate_depth": 70,
+    "cites_sources": 2,
+    "labeled_beyond_slides": 3
+   },
+   "decline_accuracy": 0.8,
+   "answerable_declined": 1,
+   "fallback_rate": 0.04,
+   "judge_agreement": 0.85,
+   "median_latency_ms": 4883,
+   "per_judge": {
+    "anthropic:claude-opus-5-5": {
+     "pass_rate": 0.62,
+     "judged": 40
+    },
+    "openai:gpt-6.1-sol": {
+     "pass_rate": 0.57,
+     "judged": 40
+    },
+    "openrouter:google/gemini-3.8-flash": {
+     "pass_rate": 0.75,
+     "judged": 40
+    }
+   },
+   "pass_ci": {
+    "mean": 0.65,
+    "low": 0.518,
+    "high": 0.782,
+    "n": 40
+   },
+   "pass_ci_excluding_same_family": {
+    "mean": 0.688,
+    "low": 0.553,
+    "high": 0.822,
+    "n": 40
+   },
+   "dim_ci": {
+    "grounded": {
+     "mean": 4.412,
+     "low": 4.082,
+     "high": 4.741,
+     "n": 17
+    },
+    "answers_question": {
+     "mean": 3.683,
+     "low": 3.279,
+     "high": 4.088,
+     "n": 40
+    },
+    "correct_scope": {
+     "mean": 4.275,
+     "low": 3.827,
+     "high": 4.723,
+     "n": 40
+    },
+    "matches_reference": {
+     "mean": 3.675,
+     "low": 3.207,
+     "high": 4.143,
+     "n": 40
+    },
+    "speech_quality": {
+     "mean": 3.859,
+     "low": 3.443,
+     "high": 4.275,
+     "n": 26
+    },
+    "safety_tone": {
+     "mean": 4.792,
+     "low": 4.627,
+     "high": 4.957,
+     "n": 40
+    },
+    "good_teaching": {
+     "mean": 3.431,
+     "low": 3.008,
+     "high": 3.853,
+     "n": 24
+    },
+    "explains_concept_effectively": {
+     "mean": 3.444,
+     "low": 3.012,
+     "high": 3.877,
+     "n": 24
+    },
+    "accurate": {
+     "mean": 4.292,
+     "low": 3.878,
+     "high": 4.705,
+     "n": 24
+    },
+    "engaging_voice": {
+     "mean": 3.792,
+     "low": 3.409,
+     "high": 4.174,
+     "n": 24
+    },
+    "appropriate_depth": {
+     "mean": 3.639,
+     "low": 3.181,
+     "high": 4.097,
+     "n": 24
+    }
+   },
+   "dim_ci_excluding_same_family": {
+    "grounded": {
+     "mean": 4.471,
+     "low": 4.137,
+     "high": 4.804,
+     "n": 17
+    },
+    "answers_question": {
+     "mean": 3.775,
+     "low": 3.355,
+     "high": 4.195,
+     "n": 40
+    },
+    "correct_scope": {
+     "mean": 4.225,
+     "low": 3.747,
+     "high": 4.703,
+     "n": 40
+    },
+    "matches_reference": {
+     "mean": 3.725,
+     "low": 3.252,
+     "high": 4.198,
+     "n": 40
+    },
+    "speech_quality": {
+     "mean": 3.827,
+     "low": 3.385,
+     "high": 4.269,
+     "n": 26
+    },
+    "safety_tone": {
+     "mean": 4.775,
+     "low": 4.611,
+     "high": 4.939,
+     "n": 40
+    },
+    "good_teaching": {
+     "mean": 3.562,
+     "low": 3.099,
+     "high": 4.026,
+     "n": 24
+    },
+    "explains_concept_effectively": {
+     "mean": 3.583,
+     "low": 3.131,
+     "high": 4.035,
+     "n": 24
+    },
+    "accurate": {
+     "mean": 4.25,
+     "low": 3.819,
+     "high": 4.681,
+     "n": 24
+    },
+    "engaging_voice": {
+     "mean": 3.875,
+     "low": 3.47,
+     "high": 4.28,
+     "n": 24
+    },
+    "appropriate_depth": {
+     "mean": 3.792,
+     "low": 3.302,
+     "high": 4.282,
+     "n": 24
+    }
+   },
+   "teaching_ci": {
+    "mean": 3.719,
+    "low": 3.315,
+    "high": 4.124,
+    "n": 24
+   },
+   "core_ci": {
+    "mean": 4.11,
+    "low": 3.8,
+    "high": 4.419,
+    "n": 40
+   },
+   "by_type": {
+    "beyond": {
+     "questions": 8,
+     "route_accuracy": 0.25,
+     "route_n": 8,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 0.167,
+     "pass_rate_excluding_same_family": 0.125,
+     "teaching_mean": 2.36,
+     "routes": {
+      "course_info": 4,
+      "declined": 2,
+      "slides": 2
+     }
+    },
+    "concept": {
+     "questions": 20,
+     "route_accuracy": 0.75,
+     "route_n": 20,
+     "retrieval_hit_rate": 0.75,
+     "hit_n": 20,
+     "pass_rate": 0.717,
+     "pass_rate_excluding_same_family": 0.8,
+     "teaching_mean": 4.077,
+     "routes": {
+      "course_info": 4,
+      "declined": 1,
+      "slides": 15
+     }
+    },
+    "logistics": {
+     "questions": 6,
+     "route_accuracy": 0.67,
+     "route_n": 6,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 0.722,
+     "pass_rate_excluding_same_family": 0.75,
+     "teaching_mean": null,
+     "routes": {
+      "course_info": 1,
+      "declined": 1,
+      "faq": 3,
+      "logistics": 1
+     }
+    },
+    "off_topic": {
+     "questions": 6,
+     "route_accuracy": 1.0,
+     "route_n": 6,
+     "retrieval_hit_rate": null,
+     "hit_n": 0,
+     "pass_rate": 1.0,
+     "pass_rate_excluding_same_family": 1.0,
+     "teaching_mean": null,
+     "routes": {
+      "declined": 6
+     }
+    }
+   },
+   "latencies_ms": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    5,
+    6,
+    8,
+    9,
+    9,
+    11,
+    13,
+    13,
+    14,
+    14,
+    155,
+    1652,
+    2009,
+    2168,
+    2199,
+    2555,
+    3086,
+    3582,
+    3718,
+    4151,
+    4508,
+    4727,
+    4883,
+    5089,
+    5331,
+    5611,
+    5740,
+    6272,
+    7269,
+    7801,
+    8027,
+    10011,
+    10301,
+    13153,
+    13216,
+    13775,
+    13992,
+    14194,
+    14297,
+    14965,
+    15031,
+    15031,
+    15520,
+    15659,
+    15810,
+    15905,
+    16104,
+    16192,
+    16245,
+    16278,
+    16535,
+    16796,
+    16803,
+    16890,
+    17171,
+    17672,
+    18098,
+    19871,
+    29207,
+    31752,
+    35344,
+    37226,
+    37253
+   ],
+   "latencies_model_ms": [
+    1652,
+    2009,
+    2168,
+    2199,
+    2555,
+    3086,
+    3582,
+    3718,
+    4151,
+    4508,
+    4727,
+    4883,
+    5089,
+    5331,
+    5611,
+    5740,
+    6272,
+    7269,
+    7801,
+    8027,
+    10011,
+    10301,
+    13153,
+    13216,
+    13775,
+    13992,
+    14194,
+    14297,
+    14965,
+    15031,
+    15031,
+    15520,
+    15659,
+    15810,
+    15905,
+    16104,
+    16192,
+    16245,
+    16278,
+    16535,
+    16796,
+    16803,
+    16890,
+    17171,
+    17672,
+    18098,
+    19871,
+    29207,
+    31752,
+    35344,
+    37226,
+    37253
+   ],
+   "median_latency_model_ms": 14093.0,
+   "cost_per_model_answer": 0.00984,
+   "model_answers": 52,
+   "per_judge_pass": {
+    "anthropic:claude-opus-5-5": {
+     "rate": 0.625,
+     "n": 40
+    },
+    "openai:gpt-6.1-sol": {
+     "rate": 0.575,
+     "n": 40
+    },
+    "openrouter:google/gemini-3.8-flash": {
+     "rate": 0.75,
+     "n": 40
+    }
+   }
+  }
+ },
+ "self_grading": [
+  {
+   "generator": "anthropic:claude-sonnet-5-5",
+   "judge": "anthropic:claude-opus-5-5",
+   "kind": "same family"
+  },
+  {
+   "generator": "anthropic:claude-opus-5-5",
+   "judge": "anthropic:claude-opus-5-5",
+   "kind": "self"
+  },
+  {
+   "generator": "anthropic:claude-fable-5-1",
+   "judge": "anthropic:claude-opus-5-5",
+   "kind": "same family"
+  },
+  {
+   "generator": "openai:gpt-5.6-sol",
+   "judge": "openai:gpt-6.1-sol",
+   "kind": "same family"
+  },
+  {
+   "generator": "openai:gpt-6.1-sol",
+   "judge": "openai:gpt-6.1-sol",
+   "kind": "self"
+  }
+ ],
+ "generator_retest": {
+  "models": {
+   "anthropic:claude-sonnet-5-5": {
+    "n": 40,
+    "icc": 0.974,
+    "spearman": 0.969,
+    "pearson": 0.974,
+    "verdict_flip_rate": 0.117,
+    "verdict_pairs": 120,
+    "route_consistency": 1.0,
+    "icc_teaching": 0.949,
+    "n_teaching": 24,
+    "icc_three_runs": null,
+    "n_three_runs": 0,
+    "points": [
+     {
+      "qid": "q001",
+      "type": "concept",
+      "run1": 4.212,
+      "run2": 3.97
+     },
+     {
+      "qid": "q002",
+      "type": "concept",
+      "run1": 4.182,
+      "run2": 4.303
+     },
+     {
+      "qid": "q003",
+      "type": "concept",
+      "run1": 4.667,
+      "run2": 4.727
+     },
+     {
+      "qid": "q004",
+      "type": "concept",
+      "run1": 4.606,
+      "run2": 4.545
+     },
+     {
+      "qid": "q005",
+      "type": "concept",
+      "run1": 3.727,
+      "run2": 4.273
+     },
+     {
+      "qid": "q006",
+      "type": "concept",
+      "run1": 4.367,
+      "run2": 4.267
+     },
+     {
+      "qid": "q007",
+      "type": "concept",
+      "run1": 4.576,
+      "run2": 4.636
+     },
+     {
+      "qid": "q008",
+      "type": "concept",
+      "run1": 4.424,
+      "run2": 4.485
+     },
+     {
+      "qid": "q009",
+      "type": "concept",
+      "run1": 3.364,
+      "run2": 2.758
+     },
+     {
+      "qid": "q010",
+      "type": "concept",
+      "run1": 4.121,
+      "run2": 4.333
+     },
+     {
+      "qid": "q011",
+      "type": "concept",
+      "run1": 3.848,
+      "run2": 3.909
+     },
+     {
+      "qid": "q012",
+      "type": "concept",
+      "run1": 3.485,
+      "run2": 3.939
+     },
+     {
+      "qid": "q013",
+      "type": "concept",
+      "run1": 4.267,
+      "run2": 4.367
+     },
+     {
+      "qid": "q014",
+      "type": "concept",
+      "run1": 3.667,
+      "run2": 3.727
+     },
+     {
+      "qid": "q015",
+      "type": "concept",
+      "run1": 4.067,
+      "run2": 4.3
+     },
+     {
+      "qid": "q016",
+      "type": "concept",
+      "run1": 3.848,
+      "run2": 3.848
+     },
+     {
+      "qid": "q017",
+      "type": "concept",
+      "run1": 4.182,
+      "run2": 3.636
+     },
+     {
+      "qid": "q018",
+      "type": "concept",
+      "run1": 4.061,
+      "run2": 4.091
+     },
+     {
+      "qid": "q019",
+      "type": "concept",
+      "run1": 2.0,
+      "run2": 2.0
+     },
+     {
+      "qid": "q020",
+      "type": "concept",
+      "run1": 4.633,
+      "run2": 4.7
+     },
+     {
+      "qid": "q021",
+      "type": "beyond",
+      "run1": 2.848,
+      "run2": 3.0
+     },
+     {
+      "qid": "q022",
+      "type": "beyond",
+      "run1": 2.433,
+      "run2": 2.4
+     },
+     {
+      "qid": "q023",
+      "type": "beyond",
+      "run1": 2.03,
+      "run2": 2.121
+     },
+     {
+      "qid": "q024",
+      "type": "beyond",
+      "run1": 2.833,
+      "run2": 3.1
+     },
+     {
+      "qid": "q025",
+      "type": "beyond",
+      "run1": 2.05,
+      "run2": 1.7
+     },
+     {
+      "qid": "q026",
+      "type": "beyond",
+      "run1": 3.417,
+      "run2": 3.417
+     },
+     {
+      "qid": "q027",
+      "type": "beyond",
+      "run1": 2.067,
+      "run2": 2.2
+     },
+     {
+      "qid": "q028",
+      "type": "beyond",
+      "run1": 3.667,
+      "run2": 3.75
+     },
+     {
+      "qid": "q029",
+      "type": "off_topic",
+      "run1": 4.75,
+      "run2": 4.833
+     },
+     {
+      "qid": "q030",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q031",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q032",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q033",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.75
+     },
+     {
+      "qid": "q034",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q035",
+      "type": "logistics",
+      "run1": 5.0,
+      "run2": 5.0
+     },
+     {
+      "qid": "q036",
+      "type": "logistics",
+      "run1": 4.917,
+      "run2": 4.917
+     },
+     {
+      "qid": "q037",
+      "type": "logistics",
+      "run1": 2.733,
+      "run2": 2.356
+     },
+     {
+      "qid": "q038",
+      "type": "logistics",
+      "run1": 4.917,
+      "run2": 4.917
+     },
+     {
+      "qid": "q039",
+      "type": "logistics",
+      "run1": 4.917,
+      "run2": 4.917
+     },
+     {
+      "qid": "q040",
+      "type": "logistics",
+      "run1": 4.083,
+      "run2": 4.083
+     }
+    ]
+   },
+   "anthropic:claude-opus-5-5": {
+    "n": 40,
+    "icc": 0.961,
+    "spearman": 0.966,
+    "pearson": 0.963,
+    "verdict_flip_rate": 0.05,
+    "verdict_pairs": 120,
+    "route_consistency": 1.0,
+    "icc_teaching": 0.868,
+    "n_teaching": 23,
+    "icc_three_runs": null,
+    "n_three_runs": 0,
+    "points": [
+     {
+      "qid": "q001",
+      "type": "concept",
+      "run1": 4.121,
+      "run2": 4.03
+     },
+     {
+      "qid": "q002",
+      "type": "concept",
+      "run1": 3.727,
+      "run2": 3.939
+     },
+     {
+      "qid": "q003",
+      "type": "concept",
+      "run1": 4.697,
+      "run2": 4.758
+     },
+     {
+      "qid": "q004",
+      "type": "concept",
+      "run1": 4.697,
+      "run2": 4.788
+     },
+     {
+      "qid": "q005",
+      "type": "concept",
+      "run1": 4.333,
+      "run2": 4.394
+     },
+     {
+      "qid": "q006",
+      "type": "concept",
+      "run1": 2.567,
+      "run2": 2.833
+     },
+     {
+      "qid": "q007",
+      "type": "concept",
+      "run1": 4.788,
+      "run2": 4.576
+     },
+     {
+      "qid": "q008",
+      "type": "concept",
+      "run1": 4.364,
+      "run2": 4.333
+     },
+     {
+      "qid": "q009",
+      "type": "concept",
+      "run1": 3.515,
+      "run2": 3.485
+     },
+     {
+      "qid": "q010",
+      "type": "concept",
+      "run1": 4.242,
+      "run2": 4.242
+     },
+     {
+      "qid": "q011",
+      "type": "concept",
+      "run1": 4.0,
+      "run2": 4.394
+     },
+     {
+      "qid": "q012",
+      "type": "concept",
+      "run1": 4.03,
+      "run2": 4.182
+     },
+     {
+      "qid": "q013",
+      "type": "concept",
+      "run1": 2.633,
+      "run2": 2.633
+     },
+     {
+      "qid": "q014",
+      "type": "concept",
+      "run1": 4.121,
+      "run2": 4.091
+     },
+     {
+      "qid": "q015",
+      "type": "concept",
+      "run1": 1.7,
+      "run2": 1.733
+     },
+     {
+      "qid": "q016",
+      "type": "concept",
+      "run1": 4.121,
+      "run2": 4.273
+     },
+     {
+      "qid": "q017",
+      "type": "concept",
+      "run1": 3.97,
+      "run2": 3.939
+     },
+     {
+      "qid": "q018",
+      "type": "concept",
+      "run1": 4.242,
+      "run2": 4.303
+     },
+     {
+      "qid": "q019",
+      "type": "concept",
+      "run1": 2.0,
+      "run2": 2.0
+     },
+     {
+      "qid": "q020",
+      "type": "concept",
+      "run1": 2.633,
+      "run2": 2.5
+     },
+     {
+      "qid": "q021",
+      "type": "beyond",
+      "run1": 3.242,
+      "run2": 2.0
+     },
+     {
+      "qid": "q022",
+      "type": "beyond",
+      "run1": 1.867,
+      "run2": 1.7
+     },
+     {
+      "qid": "q023",
+      "type": "beyond",
+      "run1": 2.818,
+      "run2": 2.818
+     },
+     {
+      "qid": "q024",
+      "type": "beyond",
+      "run1": 2.9,
+      "run2": 1.667
+     },
+     {
+      "qid": "q025",
+      "type": "beyond",
+      "run1": 2.171,
+      "run2": 2.2
+     },
+     {
+      "qid": "q026",
+      "type": "beyond",
+      "run1": 3.667,
+      "run2": 3.417
+     },
+     {
+      "qid": "q027",
+      "type": "beyond",
+      "run1": 1.967,
+      "run2": 2.133
+     },
+     {
+      "qid": "q028",
+      "type": "beyond",
+      "run1": 3.583,
+      "run2": 3.667
+     },
+     {
+      "qid": "q029",
+      "type": "off_topic",
+      "run1": 4.917,
+      "run2": 4.833
+     },
+     {
+      "qid": "q030",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q031",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q032",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q033",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.75
+     },
+     {
+      "qid": "q034",
+      "type": "off_topic",
+      "run1": 4.75,
+      "run2": 4.75
+     },
+     {
+      "qid": "q035",
+      "type": "logistics",
+      "run1": 5.0,
+      "run2": 5.0
+     },
+     {
+      "qid": "q036",
+      "type": "logistics",
+      "run1": 5.0,
+      "run2": 5.0
+     },
+     {
+      "qid": "q037",
+      "type": "logistics",
+      "run1": 1.933,
+      "run2": 2.133
+     },
+     {
+      "qid": "q038",
+      "type": "logistics",
+      "run1": 5.0,
+      "run2": 5.0
+     },
+     {
+      "qid": "q039",
+      "type": "logistics",
+      "run1": 4.917,
+      "run2": 4.917
+     },
+     {
+      "qid": "q040",
+      "type": "logistics",
+      "run1": 3.917,
+      "run2": 4.083
+     }
+    ]
+   },
+   "anthropic:claude-fable-5-1": {
+    "n": 40,
+    "icc": 0.983,
+    "spearman": 0.978,
+    "pearson": 0.985,
+    "verdict_flip_rate": 0.067,
+    "verdict_pairs": 120,
+    "route_consistency": 1.0,
+    "icc_teaching": 0.966,
+    "n_teaching": 24,
+    "icc_three_runs": null,
+    "n_three_runs": 0,
+    "points": [
+     {
+      "qid": "q001",
+      "type": "concept",
+      "run1": 3.97,
+      "run2": 4.242
+     },
+     {
+      "qid": "q002",
+      "type": "concept",
+      "run1": 4.121,
+      "run2": 4.121
+     },
+     {
+      "qid": "q003",
+      "type": "concept",
+      "run1": 4.697,
+      "run2": 4.667
+     },
+     {
+      "qid": "q004",
+      "type": "concept",
+      "run1": 4.758,
+      "run2": 4.545
+     },
+     {
+      "qid": "q005",
+      "type": "concept",
+      "run1": 4.061,
+      "run2": 4.152
+     },
+     {
+      "qid": "q006",
+      "type": "concept",
+      "run1": 2.767,
+      "run2": 2.633
+     },
+     {
+      "qid": "q007",
+      "type": "concept",
+      "run1": 4.606,
+      "run2": 4.697
+     },
+     {
+      "qid": "q008",
+      "type": "concept",
+      "run1": 4.333,
+      "run2": 4.303
+     },
+     {
+      "qid": "q009",
+      "type": "concept",
+      "run1": 3.818,
+      "run2": 3.576
+     },
+     {
+      "qid": "q010",
+      "type": "concept",
+      "run1": 4.03,
+      "run2": 4.242
+     },
+     {
+      "qid": "q011",
+      "type": "concept",
+      "run1": 4.242,
+      "run2": 4.212
+     },
+     {
+      "qid": "q012",
+      "type": "concept",
+      "run1": 4.121,
+      "run2": 4.091
+     },
+     {
+      "qid": "q013",
+      "type": "concept",
+      "run1": 2.6,
+      "run2": 2.533
+     },
+     {
+      "qid": "q014",
+      "type": "concept",
+      "run1": 4.121,
+      "run2": 4.333
+     },
+     {
+      "qid": "q015",
+      "type": "concept",
+      "run1": 1.633,
+      "run2": 1.633
+     },
+     {
+      "qid": "q016",
+      "type": "concept",
+      "run1": 4.182,
+      "run2": 4.152
+     },
+     {
+      "qid": "q017",
+      "type": "concept",
+      "run1": 3.848,
+      "run2": 3.879
+     },
+     {
+      "qid": "q018",
+      "type": "concept",
+      "run1": 4.182,
+      "run2": 4.091
+     },
+     {
+      "qid": "q019",
+      "type": "concept",
+      "run1": 2.0,
+      "run2": 2.0
+     },
+     {
+      "qid": "q020",
+      "type": "concept",
+      "run1": 2.533,
+      "run2": 2.533
+     },
+     {
+      "qid": "q021",
+      "type": "beyond",
+      "run1": 3.273,
+      "run2": 3.03
+     },
+     {
+      "qid": "q022",
+      "type": "beyond",
+      "run1": 1.867,
+      "run2": 1.633
+     },
+     {
+      "qid": "q023",
+      "type": "beyond",
+      "run1": 2.697,
+      "run2": 2.606
+     },
+     {
+      "qid": "q024",
+      "type": "beyond",
+      "run1": 1.7,
+      "run2": 1.533
+     },
+     {
+      "qid": "q025",
+      "type": "beyond",
+      "run1": 2.133,
+      "run2": 2.1
+     },
+     {
+      "qid": "q026",
+      "type": "beyond",
+      "run1": 3.667,
+      "run2": 3.417
+     },
+     {
+      "qid": "q027",
+      "type": "beyond",
+      "run1": 1.9,
+      "run2": 2.033
+     },
+     {
+      "qid": "q028",
+      "type": "beyond",
+      "run1": 3.833,
+      "run2": 3.5
+     },
+     {
+      "qid": "q029",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q030",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q031",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q032",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q033",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q034",
+      "type": "off_topic",
+      "run1": 4.75,
+      "run2": 4.667
+     },
+     {
+      "qid": "q035",
+      "type": "logistics",
+      "run1": 5.0,
+      "run2": 5.0
+     },
+     {
+      "qid": "q036",
+      "type": "logistics",
+      "run1": 4.917,
+      "run2": 5.0
+     },
+     {
+      "qid": "q037",
+      "type": "logistics",
+      "run1": 3.333,
+      "run2": 2.4
+     },
+     {
+      "qid": "q038",
+      "type": "logistics",
+      "run1": 5.0,
+      "run2": 5.0
+     },
+     {
+      "qid": "q039",
+      "type": "logistics",
+      "run1": 4.917,
+      "run2": 5.0
+     },
+     {
+      "qid": "q040",
+      "type": "logistics",
+      "run1": 3.917,
+      "run2": 4.083
+     }
+    ]
+   },
+   "openai:gpt-5.6-sol": {
+    "n": 40,
+    "icc": 0.987,
+    "spearman": 0.978,
+    "pearson": 0.99,
+    "verdict_flip_rate": 0.058,
+    "verdict_pairs": 120,
+    "route_consistency": 1.0,
+    "icc_teaching": 0.97,
+    "n_teaching": 25,
+    "icc_three_runs": null,
+    "n_three_runs": 0,
+    "points": [
+     {
+      "qid": "q001",
+      "type": "concept",
+      "run1": 4.333,
+      "run2": 4.182
+     },
+     {
+      "qid": "q002",
+      "type": "concept",
+      "run1": 4.515,
+      "run2": 4.455
+     },
+     {
+      "qid": "q003",
+      "type": "concept",
+      "run1": 4.758,
+      "run2": 4.606
+     },
+     {
+      "qid": "q004",
+      "type": "concept",
+      "run1": 4.818,
+      "run2": 4.636
+     },
+     {
+      "qid": "q005",
+      "type": "concept",
+      "run1": 4.364,
+      "run2": 4.394
+     },
+     {
+      "qid": "q006",
+      "type": "concept",
+      "run1": 4.333,
+      "run2": 4.167
+     },
+     {
+      "qid": "q007",
+      "type": "concept",
+      "run1": 4.697,
+      "run2": 4.667
+     },
+     {
+      "qid": "q008",
+      "type": "concept",
+      "run1": 4.455,
+      "run2": 4.273
+     },
+     {
+      "qid": "q009",
+      "type": "concept",
+      "run1": 2.394,
+      "run2": 2.424
+     },
+     {
+      "qid": "q010",
+      "type": "concept",
+      "run1": 4.394,
+      "run2": 4.242
+     },
+     {
+      "qid": "q011",
+      "type": "concept",
+      "run1": 4.606,
+      "run2": 4.667
+     },
+     {
+      "qid": "q012",
+      "type": "concept",
+      "run1": 4.152,
+      "run2": 4.061
+     },
+     {
+      "qid": "q013",
+      "type": "concept",
+      "run1": 4.533,
+      "run2": 4.167
+     },
+     {
+      "qid": "q014",
+      "type": "concept",
+      "run1": 4.333,
+      "run2": 4.455
+     },
+     {
+      "qid": "q015",
+      "type": "concept",
+      "run1": 4.5,
+      "run2": 4.133
+     },
+     {
+      "qid": "q016",
+      "type": "concept",
+      "run1": 4.303,
+      "run2": 4.061
+     },
+     {
+      "qid": "q017",
+      "type": "concept",
+      "run1": 3.697,
+      "run2": 3.242
+     },
+     {
+      "qid": "q018",
+      "type": "concept",
+      "run1": 4.152,
+      "run2": 4.0
+     },
+     {
+      "qid": "q019",
+      "type": "concept",
+      "run1": 2.0,
+      "run2": 2.0
+     },
+     {
+      "qid": "q020",
+      "type": "concept",
+      "run1": 4.667,
+      "run2": 4.767
+     },
+     {
+      "qid": "q021",
+      "type": "beyond",
+      "run1": 2.061,
+      "run2": 1.97
+     },
+     {
+      "qid": "q022",
+      "type": "beyond",
+      "run1": 2.2,
+      "run2": 2.5
+     },
+     {
+      "qid": "q023",
+      "type": "beyond",
+      "run1": 2.576,
+      "run2": 2.394
+     },
+     {
+      "qid": "q024",
+      "type": "beyond",
+      "run1": 3.233,
+      "run2": 3.067
+     },
+     {
+      "qid": "q025",
+      "type": "beyond",
+      "run1": 2.117,
+      "run2": 2.1
+     },
+     {
+      "qid": "q026",
+      "type": "beyond",
+      "run1": 3.5,
+      "run2": 3.583
+     },
+     {
+      "qid": "q027",
+      "type": "beyond",
+      "run1": 1.933,
+      "run2": 1.833
+     },
+     {
+      "qid": "q028",
+      "type": "beyond",
+      "run1": 3.75,
+      "run2": 3.667
+     },
+     {
+      "qid": "q029",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q030",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q031",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q032",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q033",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q034",
+      "type": "off_topic",
+      "run1": 4.75,
+      "run2": 4.75
+     },
+     {
+      "qid": "q035",
+      "type": "logistics",
+      "run1": 5.0,
+      "run2": 5.0
+     },
+     {
+      "qid": "q036",
+      "type": "logistics",
+      "run1": 5.0,
+      "run2": 5.0
+     },
+     {
+      "qid": "q037",
+      "type": "logistics",
+      "run1": 2.267,
+      "run2": 1.933
+     },
+     {
+      "qid": "q038",
+      "type": "logistics",
+      "run1": 5.0,
+      "run2": 5.0
+     },
+     {
+      "qid": "q039",
+      "type": "logistics",
+      "run1": 5.0,
+      "run2": 4.917
+     },
+     {
+      "qid": "q040",
+      "type": "logistics",
+      "run1": 4.083,
+      "run2": 4.0
+     }
+    ]
+   },
+   "openai:gpt-6.1-sol": {
+    "n": 40,
+    "icc": 0.996,
+    "spearman": 0.99,
+    "pearson": 0.996,
+    "verdict_flip_rate": 0.083,
+    "verdict_pairs": 120,
+    "route_consistency": 1.0,
+    "icc_teaching": 0.988,
+    "n_teaching": 24,
+    "icc_three_runs": null,
+    "n_three_runs": 0,
+    "points": [
+     {
+      "qid": "q001",
+      "type": "concept",
+      "run1": 4.515,
+      "run2": 4.364
+     },
+     {
+      "qid": "q002",
+      "type": "concept",
+      "run1": 4.364,
+      "run2": 4.485
+     },
+     {
+      "qid": "q003",
+      "type": "concept",
+      "run1": 4.697,
+      "run2": 4.667
+     },
+     {
+      "qid": "q004",
+      "type": "concept",
+      "run1": 4.818,
+      "run2": 4.727
+     },
+     {
+      "qid": "q005",
+      "type": "concept",
+      "run1": 4.455,
+      "run2": 4.485
+     },
+     {
+      "qid": "q006",
+      "type": "concept",
+      "run1": 4.333,
+      "run2": 4.2
+     },
+     {
+      "qid": "q007",
+      "type": "concept",
+      "run1": 4.788,
+      "run2": 4.667
+     },
+     {
+      "qid": "q008",
+      "type": "concept",
+      "run1": 4.424,
+      "run2": 4.364
+     },
+     {
+      "qid": "q009",
+      "type": "concept",
+      "run1": 3.061,
+      "run2": 2.879
+     },
+     {
+      "qid": "q010",
+      "type": "concept",
+      "run1": 4.273,
+      "run2": 4.182
+     },
+     {
+      "qid": "q011",
+      "type": "concept",
+      "run1": 4.576,
+      "run2": 4.697
+     },
+     {
+      "qid": "q012",
+      "type": "concept",
+      "run1": 3.939,
+      "run2": 4.091
+     },
+     {
+      "qid": "q013",
+      "type": "concept",
+      "run1": 4.633,
+      "run2": 4.433
+     },
+     {
+      "qid": "q014",
+      "type": "concept",
+      "run1": 4.273,
+      "run2": 4.242
+     },
+     {
+      "qid": "q015",
+      "type": "concept",
+      "run1": 4.233,
+      "run2": 4.2
+     },
+     {
+      "qid": "q016",
+      "type": "concept",
+      "run1": 4.333,
+      "run2": 4.242
+     },
+     {
+      "qid": "q017",
+      "type": "concept",
+      "run1": 3.424,
+      "run2": 3.515
+     },
+     {
+      "qid": "q018",
+      "type": "concept",
+      "run1": 4.273,
+      "run2": 4.273
+     },
+     {
+      "qid": "q019",
+      "type": "concept",
+      "run1": 2.0,
+      "run2": 2.0
+     },
+     {
+      "qid": "q020",
+      "type": "concept",
+      "run1": 4.7,
+      "run2": 4.767
+     },
+     {
+      "qid": "q021",
+      "type": "beyond",
+      "run1": 2.03,
+      "run2": 2.03
+     },
+     {
+      "qid": "q022",
+      "type": "beyond",
+      "run1": 2.633,
+      "run2": 2.7
+     },
+     {
+      "qid": "q023",
+      "type": "beyond",
+      "run1": 2.485,
+      "run2": 2.485
+     },
+     {
+      "qid": "q024",
+      "type": "beyond",
+      "run1": 3.267,
+      "run2": 3.3
+     },
+     {
+      "qid": "q025",
+      "type": "beyond",
+      "run1": 2.133,
+      "run2": 2.033
+     },
+     {
+      "qid": "q026",
+      "type": "beyond",
+      "run1": 3.5,
+      "run2": 3.583
+     },
+     {
+      "qid": "q027",
+      "type": "beyond",
+      "run1": 2.067,
+      "run2": 2.033
+     },
+     {
+      "qid": "q028",
+      "type": "beyond",
+      "run1": 3.75,
+      "run2": 3.667
+     },
+     {
+      "qid": "q029",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q030",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q031",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q032",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q033",
+      "type": "off_topic",
+      "run1": 4.833,
+      "run2": 4.833
+     },
+     {
+      "qid": "q034",
+      "type": "off_topic",
+      "run1": 4.75,
+      "run2": 4.75
+     },
+     {
+      "qid": "q035",
+      "type": "logistics",
+      "run1": 5.0,
+      "run2": 4.917
+     },
+     {
+      "qid": "q036",
+      "type": "logistics",
+      "run1": 4.917,
+      "run2": 5.0
+     },
+     {
+      "qid": "q037",
+      "type": "logistics",
+      "run1": 2.133,
+      "run2": 2.2
+     },
+     {
+      "qid": "q038",
+      "type": "logistics",
+      "run1": 4.917,
+      "run2": 5.0
+     },
+     {
+      "qid": "q039",
+      "type": "logistics",
+      "run1": 4.917,
+      "run2": 5.0
+     },
+     {
+      "qid": "q040",
+      "type": "logistics",
+      "run1": 3.917,
+      "run2": 4.083
+     }
+    ]
+   }
+  },
+  "dimensions": {
+   "grounded": {
+    "icc": 0.849,
+    "n": 255,
+    "exact": 0.761
+   },
+   "answers_question": {
+    "icc": 0.958,
+    "n": 600,
+    "exact": 0.858
+   },
+   "correct_scope": {
+    "icc": 0.968,
+    "n": 600,
+    "exact": 0.947
+   },
+   "matches_reference": {
+    "icc": 0.969,
+    "n": 600,
+    "exact": 0.862
+   },
+   "speech_quality": {
+    "icc": 0.857,
+    "n": 381,
+    "exact": 0.753
+   },
+   "safety_tone": {
+    "icc": 0.851,
+    "n": 600,
+    "exact": 0.908
+   },
+   "good_teaching": {
+    "icc": 0.9,
+    "n": 350,
+    "exact": 0.757
+   },
+   "explains_concept_effectively": {
+    "icc": 0.906,
+    "n": 350,
+    "exact": 0.737
+   },
+   "accurate": {
+    "icc": 0.847,
+    "n": 350,
+    "exact": 0.754
+   },
+   "engaging_voice": {
+    "icc": 0.865,
+    "n": 350,
+    "exact": 0.763
+   },
+   "appropriate_depth": {
+    "icc": 0.914,
+    "n": 350,
+    "exact": 0.797
+   }
+  },
+  "verdict_kappa": 0.845,
+  "verdict_pairs": 600
+ },
+ "judge_retest": {
+  "anthropic:claude-opus-5-5": {
+   "answers": 50,
+   "score_pairs": 413,
+   "icc": 0.964,
+   "exact": 0.884,
+   "within_one": 1.0,
+   "kappa": 0.796,
+   "verdict_same": 0.9,
+   "teaching_icc": 0.939
+  },
+  "openai:gpt-6.1-sol": {
+   "answers": 50,
+   "score_pairs": 409,
+   "icc": 0.969,
+   "exact": 0.9,
+   "within_one": 1.0,
+   "kappa": 1.0,
+   "verdict_same": 1.0,
+   "teaching_icc": 0.912
+  },
+  "openrouter:google/gemini-3.8-flash": {
+   "answers": 50,
+   "score_pairs": 423,
+   "icc": 0.966,
+   "exact": 0.884,
+   "within_one": 0.995,
+   "kappa": 0.901,
+   "verdict_same": 0.96,
+   "teaching_icc": 0.977
+  }
+ },
+ "inter_judge": {
+  "dimensions": {
+   "grounded": {
+    "alpha": 0.467,
+    "exact": 0.451,
+    "within_one": 0.871,
+    "pairs": 255,
+    "answers": 85
+   },
+   "answers_question": {
+    "alpha": 0.725,
+    "exact": 0.535,
+    "within_one": 0.91,
+    "pairs": 600,
+    "answers": 200
+   },
+   "correct_scope": {
+    "alpha": 0.868,
+    "exact": 0.89,
+    "within_one": 0.95,
+    "pairs": 600,
+    "answers": 200
+   },
+   "matches_reference": {
+    "alpha": 0.86,
+    "exact": 0.658,
+    "within_one": 0.955,
+    "pairs": 600,
+    "answers": 200
+   },
+   "speech_quality": {
+    "alpha": 0.587,
+    "exact": 0.413,
+    "within_one": 0.955,
+    "pairs": 380,
+    "answers": 130
+   },
+   "safety_tone": {
+    "alpha": 0.503,
+    "exact": 0.812,
+    "within_one": 0.968,
+    "pairs": 600,
+    "answers": 200
+   },
+   "good_teaching": {
+    "alpha": 0.478,
+    "exact": 0.33,
+    "within_one": 0.79,
+    "pairs": 348,
+    "answers": 116
+   },
+   "explains_concept_effectively": {
+    "alpha": 0.464,
+    "exact": 0.33,
+    "within_one": 0.776,
+    "pairs": 348,
+    "answers": 116
+   },
+   "accurate": {
+    "alpha": 0.336,
+    "exact": 0.379,
+    "within_one": 0.862,
+    "pairs": 348,
+    "answers": 116
+   },
+   "engaging_voice": {
+    "alpha": 0.451,
+    "exact": 0.414,
+    "within_one": 0.899,
+    "pairs": 348,
+    "answers": 116
+   },
+   "appropriate_depth": {
+    "alpha": 0.502,
+    "exact": 0.368,
+    "within_one": 0.813,
+    "pairs": 348,
+    "answers": 116
+   }
+  },
+  "verdict_alpha": 0.541,
+  "verdict_agreement": {
+   "exact": 0.777,
+   "within_one": 1.0,
+   "pairs": 600
+  },
+  "matrix": {
+   "anthropic:claude-opus-5-5|openai:gpt-6.1-sol": {
+    "same_verdict": 0.81,
+    "kappa": 0.623,
+    "n": 200,
+    "mean_gap": 0.31
+   },
+   "anthropic:claude-opus-5-5|openrouter:google/gemini-3.8-flash": {
+    "same_verdict": 0.805,
+    "kappa": 0.59,
+    "n": 200,
+    "mean_gap": 0.65
+   },
+   "openai:gpt-6.1-sol|anthropic:claude-opus-5-5": {
+    "same_verdict": 0.81,
+    "kappa": 0.623,
+    "n": 200,
+    "mean_gap": 0.31
+   },
+   "openai:gpt-6.1-sol|openrouter:google/gemini-3.8-flash": {
+    "same_verdict": 0.715,
+    "kappa": 0.452,
+    "n": 200,
+    "mean_gap": 0.72
+   },
+   "openrouter:google/gemini-3.8-flash|anthropic:claude-opus-5-5": {
+    "same_verdict": 0.805,
+    "kappa": 0.59,
+    "n": 200,
+    "mean_gap": 0.65
+   },
+   "openrouter:google/gemini-3.8-flash|openai:gpt-6.1-sol": {
+    "same_verdict": 0.715,
+    "kappa": 0.452,
+    "n": 200,
+    "mean_gap": 0.72
+   }
+  }
+ },
+ "questions_detail": [
+  {
+   "qid": "q001",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "70445-s01-044",
+    "70445-s01-046"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "70445-s01-046",
+      "70445-s04-014",
+      "70445-s04-015",
+      "70445-s04-016",
+      "70445-s05-005"
+     ],
+     "composite": 3.97
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s01-046",
+      "70445-s04-014",
+      "70445-s04-015",
+      "70445-s04-016",
+      "70445-s05-005"
+     ],
+     "composite": 4.12
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s01-046",
+      "70445-s04-014",
+      "70445-s04-015",
+      "70445-s04-016",
+      "70445-s05-005"
+     ],
+     "composite": 4.21
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s01-046",
+      "70445-s04-014",
+      "70445-s04-015",
+      "70445-s04-016",
+      "70445-s05-005"
+     ],
+     "composite": 4.33
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s01-046",
+      "70445-s04-014",
+      "70445-s04-015",
+      "70445-s04-016",
+      "70445-s05-005"
+     ],
+     "composite": 4.52
+    }
+   },
+   "question": "is chatgpt AGI or not? my roommate swears it is lol. whats the actual difference between narrow AI, AGI and ASI"
+  },
+  {
+   "qid": "q002",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "70445-s02-037",
+    "70445-s02-038"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "70445-s02-037"
+     ],
+     "composite": 4.12
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "70445-s02-037"
+     ],
+     "composite": 3.73
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s02-037"
+     ],
+     "composite": 4.18
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s02-037"
+     ],
+     "composite": 4.52
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s02-037"
+     ],
+     "composite": 4.36
+    }
+   },
+   "question": "What is Amara's law and why should a company care about it when deciding how fast to invest in AI?"
+  },
+  {
+   "qid": "q003",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "70445-s03-044",
+    "70445-s03-046",
+    "70445-s03-049"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s03-044",
+      "70445-s03-045",
+      "70445-s03-046",
+      "70445-s03-049",
+      "70445-s03-051"
+     ],
+     "composite": 4.7
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s03-044",
+      "70445-s03-045",
+      "70445-s03-046",
+      "70445-s03-049",
+      "70445-s03-051"
+     ],
+     "composite": 4.7
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s03-044",
+      "70445-s03-045",
+      "70445-s03-046",
+      "70445-s03-049",
+      "70445-s03-051"
+     ],
+     "composite": 4.67
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s03-044",
+      "70445-s03-045",
+      "70445-s03-046",
+      "70445-s03-049",
+      "70445-s03-051"
+     ],
+     "composite": 4.76
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s03-044",
+      "70445-s03-045",
+      "70445-s03-046",
+      "70445-s03-049",
+      "70445-s03-051"
+     ],
+     "composite": 4.7
+    }
+   },
+   "question": "forward chaining vs backward chaining in expert systems, can you give me an example of each?"
+  },
+  {
+   "qid": "q004",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "70445-s04-050",
+    "70445-s04-051",
+    "70445-s04-052",
+    "70445-s04-044"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s04-044",
+      "70445-s04-050",
+      "70445-s04-051",
+      "70445-s04-052"
+     ],
+     "composite": 4.76
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s04-044",
+      "70445-s04-050",
+      "70445-s04-051",
+      "70445-s04-052"
+     ],
+     "composite": 4.7
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s04-044",
+      "70445-s04-050",
+      "70445-s04-051",
+      "70445-s04-052"
+     ],
+     "composite": 4.61
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s04-044",
+      "70445-s04-050",
+      "70445-s04-051",
+      "70445-s04-052"
+     ],
+     "composite": 4.82
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s04-044",
+      "70445-s04-050",
+      "70445-s04-051",
+      "70445-s04-052"
+     ],
+     "composite": 4.82
+    }
+   },
+   "question": "A vendor pitched us a fraud detection model that is 99% accurate. Why is accuracy the wrong number to look at?"
+  },
+  {
+   "qid": "q005",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "70445-s04-010",
+    "70445-s04-011",
+    "70445-s04-012"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "70445-s01-017",
+      "70445-s02-034",
+      "70445-s04-008",
+      "70445-s04-009",
+      "70445-s04-012"
+     ],
+     "composite": 4.06
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s01-017",
+      "70445-s02-034",
+      "70445-s04-008",
+      "70445-s04-009",
+      "70445-s04-012"
+     ],
+     "composite": 4.33
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "70445-s01-017",
+      "70445-s02-034",
+      "70445-s04-008",
+      "70445-s04-009",
+      "70445-s04-012"
+     ],
+     "composite": 3.73
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s01-017",
+      "70445-s02-034",
+      "70445-s04-008",
+      "70445-s04-009",
+      "70445-s04-012"
+     ],
+     "composite": 4.36
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s01-017",
+      "70445-s02-034",
+      "70445-s04-008",
+      "70445-s04-009",
+      "70445-s04-012"
+     ],
+     "composite": 4.45
+    }
+   },
+   "question": "jevons paradox... does that mean AI wont actually reduce jobs? kind of confused how it applies"
+  },
+  {
+   "qid": "q006",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "70445-s05-044",
+    "70445-s05-054",
+    "70445-s05-055",
+    "70445-s05-056"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.77
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.57
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.37
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.33
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.33
+    }
+   },
+   "question": "For customer segmentation, should I trust the elbow method or the silhouette score to pick the number of clusters?"
+  },
+  {
+   "qid": "q007",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "70445-s05-067",
+    "70445-s05-068",
+    "70445-s05-069",
+    "70445-s05-070"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s05-067",
+      "70445-s05-068",
+      "70445-s05-069",
+      "70445-s05-070"
+     ],
+     "composite": 4.61
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s05-067",
+      "70445-s05-068",
+      "70445-s05-069",
+      "70445-s05-070"
+     ],
+     "composite": 4.79
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s05-067",
+      "70445-s05-068",
+      "70445-s05-069",
+      "70445-s05-070"
+     ],
+     "composite": 4.58
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s05-067",
+      "70445-s05-068",
+      "70445-s05-069",
+      "70445-s05-070"
+     ],
+     "composite": 4.7
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s05-067",
+      "70445-s05-068",
+      "70445-s05-069",
+      "70445-s05-070"
+     ],
+     "composite": 4.79
+    }
+   },
+   "question": "Is overfitting high bias or high variance? I always mix these two up"
+  },
+  {
+   "qid": "q008",
+   "type": "concept",
+   "category": "CODE_HELP",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "70445-s06-045",
+    "70445-s06-046",
+    "70445-s05-011"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s05-011",
+      "70445-s06-044",
+      "70445-s06-045",
+      "70445-s06-046"
+     ],
+     "composite": 4.33
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s05-011",
+      "70445-s06-044",
+      "70445-s06-045",
+      "70445-s06-046"
+     ],
+     "composite": 4.36
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s05-011",
+      "70445-s06-044",
+      "70445-s06-045",
+      "70445-s06-046"
+     ],
+     "composite": 4.42
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s05-011",
+      "70445-s06-044",
+      "70445-s06-045",
+      "70445-s06-046"
+     ],
+     "composite": 4.45
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s05-011",
+      "70445-s06-044",
+      "70445-s06-045",
+      "70445-s06-046"
+     ],
+     "composite": 4.42
+    }
+   },
+   "question": "In the neural network demo notebook my training loss jumps up and down instead of going down. Is that a learning rate thing?"
+  },
+  {
+   "qid": "q009",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "70445-s07-047",
+    "70445-s07-054",
+    "70445-s07-058",
+    "70445-s07-053"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s05-017",
+      "45884-s05-023",
+      "70445-s07-051",
+      "70445-s07-054",
+      "70445-s07-061"
+     ],
+     "composite": 3.82
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s05-017",
+      "45884-s05-023",
+      "70445-s07-051",
+      "70445-s07-054",
+      "70445-s07-061"
+     ],
+     "composite": 3.52
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s05-017",
+      "45884-s05-023",
+      "70445-s07-051",
+      "70445-s07-054",
+      "70445-s07-061"
+     ],
+     "composite": 3.36
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s05-017",
+      "45884-s05-023",
+      "70445-s07-051",
+      "70445-s07-054",
+      "70445-s07-061"
+     ],
+     "composite": 2.39
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s05-017",
+      "45884-s05-023",
+      "70445-s07-051",
+      "70445-s07-054",
+      "70445-s07-061"
+     ],
+     "composite": 3.06
+    }
+   },
+   "question": "why can chatgpt write a whole essay but it can't count the r's in strawberry??"
+  },
+  {
+   "qid": "q010",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "70445-s08-050",
+    "70445-s08-053",
+    "70445-s08-055",
+    "70445-s08-056"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s08-002",
+      "45884-s08-048",
+      "45884-s08-050",
+      "70445-s08-012",
+      "70445-s08-050"
+     ],
+     "composite": 4.03
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s08-002",
+      "45884-s08-048",
+      "45884-s08-050",
+      "70445-s08-012",
+      "70445-s08-050"
+     ],
+     "composite": 4.24
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s08-002",
+      "45884-s08-048",
+      "45884-s08-050",
+      "70445-s08-012",
+      "70445-s08-050"
+     ],
+     "composite": 4.12
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "45884-s08-002",
+      "45884-s08-048",
+      "45884-s08-050",
+      "70445-s08-012",
+      "70445-s08-050"
+     ],
+     "composite": 4.39
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s08-002",
+      "45884-s08-048",
+      "45884-s08-050",
+      "70445-s08-012",
+      "70445-s08-050"
+     ],
+     "composite": 4.27
+    }
+   },
+   "question": "What's the difference between an AI workflow and an AI agent? When would a business pick a workflow?"
+  },
+  {
+   "qid": "q011",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "70445-s10-017",
+    "70445-s10-022",
+    "70445-s10-023"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "70445-s10-017",
+      "70445-s10-022"
+     ],
+     "composite": 4.24
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "70445-s10-017",
+      "70445-s10-022"
+     ],
+     "composite": 4.0
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "70445-s10-017",
+      "70445-s10-022"
+     ],
+     "composite": 3.85
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s10-017",
+      "70445-s10-022"
+     ],
+     "composite": 4.61
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "70445-s10-017",
+      "70445-s10-022"
+     ],
+     "composite": 4.58
+    }
+   },
+   "question": "Is vibe coding actually bad? When is it fine to just prompt an app into existence vs doing spec-driven development?"
+  },
+  {
+   "qid": "q012",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "45884-s01-022",
+    "45884-s01-023",
+    "45884-s01-024",
+    "45884-s01-025"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s01-023",
+      "45884-s01-024",
+      "70445-s01-028",
+      "70445-s01-029"
+     ],
+     "composite": 4.12
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s01-023",
+      "45884-s01-024",
+      "70445-s01-028",
+      "70445-s01-029"
+     ],
+     "composite": 4.03
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s01-023",
+      "45884-s01-024",
+      "70445-s01-028",
+      "70445-s01-029"
+     ],
+     "composite": 3.48
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "45884-s01-023",
+      "45884-s01-024",
+      "70445-s01-028",
+      "70445-s01-029"
+     ],
+     "composite": 4.15
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "45884-s01-023",
+      "45884-s01-024",
+      "70445-s01-028",
+      "70445-s01-029"
+     ],
+     "composite": 3.94
+    }
+   },
+   "question": "whats the difference between traditional ML and a foundation model? like why wouldn't a company just train its own"
+  },
+  {
+   "qid": "q013",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "45884-s03-033",
+    "45884-s03-041",
+    "45884-s03-042"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.6
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.63
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 2,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.27
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.53
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.63
+    }
+   },
+   "question": "TF-IDF vs just counting words in each review. Why is TF-IDF supposed to be better?"
+  },
+  {
+   "qid": "q014",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "45884-s03-045",
+    "45884-s03-018"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "45884-s01-021",
+      "45884-s01-038",
+      "45884-s03-018",
+      "45884-s03-045",
+      "45884-s03-046"
+     ],
+     "composite": 4.12
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "45884-s01-021",
+      "45884-s01-038",
+      "45884-s03-018",
+      "45884-s03-045",
+      "45884-s03-046"
+     ],
+     "composite": 4.12
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s01-021",
+      "45884-s01-038",
+      "45884-s03-018",
+      "45884-s03-045",
+      "45884-s03-046"
+     ],
+     "composite": 3.67
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "45884-s01-021",
+      "45884-s01-038",
+      "45884-s03-018",
+      "45884-s03-045",
+      "45884-s03-046"
+     ],
+     "composite": 4.33
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "45884-s01-021",
+      "45884-s01-038",
+      "45884-s03-018",
+      "45884-s03-045",
+      "45884-s03-046"
+     ],
+     "composite": 4.27
+    }
+   },
+   "question": "For tracking sentiment in tweets about our brand, would you use VADER or train a model? what is VADER good at"
+  },
+  {
+   "qid": "q015",
+   "type": "concept",
+   "category": "CODE_HELP",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "45884-s05-042",
+    "45884-s05-044"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 1.63
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 1.7
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 1,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.07
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.5
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.23
+    }
+   },
+   "question": "In the RAG demo notebook, why do we have to chunk the documents and make embeddings before asking anything? Loading takes forever"
+  },
+  {
+   "qid": "q016",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "45884-s05-028",
+    "45884-s05-031",
+    "45884-s05-032"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "45884-s01-054",
+      "45884-s05-013",
+      "45884-s05-031",
+      "45884-s05-032",
+      "70445-s07-030"
+     ],
+     "composite": 4.18
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "45884-s01-054",
+      "45884-s05-013",
+      "45884-s05-031",
+      "45884-s05-032",
+      "70445-s07-030"
+     ],
+     "composite": 4.12
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "45884-s01-054",
+      "45884-s05-013",
+      "45884-s05-031",
+      "45884-s05-032",
+      "70445-s07-030"
+     ],
+     "composite": 3.85
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "45884-s01-054",
+      "45884-s05-013",
+      "45884-s05-031",
+      "45884-s05-032",
+      "70445-s07-030"
+     ],
+     "composite": 4.3
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 3,
+     "judged": 3,
+     "slides": [
+      "45884-s01-054",
+      "45884-s05-013",
+      "45884-s05-031",
+      "45884-s05-032",
+      "70445-s07-030"
+     ],
+     "composite": 4.33
+    }
+   },
+   "question": "Why do LLMs hallucinate? Does it have something to do with how RLHF rewards answers?"
+  },
+  {
+   "qid": "q017",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "45884-s06-018",
+    "45884-s06-021",
+    "45884-s06-023",
+    "45884-s06-010"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s06-010",
+      "45884-s06-018",
+      "45884-s06-021",
+      "45884-s06-023",
+      "45884-s06-024"
+     ],
+     "composite": 3.85
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s06-010",
+      "45884-s06-018",
+      "45884-s06-021",
+      "45884-s06-023",
+      "45884-s06-024"
+     ],
+     "composite": 3.97
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "45884-s06-010",
+      "45884-s06-018",
+      "45884-s06-021",
+      "45884-s06-023",
+      "45884-s06-024"
+     ],
+     "composite": 4.18
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s06-010",
+      "45884-s06-018",
+      "45884-s06-021",
+      "45884-s06-023",
+      "45884-s06-024"
+     ],
+     "composite": 3.7
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s06-010",
+      "45884-s06-018",
+      "45884-s06-021",
+      "45884-s06-023",
+      "45884-s06-024"
+     ],
+     "composite": 3.42
+    }
+   },
+   "question": "classification vs object detection vs segmentation, which one would a grocery chain need to monitor empty shelf space?"
+  },
+  {
+   "qid": "q018",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "45884-s06-049",
+    "45884-s06-063",
+    "45884-s06-066",
+    "45884-s06-068"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s06-048",
+      "45884-s06-068",
+      "45884-s06-069",
+      "45884-s06-070",
+      "45884-s10-006"
+     ],
+     "composite": 4.18
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 2,
+     "judged": 3,
+     "slides": [
+      "45884-s06-048",
+      "45884-s06-068",
+      "45884-s06-069",
+      "45884-s06-070",
+      "45884-s10-006"
+     ],
+     "composite": 4.24
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s06-048",
+      "45884-s06-068",
+      "45884-s06-069",
+      "45884-s06-070",
+      "45884-s10-006"
+     ],
+     "composite": 4.06
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s06-048",
+      "45884-s06-068",
+      "45884-s06-069",
+      "45884-s06-070",
+      "45884-s10-006"
+     ],
+     "composite": 4.15
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": true,
+     "hit": true,
+     "passes": 1,
+     "judged": 3,
+     "slides": [
+      "45884-s06-048",
+      "45884-s06-068",
+      "45884-s06-069",
+      "45884-s06-070",
+      "45884-s10-006"
+     ],
+     "composite": 4.27
+    }
+   },
+   "question": "When would you use a vision transformer instead of a CNN?"
+  },
+  {
+   "qid": "q019",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "45884-s08-057",
+    "45884-s08-058",
+    "45884-s08-059"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "declined",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.0
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "declined",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.0
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "declined",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.0
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "declined",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.0
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "declined",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.0
+    }
+   },
+   "question": "what is MCP in plain english and why do companies care about it?"
+  },
+  {
+   "qid": "q020",
+   "type": "concept",
+   "category": "CONCEPT_QUESTION",
+   "expected": [
+    "slides"
+   ],
+   "expected_slides": [
+    "45884-s10-007",
+    "45884-s10-014",
+    "45884-s10-020",
+    "45884-s10-026"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.53
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.63
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.63
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.67
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": false,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.7
+    }
+   },
+   "question": "How does CLIP let you search product photos with text without tagging everything by hand?"
+  },
+  {
+   "qid": "q021",
+   "type": "beyond",
+   "category": "OTHER",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [
+    "45884-s08-063",
+    "45884-s08-050"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s08-063",
+      "45884-s08-064",
+      "70445-s08-046",
+      "70445-s08-050",
+      "70445-s08-065"
+     ],
+     "composite": 3.27
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s08-063",
+      "45884-s08-064",
+      "70445-s08-046",
+      "70445-s08-050",
+      "70445-s08-065"
+     ],
+     "composite": 3.24
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s08-063",
+      "45884-s08-064",
+      "70445-s08-046",
+      "70445-s08-050",
+      "70445-s08-065"
+     ],
+     "composite": 2.85
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s08-063",
+      "45884-s08-064",
+      "70445-s08-046",
+      "70445-s08-050",
+      "70445-s08-065"
+     ],
+     "composite": 2.06
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s08-063",
+      "45884-s08-064",
+      "70445-s08-046",
+      "70445-s08-050",
+      "70445-s08-065"
+     ],
+     "composite": 2.03
+    }
+   },
+   "question": "Should my project group use CrewAI or LangGraph for a multi-agent app? Which one is easier to get started with?"
+  },
+  {
+   "qid": "q022",
+   "type": "beyond",
+   "category": "CODE_HELP",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 1.87
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 1.87
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.43
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.2
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.63
+    }
+   },
+   "question": "how does prompt caching work with the Claude or OpenAI API, and how much does it actually save on cost?"
+  },
+  {
+   "qid": "q023",
+   "type": "beyond",
+   "category": "OTHER",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [
+    "45884-s05-042"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "slides",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s05-029",
+      "45884-s08-056",
+      "45884-s08-070",
+      "70445-s03-064",
+      "70445-s07-034"
+     ],
+     "composite": 2.7
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "slides",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s05-029",
+      "45884-s08-056",
+      "45884-s08-070",
+      "70445-s03-064",
+      "70445-s07-034"
+     ],
+     "composite": 2.82
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "slides",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s05-029",
+      "45884-s08-056",
+      "45884-s08-070",
+      "70445-s03-064",
+      "70445-s07-034"
+     ],
+     "composite": 2.03
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "slides",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s05-029",
+      "45884-s08-056",
+      "45884-s08-070",
+      "70445-s03-064",
+      "70445-s07-034"
+     ],
+     "composite": 2.58
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "slides",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [
+      "45884-s05-029",
+      "45884-s08-056",
+      "45884-s08-070",
+      "70445-s03-064",
+      "70445-s07-034"
+     ],
+     "composite": 2.48
+    }
+   },
+   "question": "How do I evaluate whether my RAG chatbot is giving good answers? Are there standard metrics for that?"
+  },
+  {
+   "qid": "q024",
+   "type": "beyond",
+   "category": "OTHER",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [
+    "45884-s05-042",
+    "70445-s07-033"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 1.7
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.9
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.83
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.23
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.27
+    }
+   },
+   "question": "fine tuning vs RAG for an internal company knowledge bot, which would you pick and why"
+  },
+  {
+   "qid": "q025",
+   "type": "beyond",
+   "category": "OTHER",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [
+    "70445-s10-011"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.13
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.17
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.05
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.12
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.13
+    }
+   },
+   "question": "How do I choose an embedding model for semantic search over our support docs? Does a bigger vector size mean better results?"
+  },
+  {
+   "qid": "q026",
+   "type": "beyond",
+   "category": "CODE_HELP",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [
+    "45884-s08-069"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.67
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 2,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.67
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 2,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.42
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 2,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.5
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 2,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.5
+    }
+   },
+   "question": "how do I self-host n8n with Docker on my own computer and connect it to Gmail?"
+  },
+  {
+   "qid": "q027",
+   "type": "beyond",
+   "category": "CODE_HELP",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [
+    "70445-s10-011"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 1.9
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 1.97
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.07
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 1.93
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.07
+    }
+   },
+   "question": "Our vector search keeps missing exact product codes like part numbers. Should we add keyword search or reranking? How would that work?"
+  },
+  {
+   "qid": "q028",
+   "type": "beyond",
+   "category": "CODE_HELP",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [
+    "45884-s08-058",
+    "45884-s08-059"
+   ],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 2,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.83
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 2,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.58
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 2,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.67
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 2,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.75
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 2,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.75
+    }
+   },
+   "question": "how would I build my own MCP server in Python so an agent can query our sales database?"
+  },
+  {
+   "qid": "q029",
+   "type": "off_topic",
+   "category": "OTHER",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.92
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.75
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    }
+   },
+   "question": "who do you think wins the Super Bowl this year?"
+  },
+  {
+   "qid": "q030",
+   "type": "off_topic",
+   "category": "OTHER",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    }
+   },
+   "question": "Can you give me a good recipe for a quick vegetarian chili? cooking for 6 tonight"
+  },
+  {
+   "qid": "q031",
+   "type": "off_topic",
+   "category": "OTHER",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    }
+   },
+   "question": "any juicy celebrity breakup news this week?"
+  },
+  {
+   "qid": "q032",
+   "type": "off_topic",
+   "category": "OTHER",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    }
+   },
+   "question": "Planning 3 days in Lisbon over fall break, what should I not miss?"
+  },
+  {
+   "qid": "q033",
+   "type": "off_topic",
+   "category": "OTHER",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    }
+   },
+   "question": "recommend a good sci-fi movie for tonight, something not too long"
+  },
+  {
+   "qid": "q034",
+   "type": "off_topic",
+   "category": "OTHER",
+   "expected": [
+    "declined"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.75
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.75
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.83
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.75
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "declined",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.75
+    }
+   },
+   "question": "Can you explain SN1 vs SN2 reactions for my organic chemistry problem set?"
+  },
+  {
+   "qid": "q035",
+   "type": "logistics",
+   "category": "MEETING_REQUEST",
+   "expected": [
+    "faq"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 5.0
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 5.0
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 5.0
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 5.0
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 5.0
+    }
+   },
+   "question": "when are your office hours this week? want to talk through my project idea"
+  },
+  {
+   "qid": "q036",
+   "type": "logistics",
+   "category": "EXTENSION_REQUEST",
+   "expected": [
+    "faq"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.92
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 5.0
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.92
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 5.0
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.92
+    }
+   },
+   "question": "Is there any chance I could get an extension on the text mining assignment? I have three interviews this week"
+  },
+  {
+   "qid": "q037",
+   "type": "logistics",
+   "category": "GRADING_QUESTION",
+   "expected": [
+    "logistics"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 1,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.33
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 1.93
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.73
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.27
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "course_info",
+     "route_ok": false,
+     "hit": null,
+     "passes": 0,
+     "judged": 3,
+     "slides": [],
+     "composite": 2.13
+    }
+   },
+   "question": "I think one of my quiz answers was marked wrong by mistake, can I get a regrade?"
+  },
+  {
+   "qid": "q038",
+   "type": "logistics",
+   "category": "MISSED_CLASS",
+   "expected": [
+    "faq"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 5.0
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 5.0
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.92
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 5.0
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "faq",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.92
+    }
+   },
+   "question": "I'm going to miss class next Tuesday for a conference, what should I do to catch up?"
+  },
+  {
+   "qid": "q039",
+   "type": "logistics",
+   "category": "CANVAS_OR_COURSE_ACCESS",
+   "expected": [
+    "logistics"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "logistics",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.92
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "logistics",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.92
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "logistics",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.92
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "logistics",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 5.0
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "logistics",
+     "route_ok": true,
+     "hit": null,
+     "passes": 3,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.92
+    }
+   },
+   "question": "I got into the course off the waitlist but I still don't see it in Canvas. Who do I talk to?"
+  },
+  {
+   "qid": "q040",
+   "type": "logistics",
+   "category": "API_KEY_NOT_WORKING",
+   "expected": [
+    "logistics"
+   ],
+   "expected_slides": [],
+   "models": {
+    "anthropic:claude-fable-5-1": {
+     "route": "declined",
+     "route_ok": false,
+     "hit": null,
+     "passes": 1,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.92
+    },
+    "anthropic:claude-opus-5-5": {
+     "route": "declined",
+     "route_ok": false,
+     "hit": null,
+     "passes": 1,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.92
+    },
+    "anthropic:claude-sonnet-5-5": {
+     "route": "declined",
+     "route_ok": false,
+     "hit": null,
+     "passes": 2,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.08
+    },
+    "openai:gpt-5.6-sol": {
+     "route": "declined",
+     "route_ok": false,
+     "hit": null,
+     "passes": 2,
+     "judged": 3,
+     "slides": [],
+     "composite": 4.08
+    },
+    "openai:gpt-6.1-sol": {
+     "route": "declined",
+     "route_ok": false,
+     "hit": null,
+     "passes": 1,
+     "judged": 3,
+     "slides": [],
+     "composite": 3.92
+    }
+   },
+   "question": "I can't access the model anymore, the course API key gives me a 401 error. Can you send a new one?"
+  }
+ ],
+ "plain": {
+  "icc": "ICC (0 to 1): 0.8 or more = scores repeat closely; 0.5 to 0.8 = moderate; below 0.5 = mostly noise.",
+  "spearman": "Spearman (-1 to 1): do the answers keep the same order from one run to the next? 1 = same order.",
+  "flip": "Verdict flip rate: how often the same judge gave pass once and fail the other time (0% = never).",
+  "kappa": "Cohen's kappa on pass/fail: 1 = always the same verdict; 0 = no better than chance; 0.6 or more is usually read as substantial agreement.",
+  "alpha": "Krippendorff's alpha (ordinal): agreement among the judges beyond chance; 1 = perfect, 0 = chance, 0.8 or more is reliable, 0.67 to 0.8 tentative, below 0.67 the judges disagree too much to trust one alone.",
+  "exact": "Exact agreement: share of judge pairs that gave the same score on the same answer.",
+  "within_one": "Within one: share of judge pairs whose scores differ by at most one point.",
+  "ci": "95% confidence interval: the range the mean would likely fall in with a fresh set of similar questions."
+ },
+ "routed": {
+  "answers": 15,
+  "judgements": 75,
+  "judgements_total": 1350
+ }
+}

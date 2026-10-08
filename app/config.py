@@ -37,7 +37,7 @@ DEFAULT_DAILY_EVAL_LLM_CALL_CAP = 300  # model calls by admin eval runs per UTC 
 DEFAULT_EVAL_MAX_CALLS_PER_RUN = 300  # model calls one admin eval run may make (EVAL_MAX_CALLS_PER_RUN)
 DEFAULT_EVAL_STUDENT_RESERVE = 100  # an eval step waits rather than leave students fewer global calls than this
 EVAL_MAX_QUESTIONS = 30
-EVAL_MAX_GENERATORS = 3
+EVAL_MAX_GENERATORS = 6  # raised from 3 on Oct 8 for model comparisons (docs/SPEC.md, Block 8c)
 EVAL_MAX_JUDGES = 3
 # OpenRouter lets the admin pick any model; refuse ones priced above this (USD per million tokens).
 DEFAULT_MAX_PRICE_PER_MTOK = {"prompt": 15.0, "completion": 60.0}
