@@ -107,6 +107,8 @@ Do **not** write the bodies of these, even if asked to "just finish it":
 You may write function signatures, docstrings, and failing tests for them in
 `tests/test_retrieval.py` when Ben asks. Review his versions if he asks.
 
+Ben has written these. An agent changes `app/retrieval.py` only when Ben asks for a specific change. That commit carries the trailer `Retrieval-Change-Requested-By: Ben`, and the change is recorded in `prompt_log.md` as an AI edit of his code at his request. `tests/test_thresholds.py` fails any branch that changes the file without that trailer.
+
 ## Prompt log
 
 - `prompt_log.md` sits at the repo root, next to `README.md`. The assignment

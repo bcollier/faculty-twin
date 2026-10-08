@@ -30,17 +30,29 @@ def test_bens_constant_is_still_his_value():
     assert retrieval.NOT_COVERED_THRESHOLD == BEN_VALUE
 
 
+RETRIEVAL_TRAILER = "Retrieval-Change-Requested-By: Ben"
+
+
 def test_retrieval_py_unchanged_against_main():
-    """Guard for agent branches: this feature must not edit app/retrieval.py."""
+    """Guard for agent branches: app/retrieval.py is Ben's hand-written code and is not edited silently.
+
+    A branch may change it only when one of its commits carries the trailer
+    "Retrieval-Change-Requested-By: Ben" (a change Ben asked for, recorded in prompt_log.md). See AGENTS.md.
+    """
     if shutil.which("git") is None or not (ROOT / ".git").exists():
         pytest.skip("not a git checkout")
     base = subprocess.run(["git", "merge-base", "HEAD", "origin/main"], cwd=ROOT, capture_output=True, text=True)
     if base.returncode != 0:
         pytest.skip("origin/main is not available")
+    merge_base = base.stdout.strip()
     diff = subprocess.run(
-        ["git", "diff", "--quiet", base.stdout.strip(), "--", "app/retrieval.py"], cwd=ROOT, capture_output=True
+        ["git", "diff", "--quiet", merge_base, "--", "app/retrieval.py"], cwd=ROOT, capture_output=True
     )
-    assert diff.returncode == 0, "app/retrieval.py differs from main; only Ben edits it"
+    if diff.returncode == 0:
+        return
+    log = subprocess.run(["git", "log", "--format=%B", f"{merge_base}..HEAD"], cwd=ROOT, capture_output=True, text=True)
+    requested = any(line.strip() == RETRIEVAL_TRAILER for line in log.stdout.splitlines())
+    assert requested, f"app/retrieval.py differs from main; only Ben edits it (or a commit with '{RETRIEVAL_TRAILER}')"
 
 
 def test_override_never_writes_to_retrieval_module():

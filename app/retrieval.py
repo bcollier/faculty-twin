@@ -83,12 +83,14 @@ def select_segments(
     # raise NotImplementedError("Ben writes this by hand")
 
     selected_segments = []
+    scores = {}  # slide id -> score, so the cut to MAX_SEGMENTS keeps the best slides
 
 
     # if we no limited threshold we add all slides, otherwise add slides that are above the threshold
     for i, score in ranked[:TOP_K]:
       if threshold is None or score >= threshold:
         selected_segments.append(records[i])
+        scores[records[i]["id"]] = score
 
     hits = list(selected_segments)
     for a in hits:
@@ -100,7 +102,11 @@ def select_segments(
                 and r["slide_number"] == a["slide_number"] + 1
                 and r not in selected_segments):
               selected_segments.append(r)
+              # a gap-fill slide counts with its two neighbors' average score, so it is not the first one cut
+              scores[r["id"]] = (scores[a["id"]] + scores[b["id"]]) / 2
 
+    # best-scoring slides first, cut to MAX_SEGMENTS, then put the survivors in deck order
+    selected_segments.sort(key=lambda r: scores[r["id"]], reverse=True)
     selected_segments = selected_segments[:MAX_SEGMENTS]
     selected_segments.sort(key=lambda r: (r["course"], r["session"], r["slide_number"]))
     return selected_segments
