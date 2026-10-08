@@ -7,6 +7,7 @@ app/admin.py and need the admin cookie.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import time
 from dataclasses import dataclass
@@ -17,7 +18,9 @@ import numpy as np
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from . import (
     auth,
@@ -36,6 +39,7 @@ from . import (
     speech,
     storage,
     thresholds,
+    usage,
     voices,
 )
 from .storage import Content
@@ -79,6 +83,17 @@ async def _guard(request: Request, call_next):
     if request.method in UNSAFE_METHODS and request.url.path.startswith("/api/") and cross_site(request):
         return JSONResponse({"detail": "Cross-site requests are not allowed."}, status_code=403)
     response = await call_next(request)
+    if usage.pending_count():
+        # Usage counters are written off the request path; finish them after the response is sent,
+        # so the function is not frozen with writes still pending.
+        previous = response.background
+
+        async def finish() -> None:
+            if previous is not None:
+                await previous()
+            await run_in_threadpool(usage.flush, 3.0)
+
+        response.background = BackgroundTask(finish)
     for name, value in API_SECURITY_HEADERS.items():
         response.headers.setdefault(name, value)
     # Playlists carry short-lived signed links; nothing JSON should be cached.
@@ -136,6 +151,20 @@ class PasscodeBody(BaseModel):
 class AskBody(BaseModel):
     question: str
     course: Optional[str] = None
+    source: Optional[str] = Field(None, max_length=20)  # chip | typed | follow_up; anything else is ignored
+
+
+class EventBody(BaseModel):
+    name: str = Field(..., max_length=40)
+
+
+def question_source(request: Request, sent: Optional[str]) -> Optional[str]:
+    """Where a question came from, for the log. The X-FT-Source header may only claim a test source
+    (smoke, eval, prompt_test): it is a tag for analytics and changes nothing else."""
+    header = (request.headers.get("x-ft-source") or "").strip().lower()
+    if header in usage.HEADER_SOURCES:
+        return header
+    return sent if sent in usage.QUESTION_SOURCES else None
 
 
 def clean_question(raw: str) -> str:
@@ -237,15 +266,18 @@ def answer(
         raise RetrievalNotReady() from exc
     best_slide = float(ranked[0][1]) if ranked else None
     info["top_score"] = best_slide
+    info["top_slide_id"] = records[ranked[0][0]].get("id") if ranked else None  # Analytics topics
 
     # Course info from Canvas (spec step 6a): wins when it clears the info threshold and beats every slide.
     hits = course_info.top_hits(info_ranked, info_records)
     if hits and hits[0].score >= course_info.threshold() and (best_slide is None or hits[0].score > best_slide):
         used_model()
-        result = course_info.answer(
-            question, course, hits, _suggested_questions(content, course), completer, provider=provider, model=model
-        )
+        with usage.purpose("course_info"):
+            result = course_info.answer(
+                question, course, hits, _suggested_questions(content, course), completer, provider=provider, model=model
+            )
         info["kind"] = course_info.KIND
+        info["top_slide_id"] = None  # answered from Canvas, not a slide
         info["top_score"] = hits[0].score
         info["narration"] = result.source
         info["errors"] = result.errors
@@ -394,17 +426,61 @@ def ask(
     course = clean_course(body.course)
     limits.check_ask_rate(auth.visitor_key(session), limits.client_hash(request))
     content = storage.store.get_or_503()
+    source = question_source(request, body.source)
+    test_purpose = usage.TEST_PURPOSES.get(source or "")
     started = time.monotonic()
-    try:
-        result, info = answer(question, course, content, retriever, embedder, completer)
-    except RetrievalNotReady:
-        raise HTTPException(503, "retrieval not implemented yet")
+    with usage.tally() as spent, (
+        usage.purpose(test_purpose, sticky=True) if test_purpose else contextlib.nullcontext()
+    ):
+        try:
+            result, info = answer(question, course, content, retriever, embedder, completer)
+        except RetrievalNotReady:
+            raise HTTPException(503, "retrieval not implemented yet")
     latency = int((time.monotonic() - started) * 1000)
     limits.log_question(
         question, info["top_score"], result["covered"], info["provider"], info["model"], latency, course,
-        kind=info.get("kind"),
+        kind=info.get("kind"), source=source, tokens_in=spent.tokens_in, tokens_out=spent.tokens_out,
+        **_log_extras(content, result, info),
     )
+    if info.get("faq_id") and not test_purpose:
+        usage.record_faq(info["faq_id"])
     return result
+
+
+def _log_extras(content: Content, result: dict[str, Any], info: dict[str, Any]) -> dict[str, Any]:
+    """Analytics columns for the question log: the top slide, its session, and the voice characters signed."""
+    segments = result.get("segments") or []
+    top = info.get("top_slide_id") or next((s.get("slide_id") for s in segments if s.get("slide_id")), None)
+    rec = content.record(top) if top else None
+    return {
+        "top_slide_id": top,
+        "session": (rec or {}).get("session"),
+        "session_title": (rec or {}).get("session_title"),
+        # Live voice only (/api/audio links); stored answers play pre-made mp3s.
+        "voice_chars": sum(len(s.get("narration") or "") for s in segments
+                           if str(s.get("audio") or "").startswith("/api/audio")),
+    }
+
+
+EVENT_PER_MINUTE = 60
+EVENT_PER_DAY = 2000
+
+
+@app.post("/api/event", status_code=204)
+def event(body: EventBody, session: auth.Session = Depends(auth.require_student)) -> None:
+    """One student-page event for Settings > Analytics: an allowlisted name, nothing else (no text, no ids)."""
+    if body.name not in usage.EVENT_NAMES:
+        raise HTTPException(400, "Unknown event.")
+    visitor = auth.visitor_key(session)
+    t = time.gmtime()
+    for key, cap, ttl in (
+        (f"rl:event-min:{visitor}:{time.strftime('%Y%m%d%H%M', t)}", EVENT_PER_MINUTE, 300),
+        (f"rl:event-day:{visitor}:{time.strftime('%Y%m%d', t)}", EVENT_PER_DAY, 172800),
+    ):
+        ok, _ = limits.increment(key, 1, cap=cap, ttl_seconds=ttl)
+        if not ok:
+            raise HTTPException(429, "Too many events.")
+    usage.record_event(body.name)
 
 
 @app.get("/api/audio")
@@ -429,6 +505,7 @@ async def audio(
         len(text), voices.daily_cap(voice), auth.visitor_key(session), limits.client_hash(request), pool=voice.pool
     ):
         raise HTTPException(429, "The voice has reached today's limit. Captions only for now.")
+    usage.record_tts(voice.kind or "unverified", len(text))  # characters sent, by voice tier (Analytics)
     headers = {"Cache-Control": "private, max-age=86400"}
     if voice.provider == voices.EDGE:
         try:
@@ -465,5 +542,8 @@ def dev_file(
 
 from .admin import router as admin_router  # noqa: E402  (admin imports answer() from here)
 
+from .analytics import router as analytics_router  # noqa: E402
+
 app.include_router(admin_router)
 app.include_router(thresholds.router)
+app.include_router(analytics_router)

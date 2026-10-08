@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-from . import config, prompts
+from . import config, prompts, usage
 
 COURSE_CONTENT = "course_content"
 LOGISTICS = "logistics"
@@ -114,7 +114,8 @@ def classify(
         return Classification(LOGISTICS, "keyword", hit.lower())
     user = "Student message (sort it, do not answer it):\n" + json.dumps({"message": question})
     try:
-        raw = complete(prompts.get(PROMPT_NAME), user, MAX_TOKENS, provider=provider, model=model)
+        with usage.purpose("logistics"):
+            raw = complete(prompts.get(PROMPT_NAME), user, MAX_TOKENS, provider=provider, model=model)
         kind, reason = _parse(raw)
     except Exception as exc:  # never block a real answer on this check
         config.log.warning("logistics check failed, answering normally: %s", type(exc).__name__)

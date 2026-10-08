@@ -87,6 +87,20 @@ async function api(path, { method = 'GET', body, timeout = 15000 } = {}) {
   return { status: res.status, ok: res.ok, data };
 }
 
+/** One usage event for Settings > Analytics: an allowlisted name only (no text, no ids).
+    Fire and forget: it never waits, never retries, and never shows an error. */
+const EVENTS = new Set(['chip_tap', 'question_typed', 'segment_played', 'walkthrough_completed', 'clip_played',
+  'audio_failed', 'follow_up_tapped', 'course_filter_changed']);
+function track(name) {
+  if (!EVENTS.has(name)) return;
+  try {
+    fetch('/api/event', {
+      method: 'POST', credentials: 'same-origin', keepalive: true,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+    }).catch(() => {});
+  } catch { /* analytics must never break the page */ }
+}
+
 function courseLabel(code, title) {
   const c = COURSES[String(code)];
   if (c) return `${c.code} ${title || c.title}`;
@@ -314,16 +328,18 @@ function setCourse(value) {
   if (radio) radio.checked = true;
   renderIdleChips();
 }
-ui.idleCourse.addEventListener('change', (e) => setCourse(e.target.value));
-ui.dockCourse.addEventListener('change', (e) => setCourse(e.target.value));
+ui.idleCourse.addEventListener('change', (e) => { setCourse(e.target.value); track('course_filter_changed'); });
+ui.dockCourse.addEventListener('change', (e) => { setCourse(e.target.value); track('course_filter_changed'); });
 
 function topicsForCourse() {
   const list = app.topics.filter(t => !app.course || !t.course || t.course === app.course);
   return list.slice(0, MAX_CHIPS);
 }
 
-function chip(text, courseCodeStr) {
-  const b = el('button', { type: 'button', class: 'chip', onclick: () => ask(text) }, text);
+/** A question chip. `source` is "chip" (suggested questions) or "follow_up" (after an answer). */
+function chip(text, courseCodeStr, source = 'chip') {
+  const onclick = () => { track(source === 'follow_up' ? 'follow_up_tapped' : 'chip_tap'); ask(text, { source }); };
+  const b = el('button', { type: 'button', class: 'chip', onclick }, text);
   if (courseCodeStr && !app.course) b.append(el('span', { class: 'chip-course', text: courseCode(courseCodeStr) }));
   return el('li', {}, b);
 }
@@ -342,8 +358,12 @@ ui.idleQ.addEventListener('input', () => { ui.idleCount.textContent = `${ui.idle
 ui.idleQ.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ui.idleForm.requestSubmit(); }
 });
-ui.idleForm.addEventListener('submit', (e) => { e.preventDefault(); ask(ui.idleQ.value); });
-ui.dockForm.addEventListener('submit', (e) => { e.preventDefault(); ask(ui.dockQ.value); });
+function askTyped(value) {
+  if (String(value || '').trim()) track('question_typed');
+  ask(value, { source: 'typed' });
+}
+ui.idleForm.addEventListener('submit', (e) => { e.preventDefault(); askTyped(ui.idleQ.value); });
+ui.dockForm.addEventListener('submit', (e) => { e.preventDefault(); askTyped(ui.dockQ.value); });
 
 ui.dockToggle.addEventListener('click', () => {
   const open = !ui.dock.classList.contains('expanded');
@@ -519,7 +539,7 @@ function makeSilentWav(seconds) {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
-async function ask(raw, { resumeAt = 0, quiet = false } = {}) {
+async function ask(raw, { resumeAt = 0, quiet = false, source = null } = {}) {
   const question = String(raw || '').trim().slice(0, 300);
   if (!question) {
     (ui.screens.app.dataset.view === 'idle' ? ui.idleQ : ui.dockQ).focus();
@@ -537,7 +557,7 @@ async function ask(raw, { resumeAt = 0, quiet = false } = {}) {
 
   let res;
   try {
-    res = await api('/api/ask', { method: 'POST', body: { question, course: app.course }, timeout: ASK_TIMEOUT_MS });
+    res = await api('/api/ask', { method: 'POST', body: { question, course: app.course, source }, timeout: ASK_TIMEOUT_MS });
   } catch {
     if (myId === app.requestId) showStageError('unreachable', question);
     return;
@@ -621,6 +641,8 @@ function loadAnswer(answer, start = 0) {
   player.captionsOnly = player.segments.every(s => !s.audio);
   player.useFallback = false;
   player.finished = false;
+  player.sentPlayed = false; // usage events: once per answer
+  player.sentCompleted = false;
   ui.audioNote.hidden = !player.captionsOnly;
   buildDots();
   ui.stageMsg.hidden = true;
@@ -735,6 +757,7 @@ function playCurrent() {
   if (player.inClip) return;
   player.playing = true;
   player.finished = false;
+  if (!player.sentPlayed) { player.sentPlayed = true; track('segment_played'); }
   const a = audioFor(player.index);
   if (!a) {
     startCaptionTimer();
@@ -829,7 +852,8 @@ function finishAnswer() {
   ui.caption.textContent = COPY.finished;
   player.sentenceIdx = -1;
   const ups = (player.answer?.follow_ups || []).filter(Boolean);
-  ui.followupChips.replaceChildren(...ups.map(q => chip(q)));
+  ui.followupChips.replaceChildren(...ups.map(q => chip(q, undefined, 'follow_up')));
+  if (!player.sentCompleted) { player.sentCompleted = true; track('walkthrough_completed'); }
   ui.followups.hidden = ups.length === 0;
   updateDots();
   updateControls();
@@ -838,6 +862,7 @@ function finishAnswer() {
 /** The current voice failed (service down, or today's cap). Switch to the free fallback voice
     if the answer has one, otherwise keep going with captions. */
 function voiceFailed() {
+  track('audio_failed');
   const seg = player.segments[player.index];
   if (!player.useFallback && seg && seg.audio_fallback) switchToFallbackVoice();
   else fallBackToCaptions();
@@ -973,6 +998,7 @@ ui.btnMute.addEventListener('click', toggleMute);
 function enterClip() {
   const seg = player.segments[player.index];
   if (!seg?.clip?.url) return;
+  track('clip_played');
   if (player.playing) pausePlayback();
   player.inClip = true;
   ui.slideImg.hidden = true;

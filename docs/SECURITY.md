@@ -103,6 +103,8 @@ The grounding check is a heuristic. A payload written mostly in the slides' own 
 
 The address hash never enters `question_log`; it lives only in `counters` keys, which expire.
 
+Added Oct 7 (analytics): `POST /api/event` takes an allowlisted event name only (student cookie, cross-site check, 60 a minute and 2,000 a day per visitor). Usage counters (`usage:`, `embed:`, `tts:`, `event:`, `faq:`) hold no visitor or address. The new `question_log` columns describe the answer (top slide, session, tokens, voice characters, source), never the visitor. "Label topics" sends only scrubbed question text to the model, at most 300 questions, 10 runs a day (fails closed), and the model's examples are taken from the list by number. The `X-FT-Source` header can only tag a row as test traffic; it skips no limit or check. The CSV export prefixes cells that start with `=`, `+`, `-` or `@`.
+
 ### Voice tiers (added Oct 5, PR `feat/voice-tiers`)
 
 Settings can now pick my ElevenLabs clone, an ElevenLabs stock voice, or a free Microsoft voice through `edge-tts`. What changed for the threat model:

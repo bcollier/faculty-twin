@@ -201,7 +201,8 @@ def test_recent_questions_reads_without_kind_when_the_column_is_missing(monkeypa
     monkeypatch.setattr(supa, "select", fake_select)
     rows = limits.recent_questions(5)
     assert len(rows) == 1 and "kind" not in rows[0]
-    assert seen[0].endswith(",kind") and "kind" not in seen[1]
+    # With source (analytics migration), then with kind, then without either.
+    assert seen[0].endswith(",kind,source") and seen[1].endswith(",kind") and "kind" not in seen[2]
 
 
 def test_recent_questions_requests_kind_when_the_column_exists(monkeypatch):

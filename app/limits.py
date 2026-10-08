@@ -22,7 +22,7 @@ import hashlib
 import hmac
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -264,6 +264,11 @@ def today_counters() -> dict[str, int]:
 
 # ---------------------------------------------------------------- question log
 
+# Added Oct 7 (analytics). Written when the columns exist; left out (with a warning) until the
+# migration block in supabase/schema.sql has been run, so logging never stops.
+ANALYTICS_COLUMNS = ("top_slide_id", "session", "session_title", "tokens_in", "tokens_out", "voice_chars", "source")
+
+
 def log_question(
     question: str,
     top_score: float | None,
@@ -273,11 +278,15 @@ def log_question(
     latency_ms: int | None = None,
     course: str | None = None,
     kind: str | None = None,
+    **extra: Any,
 ) -> None:
     """One question-log row. See docs/TESTING_AND_SCORES.md for what each field means.
 
     `kind` is what answered: "course_content", "stored_topic", "faq", "course_info",
     "logistics", or "not_covered". `provider` and `model` are None when no model was called.
+    `extra` may carry the analytics columns (ANALYTICS_COLUMNS): the top slide and its
+    session, tokens in/out, voice characters signed, and where the question came from
+    (chip, typed, follow_up, or a test source). Never a visitor id, a cookie, or an address.
     """
     increment(f"{'covered' if covered else 'not_covered'}:{_today()}", 1)
     row = {
@@ -291,21 +300,27 @@ def log_question(
         "course": course,
         "kind": kind,
     }
+    for name in ANALYTICS_COLUMNS:
+        if name in extra:
+            row[name] = extra[name]
     if config.supabase_configured():
-        try:
-            supa.insert("question_log", row)
-        except supa.SupabaseError as exc:
-            # Until the `kind` column exists (supabase/schema.sql), keep logging without it.
-            config.log.warning("question log insert failed: %s", exc)
+        # Until the migration in supabase/schema.sql has run, keep logging with fewer columns:
+        # first without the analytics columns, then without `kind` as well.
+        attempts = [row, {k: v for k, v in row.items() if k not in ANALYTICS_COLUMNS}]
+        attempts.append({k: v for k, v in attempts[1].items() if k != "kind"})
+        for i, attempt in enumerate(attempts):
+            if i and attempt == attempts[i - 1]:
+                continue
             try:
-                supa.insert("question_log", {k: v for k, v in row.items() if k != "kind"})
-            except supa.SupabaseError as exc2:
-                config.log.warning("question log insert without kind failed: %s", exc2)
+                supa.insert("question_log", attempt)
+                return
+            except supa.SupabaseError as exc:
+                config.log.warning("question log insert failed (%s columns): %s", len(attempt), exc)
         return
     _warn_once()
     row["at"] = datetime.now(timezone.utc).isoformat()
     _mem_log.append(row)
-    del _mem_log[:-200]
+    del _mem_log[:-2000]
 
 
 LOG_COLUMNS = "at,question,covered,top_score,provider,model,latency_ms,course"
@@ -328,6 +343,12 @@ def recent_questions(limit: int = 50) -> list[dict[str, Any]]:
     if config.supabase_configured():
         params = {"select": LOG_COLUMNS + ",kind", "order": "at.desc", "limit": str(limit)}
         try:
+            # With `source` (test traffic badge) once the analytics migration has run.
+            return supa.select("question_log", {**params, "select": LOG_COLUMNS + ",kind,source"})
+        except supa.SupabaseError as exc:
+            if not missing_column(exc):
+                raise
+        try:
             return supa.select("question_log", params)
         except supa.SupabaseError as exc:
             if not missing_kind_column(exc):
@@ -336,3 +357,73 @@ def recent_questions(limit: int = 50) -> list[dict[str, Any]]:
             config.log.warning("question_log has no kind column yet; reading without it")
             return supa.select("question_log", {**params, "select": LOG_COLUMNS})
     return list(reversed(_mem_log[-limit:]))
+
+
+def missing_column(exc: Exception) -> bool:
+    """True when PostgREST refused a request because some question_log column does not exist yet."""
+    text = str(exc)
+    return "42703" in text or "PGRST204" in text or ("column" in text and "does not exist" in text)
+
+
+PAGE_ROWS = 1000  # PostgREST's default maximum rows per request
+
+
+def log_rows(since_iso: str, max_rows: int = 10000) -> tuple[list[dict[str, Any]], bool]:
+    """Question-log rows at or after `since_iso`, newest first, and whether the analytics columns exist.
+
+    Tries every column, then without the analytics columns, then without `kind`.
+    """
+    if not config.supabase_configured():
+        rows = [r for r in _mem_log if str(r.get("at", "")) >= since_iso]
+        return list(reversed(rows))[:max_rows], True
+    shapes = [
+        (LOG_COLUMNS + ",kind," + ",".join(ANALYTICS_COLUMNS), True),
+        (LOG_COLUMNS + ",kind", False),
+        (LOG_COLUMNS, False),
+    ]
+    for columns, full in shapes:
+        out: list[dict[str, Any]] = []
+        try:
+            while len(out) < max_rows:
+                page = supa.select("question_log", {
+                    "select": columns, "at": f"gte.{since_iso}", "order": "at.desc",
+                    "limit": str(min(PAGE_ROWS, max_rows - len(out))), "offset": str(len(out)),
+                })
+                out.extend(page)
+                if len(page) < PAGE_ROWS:
+                    break
+            return out, full
+        except supa.SupabaseError as exc:
+            if not missing_column(exc):
+                raise
+            config.log.warning("question_log lacks some columns; reading fewer (run supabase/schema.sql)")
+    return [], False
+
+
+def counters_since(prefixes: tuple[str, ...], since_day: str, max_rows: int = 20000) -> dict[str, int]:
+    """Counters whose key starts with one of `prefixes` and whose day (second key part) is >= since_day."""
+
+    def wanted(key: str) -> bool:
+        parts = key.split(":")
+        return key.startswith(prefixes) and len(parts) > 1 and parts[1] >= since_day
+
+    if not config.supabase_configured():
+        with _mem_lock:
+            return {k: v for k, v in _mem.items() if wanted(k)}
+    ors = ",".join(f'key.like."{p}*"' for p in prefixes)
+    # The row's `day` is the database's date at insert; allow a day of slack, then filter on the key.
+    db_since = (datetime.fromisoformat(since_day) - timedelta(days=1)).date().isoformat()
+    out: dict[str, int] = {}
+    offset = 0
+    while offset < max_rows:
+        page = supa.select("counters", {
+            "select": "key,count", "or": f"({ors})", "day": f"gte.{db_since}", "order": "key",
+            "limit": str(PAGE_ROWS), "offset": str(offset),
+        })
+        for r in page:
+            if wanted(str(r.get("key", ""))):
+                out[r["key"]] = int(r.get("count") or 0)
+        if len(page) < PAGE_ROWS:
+            break
+        offset += PAGE_ROWS
+    return out

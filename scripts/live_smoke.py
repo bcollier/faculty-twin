@@ -157,8 +157,9 @@ def main(argv: Optional[list[str]] = None, transport: Optional[httpx.BaseTranspo
     base_url = args.base_url.rstrip("/")
     questions = {"covered": args.covered_question, "off_topic": args.off_topic_question, "faq": args.faq_question}
     passcode = read_passcode(Path(args.env_file) if args.env_file else None)
+    # X-FT-Source tags these rows as test traffic in the question log (Settings > Analytics hides them).
     with httpx.Client(base_url=base_url, timeout=httpx.Timeout(30.0, connect=10.0), transport=transport,
-                      follow_redirects=False) as client:
+                      follow_redirects=False, headers={"X-FT-Source": "smoke"}) as client:
         report = run(client, passcode, questions)
     print(render(report, base_url))
     return 0 if report.ok else 1

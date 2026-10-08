@@ -91,9 +91,12 @@ class InProcessTarget:
         started = time.monotonic()
         try:
             content = self.content()
-            playlist, info = self._main.answer(
-                question, None, content, self.retriever, self.embedder, self.completer
-            )
+            from app import usage
+
+            with usage.purpose("eval_generate", sticky=True):  # counted as eval spend, not student narration
+                playlist, info = self._main.answer(
+                    question, None, content, self.retriever, self.embedder, self.completer
+                )
         except self._main.RetrievalNotReady:
             return _result("retrieval_not_ready", "retrieval not implemented yet")
         except HTTPException as exc:
@@ -155,7 +158,9 @@ class HttpTarget:
         self._last = time.monotonic()
         started = time.monotonic()
         try:
-            r = self.client.post(f"{self.base_url}/api/ask", json={"question": question})
+            # Tagged so Settings > Analytics keeps eval questions out of student numbers.
+            r = self.client.post(f"{self.base_url}/api/ask", json={"question": question},
+                                 headers={"X-FT-Source": "eval"})
         except httpx.HTTPError as exc:
             return _result("error", type(exc).__name__)
         latency = int((time.monotonic() - started) * 1000)
