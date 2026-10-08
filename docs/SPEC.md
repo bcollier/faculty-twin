@@ -174,10 +174,11 @@ Added Oct 5, for me only. `/admin.html`, behind a separate admin passcode and it
    | --- | --- | --- |
    | `narration_system` | The grounding prompt for narration (step 8 of `/api/ask`) | **`{max_words}`**, `{target_words}` |
    | `logistics_classifier` | Sorts course content from logistics (step 7a) | none; must keep the words `course_content` and `logistics` |
+   | `course_info_answer` | Answers course-info questions from the Canvas chunks (step 6a, `app/course_info.py`) | **`{max_words}`**, `{not_answered}`; must keep the word `answer` |
    | `eval_judge` | The rubric each LLM judge scores answers with (`evals/rubric.py`) | **`{dimensions}`** |
    | `eval_baseline` | The generic chatbot the twin is compared with (`evals/targets.py`) | none; must keep the word `answer` |
 
-   The course-info answer prompt (team brief UPDATE 8) joins the registry when its answer path is merged, under the name `course_info_answer`. The registry has a comment marking the place.
+   Ben's FAQ answers and the logistics referral message are written text shown word for word, not model prompts, so they are not in the registry.
 
 The page shows only whether each key is configured, never the key itself.
 
@@ -702,7 +703,7 @@ A public page that speaks in a real professor's voice needs firm limits. These a
 - Added Oct 5 (voice tiers). Free voices follow every rule above: the audio route speaks only signed text, the signature covers the voice tag, and the same length caps and grounding checks apply. Voice previews speak a fixed sentence set on the server.
 - Added Oct 5. Switching providers in Settings does not loosen any of this: every provider gets the same grounding prompt and the same validation, and a model that ignores JSON falls back to the speaker notes. "Test this model" exists so I check a model before students get it.
 - Added Oct 5. Class clips are labeled as real class recordings, so no one confuses them with the AI voice.
-- Added Oct 7 (prompt editor). The prompts can be edited in Settings, so the rules that keep the voice safe live in code, never only in prompt text. Every narration is checked by `narration.validate` whatever the prompt says: the slide id must be one that was sent; at most 110 words and 900 characters; no web address; grounded in the slides sent and not repeating a long run of the question (the injection check); PG (no listed crude word); no quiz, survey, or attendance access code; and no `[student]` or `[person]` mask or other bracketed name token. Follow-ups that fail the PG, access-code, or name check are dropped. A failing reply is retried once and then falls back to the speaker notes, which the pipeline already de-identified and smoothed. The question log, rate limits, spend caps, and signed audio do not read any prompt. A saved prompt is at most 12,000 characters, and each save is versioned (see Data).
+- Added Oct 7 (prompt editor). The prompts can be edited in Settings, so the rules that keep the voice safe live in code, never only in prompt text. Every narration is checked by `narration.validate` whatever the prompt says: the slide id must be one that was sent; at most 110 words and 900 characters; no web address; grounded in the slides sent and not repeating a long run of the question (the injection check); PG (no listed crude word); no quiz, survey, or attendance access code; and no `[student]` or `[person]` mask or other bracketed name token. Follow-ups that fail the PG, access-code, or name check are dropped. Course-info answers (`app/course_info.py`) get the same PG and name-token checks on top of their own grounding, word-cap, and access-code checks. A failing reply is retried once and then falls back to the speaker notes, which the pipeline already de-identified and smoothed. The question log, rate limits, spend caps, and signed audio do not read any prompt. A saved prompt is at most 12,000 characters, and each save is versioned (see Data).
 
 **Access**
 

@@ -8,7 +8,7 @@ import json
 import numpy as np
 import pytest
 
-from app import logistics, narration, prompts, settings_store, supa
+from app import course_info, logistics, narration, prompts, settings_store, supa
 from app.main import Retriever, app, get_completer, get_embedder, get_retriever
 from evals import rubric, targets
 
@@ -19,6 +19,7 @@ FRUIT_IDS = ["70445-s01-002", "70445-s01-003", "70445-s01-004"]
 OLD_HASHES = {
     "narration_system": "022f4788fcc19d7d0ce318525b3250d1c8625ca36892ef5990935f92ff16bc0d",
     "logistics_classifier": "a18bd998559daae7330e1a3247b42d29f16530b6cc99cd3fff518878bad1df58",
+    "course_info_answer": "1a96c123f02587ff25d44bb12e67a9ad11114d4b61ef86b562cdadb84b679525",  # main at afd7988
     "eval_judge": "db585038f377f2fb95245696aea75be2615d8a50662e6df2fabe1455ff578198",
     "eval_baseline": "4b11370d79dc1c3ca309eca4f135bcb701a967cb8dcef717a3d233572c150376",
 }
@@ -38,6 +39,7 @@ def _in_use() -> dict[str, str]:
     return {
         "narration_system": narration.system_prompt(),
         "logistics_classifier": prompts.get("logistics_classifier"),
+        "course_info_answer": course_info.system_prompt(),
         "eval_judge": rubric.system_prompt(),
         "eval_baseline": prompts.get("eval_baseline"),
     }
@@ -57,6 +59,7 @@ def test_registry_defaults_equal_the_old_constants():
     # The module constants are still the defaults, for anything that reads them.
     assert _sha(narration.SYSTEM_PROMPT) == OLD_HASHES["narration_system"]
     assert _sha(logistics.SYSTEM_PROMPT) == OLD_HASHES["logistics_classifier"]
+    assert _sha(course_info.SYSTEM_PROMPT) == OLD_HASHES["course_info_answer"]
     assert _sha(rubric.SYSTEM_PROMPT) == OLD_HASHES["eval_judge"]
     assert _sha(targets.BASELINE_SYSTEM) == OLD_HASHES["eval_baseline"]
 
@@ -79,6 +82,8 @@ def test_override_is_used_by_the_call_sites():
     assert "{max_words}" not in narration.system_prompt() and "110 words" in narration.system_prompt()
     prompts.save("logistics_classifier", _edit("logistics_classifier"), "")
     assert prompts.get("logistics_classifier").endswith("Keep it short.")
+    prompts.save("course_info_answer", _edit("course_info_answer"), "")
+    assert course_info.system_prompt().endswith("Keep it short.") and "120 words" in course_info.system_prompt()
     prompts.save("eval_judge", _edit("eval_judge"), "")
     assert "- grounded:" in rubric.system_prompt() and rubric.system_prompt().endswith("Keep it short.")
     prompts.save("eval_baseline", _edit("eval_baseline"), "")
@@ -130,6 +135,7 @@ def test_draft_applies_only_inside_the_block():
         ("eval_judge", "Score it. Reply with scores and a verdict.", "{dimensions}"),
         ("logistics_classifier", "Sort it into course_content or other.", "'logistics'"),
         ("logistics_classifier", "course_content or logistics {question}", "This prompt can use: none"),
+        ("course_info_answer", "Reply with JSON: an answer only.", "{max_words}"),
     ],
 )
 def test_check_rejects_bad_drafts(name, text, needle):
@@ -252,7 +258,7 @@ def test_prompt_api_list_save_history_reset_restore(admin):
     body = admin.get("/api/admin/prompts").json()
     assert body["max_chars"] == 12000
     names = [p["name"] for p in body["prompts"]]
-    assert names == ["narration_system", "logistics_classifier", "eval_judge", "eval_baseline"]
+    assert names == ["narration_system", "logistics_classifier", "course_info_answer", "eval_judge", "eval_baseline"]
     narr = body["prompts"][0]
     assert narr["is_overridden"] is False and narr["current"] == narr["default"] and narr["required"] == ["max_words"]
 
@@ -432,6 +438,12 @@ def test_follow_ups_failing_the_speech_checks_are_dropped():
     )
     _, follow = narration.validate(raw, ["s1"], narration.grounding_for("apple", _slides(), {}))
     assert follow == ["Why are apples fruit?"]
+
+
+def test_course_info_answers_also_get_the_pg_and_name_checks():
+    assert course_info.problem("The late policy is damn strict.") == "it has a crude word (PG rule)"
+    assert course_info.problem("Ask [person] about it.") == "it has a [student] or [person] token"
+    assert course_info.problem("Late work loses ten percent a day.") is None
 
 
 def test_access_code_check_matches_the_import_filter():
