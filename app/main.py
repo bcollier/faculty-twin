@@ -820,6 +820,11 @@ async def audio(
     v: str = Query("", max_length=40),
     session: auth.Session = Depends(auth.require_student),
 ):
+    """Stream one signed narration in the voice its link names (the student page's audio player).
+
+    Only text the backend signed is ever spoken, in a voice the current setting still offers, and
+    the characters count against that voice tier's daily cap once per visitor per day.
+    """
     text = speech.verify(t, v, s)  # the signature covers the text and the voice tag
     if text is None:
         raise HTTPException(403, "This audio link is not valid.")

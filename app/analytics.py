@@ -135,63 +135,83 @@ def aggregate(
     its own purposes (smoke_test, eval_generate, eval_judge, prompt_test).
     """
     day_list = _day_list(days, now)
-    first = day_list[0]
-    rows = [r for r in rows if str(r.get("at", ""))[:10] >= first]
-    flagged = [r for r in rows if (r["test"] if "test" in r else usage.is_test_traffic(r)[0])]
-    if not include_tests:
-        ids = {id(r) for r in flagged}
-        rows = [r for r in rows if id(r) not in ids]
+    rows, flagged = _rows_in_range(rows, day_list[0], include_tests)
     q = _question_numbers(rows, day_list)
     spend = _Spend(table, live, day_list)
     spend.add_counters(counters)
-    llm_total = sum(r["cost"] for r in spend.llm_rows.values())
-    embed_total = sum(r["cost"] for r in spend.embed_rows.values())
-    tts_total = sum(r["cost"] for r in spend.tts_rows.values())
-    sms = spend.sms
-    courses, slide_list = _topics(rows, lookup)
-    faq_titles = faq_titles or {}
-    faq_list = [{"id": k, "title": faq_titles.get(k, k), "count": v} for k, v in spend.faq_hits.most_common()]
-    kinds, total, covered, latencies = q["kinds"], q["total"], q["covered"], q["latencies"]
-    events = spend.events
     return {
-        "range": {"days": days, "start": first, "end": day_list[-1]},
+        "range": {"days": days, "start": day_list[0], "end": day_list[-1]},
         "test_traffic": {"rows": len(flagged), "included": include_tests},
-        "kpis": {
-            "questions": total,
-            "covered": covered,
-            "covered_pct": _round(covered / total * 100, 1) if total else None,
-            "by_kind": dict(kinds),
-            "avg_latency_ms": round(sum(latencies) / len(latencies)) if latencies else None,
-            "median_latency_ms": round(median(latencies)) if latencies else None,
-            "est_spend_usd": _round(llm_total + embed_total + tts_total + sms["cost"], 4),
-            "spend_parts": {"models": _round(llm_total, 4), "embeddings": _round(embed_total, 4),
-                            "voice": _round(tts_total, 4), "sms": _round(sms["cost"], 4),
-                            "web_searches": _round(spend.search_spend, 4)},
-            "unpriced": sorted(spend.unpriced),
-        },
+        "kpis": _kpis(q, spend),
         "spend": spend.series(),
         "llm": _by_cost(spend.llm_rows.values(), lambda r: -(r["tokens_in"] + r["tokens_out"])),
         "purposes": _by_cost(spend.purpose_rows.values(), lambda r: -(r["tokens_in"] + r["tokens_out"])),
         "embeddings": _by_cost(spend.embed_rows.values(), lambda r: -r["tokens"]),
         "tts": _by_cost(spend.tts_rows.values(), lambda r: -r["chars"]),
-        "sms": {**sms, "cost": _round(sms["cost"])},
+        "sms": {**spend.sms, "cost": _round(spend.sms["cost"])},
         "questions_by_day": q["per_day"],
         "questions_by_hour": q["by_hour"],
         "hour_timezone": LOCAL_TZ,
-        "topics": {
-            "courses": sorted(courses.values(), key=lambda c: c["course"]),
-            "top": slide_list[:TOP_N],
-            "gaps": _gaps(rows),
-            "faq": faq_list,
-            "sources": {k: q["sources"].get(k, 0) for k in (*usage.QUESTION_SOURCES, "unknown")},
-        },
+        "topics": _topics_section(rows, lookup, q, spend, faq_titles or {}),
         "funnel": {
-            "questions": total,
-            "walkthroughs": sum(kinds.get(k, 0) for k in CONTENT_KINDS),
-            "first_segment_played": events.get("segment_played", 0),
-            "walkthrough_completed": events.get("walkthrough_completed", 0),
+            "questions": q["total"],
+            "walkthroughs": sum(q["kinds"].get(k, 0) for k in CONTENT_KINDS),
+            "first_segment_played": spend.events.get("segment_played", 0),
+            "walkthrough_completed": spend.events.get("walkthrough_completed", 0),
         },
-        "events": {name: events.get(name, 0) for name in usage.EVENT_NAMES},
+        "events": {name: spend.events.get(name, 0) for name in usage.EVENT_NAMES},
+    }
+
+
+def _rows_in_range(
+    rows: list[dict[str, Any]], first: str, include_tests: bool
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """The rows from `first` on, without test traffic unless `include_tests`, and the test rows found."""
+    rows = [r for r in rows if str(r.get("at", ""))[:10] >= first]
+    flagged = [r for r in rows if (r["test"] if "test" in r else usage.is_test_traffic(r)[0])]
+    if not include_tests:
+        ids = {id(r) for r in flagged}
+        rows = [r for r in rows if id(r) not in ids]
+    return rows, flagged
+
+
+def _kpis(q: dict[str, Any], spend: _Spend) -> dict[str, Any]:
+    """The headline numbers: questions, share covered, latency, and estimated spend by part."""
+    llm_total = sum(r["cost"] for r in spend.llm_rows.values())
+    embed_total = sum(r["cost"] for r in spend.embed_rows.values())
+    tts_total = sum(r["cost"] for r in spend.tts_rows.values())
+    sms_cost = spend.sms["cost"]
+    total, covered, latencies = q["total"], q["covered"], q["latencies"]
+    return {
+        "questions": total,
+        "covered": covered,
+        "covered_pct": _round(covered / total * 100, 1) if total else None,
+        "by_kind": dict(q["kinds"]),
+        "avg_latency_ms": round(sum(latencies) / len(latencies)) if latencies else None,
+        "median_latency_ms": round(median(latencies)) if latencies else None,
+        "est_spend_usd": _round(llm_total + embed_total + tts_total + sms_cost, 4),
+        "spend_parts": {"models": _round(llm_total, 4), "embeddings": _round(embed_total, 4),
+                        "voice": _round(tts_total, 4), "sms": _round(sms_cost, 4),
+                        "web_searches": _round(spend.search_spend, 4)},
+        "unpriced": sorted(spend.unpriced),
+    }
+
+
+def _topics_section(
+    rows: list[dict[str, Any]],
+    lookup: Callable[[str], dict[str, Any] | None],
+    q: dict[str, Any],
+    spend: _Spend,
+    faq_titles: dict[str, str],
+) -> dict[str, Any]:
+    """What students asked about: per course, the top slides, the gaps, the FAQ hits, where questions came from."""
+    courses, slide_list = _topics(rows, lookup)
+    return {
+        "courses": sorted(courses.values(), key=lambda c: c["course"]),
+        "top": slide_list[:TOP_N],
+        "gaps": _gaps(rows),
+        "faq": [{"id": k, "title": faq_titles.get(k, k), "count": v} for k, v in spend.faq_hits.most_common()],
+        "sources": {k: q["sources"].get(k, 0) for k in (*usage.QUESTION_SOURCES, "unknown")},
     }
 
 

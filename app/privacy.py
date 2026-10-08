@@ -41,6 +41,7 @@ _PEER = re.compile(
 
 def _sub_name(pattern: re.Pattern[str], token: str, text: str) -> str:
     def repl(m: re.Match[str]) -> str:
+        """The match with its name replaced by `token`, or unchanged when the word after the title is not a name."""
         words = m.group(2).split()
         if words and words[0].lower() in _KEEP:
             return m.group(0)

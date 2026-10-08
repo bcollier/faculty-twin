@@ -533,6 +533,7 @@ _qvec_lock = threading.Lock()
 def _cached_embedder(run_id: str, qid: str, base: Callable[[str], np.ndarray]) -> Callable[[str], np.ndarray]:
     """Reuse one question's embedding across the run's generators on a warm instance."""
     def embed_once(text: str) -> np.ndarray:
+        """The question's embedding: from the cache when another generator already asked, else from `base`."""
         key = (run_id, qid)
         with _qvec_lock:
             hit = _qvec_cache.get(key)
@@ -557,6 +558,7 @@ class Budget:
         self._lock = threading.Lock()
 
     def take(self) -> None:
+        """Use one model call, or raise LLMError when the run's cap or today's eval cap is reached."""
         with self._lock:
             if self.used >= self.run_left:
                 raise llm.LLMError("This run reached its model-call cap (EVAL_MAX_CALLS_PER_RUN)")
@@ -725,27 +727,10 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
     run = eval_store.read_run(bucket, run_id)
     if run is None:
         raise HTTPException(404, "No such run.")
-    if run.get("status") != ACTIVE:
-        return {"progress": progress(run), "row": None}
-    # What is done comes from the written rows (listed, never a cached copy); see app/eval_store.py.
-    rows = eval_store.read_results(bucket, run_id)
-    _sync_progress(run, rows)
-    if eval_store.is_cancelled(bucket, run_id):
-        _finish(run, rows, "cancelled", "Cancelled in Settings.")
-        _save_run(bucket, run)
-        return {"progress": progress(run), "row": None}
-    done = {r.get("pair") for r in rows}
-    todo = [(i, q, g) for i, q, g in pairs_of(run) if i not in done]
-    if not todo:
-        _finish(run, rows, "done", bucket=bucket)
-        _save_run(bucket, run)
-        return {"progress": progress(run), "row": None}
-    lease = run.get("lease") or {}
-    if lease and lease.get("until", 0) > time.time() and lease.get("pair") not in done:
-        return {"progress": progress(run), "row": None,
-                "waiting": {"seconds": max(3, int(lease["until"] - time.time()) // 2 or 3),
-                            "reason": "Another step of this run is still working (another tab, or a retry)."}}
-    pair, q, gen = todo[0]
+    stop, todo = _next_pair(bucket, run_id, run)
+    if stop is not None:
+        return stop
+    pair, q, gen = todo
     _spend_check(run)
     content = storage.store.get_or_503()
     run["lease"] = {"pair": pair, "until": time.time() + LEASE_SECONDS}
@@ -757,10 +742,7 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
     except HTTPException as exc:
         run["lease"] = None
         eval_store.write_run(bucket, run)
-        cause = exc.__cause__
-        if isinstance(cause, embed.EmbeddingCapReached) or exc.status_code != 503:
-            raise
-        if "Course content" in str(exc.detail) or "index does not match" in str(exc.detail):
+        if not _embeddings_busy(exc):
             raise
         # Voyage busy or rate-limited (the free tier allows 3 a minute): wait and retry this pair.
         return {"progress": progress(run), "row": None,
@@ -770,6 +752,53 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
     if response["status"] in ("ok", "not_covered"):
         judgements = _judge_pair(run, q, response, counted(judge_completer, budget), deadline)
     row = _result_row(q, pair, gen, response, info, judgements, budget, started)
+    _record_and_update(bucket, run_id, run, row)
+    return {"progress": progress(run), "row": public_row(row)}
+
+
+def _next_pair(
+    bucket: eval_store.Bucket, run_id: str, run: dict[str, Any]
+) -> tuple[dict[str, Any] | None, tuple[int, dict[str, Any], dict[str, str]] | None]:
+    """The next unanswered pair, or instead the reply for a step with nothing to do.
+
+    Nothing to do: the run is not active, was cancelled, has every pair answered (both finish
+    the run here), or another step holds a live lease on the next pair.
+    """
+    if run.get("status") != ACTIVE:
+        return {"progress": progress(run), "row": None}, None
+    # What is done comes from the written rows (listed, never a cached copy); see app/eval_store.py.
+    rows = eval_store.read_results(bucket, run_id)
+    _sync_progress(run, rows)
+    if eval_store.is_cancelled(bucket, run_id):
+        _finish(run, rows, "cancelled", "Cancelled in Settings.")
+        _save_run(bucket, run)
+        return {"progress": progress(run), "row": None}, None
+    done = {r.get("pair") for r in rows}
+    todo = [(i, q, g) for i, q, g in pairs_of(run) if i not in done]
+    if not todo:
+        _finish(run, rows, "done", bucket=bucket)
+        _save_run(bucket, run)
+        return {"progress": progress(run), "row": None}, None
+    lease = run.get("lease") or {}
+    if lease and lease.get("until", 0) > time.time() and lease.get("pair") not in done:
+        return {"progress": progress(run), "row": None,
+                "waiting": {"seconds": max(3, int(lease["until"] - time.time()) // 2 or 3),
+                            "reason": "Another step of this run is still working (another tab, or a retry)."}}, None
+    return None, todo[0]
+
+
+def _embeddings_busy(exc: HTTPException) -> bool:
+    """True when answering failed only because the embedding provider was busy, so the pair is worth retrying.
+
+    The embedding cap, any other status, and a missing or mismatched index are real failures.
+    """
+    if isinstance(exc.__cause__, embed.EmbeddingCapReached) or exc.status_code != 503:
+        return False
+    return not ("Course content" in str(exc.detail) or "index does not match" in str(exc.detail))
+
+
+def _record_and_update(bucket: eval_store.Bucket, run_id: str, run: dict[str, Any], row: dict[str, Any]) -> None:
+    """Write the pair's row, then bring run.json up to date: progress, and finished when cancelled or complete."""
     rows = _record_row(bucket, run_id, row)
     _sync_progress(run, rows)
     run["lease"] = None
@@ -781,7 +810,6 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
     else:
         run["summary"] = summarize(run, rows)
     _save_run(bucket, run)
-    return {"progress": progress(run), "row": public_row(row)}
 
 
 def _save_run(bucket: eval_store.Bucket, run: dict[str, Any]) -> None:
@@ -1087,33 +1115,46 @@ def calibration_step(body: CalibrateBody, _: auth.Session = Depends(auth.require
         seen = eval_store.calibration_rows(bucket, key, attempt)
         nxt = next((c for c in cases if c["cid"] not in seen), None)
         if nxt is not None:
-            if limits.read_counter(limits.eval_calls_key()) + 1 > limits.daily_eval_call_cap():
-                raise HTTPException(429, "Today's admin eval budget is used up (DAILY_EVAL_LLM_CALL_CAP).")
-            # Two calls: judge_one retries a malformed reply once (a budget of 1 made the retry hit the cap).
-            out = judge_one(judge, nxt, counted(judge_completer, Budget(2)), time.monotonic() + STEP_BUDGET_SECONDS,
-                            eval_core.judge_system_prompt())
-            row = {"cid": nxt["cid"], "misses": eval_core.check(nxt, out), "verdict": out.get("verdict"),
-                   "error": out.get("error")}
-            eval_store.write_calibration_row(bucket, key, attempt, row)
-            seen[nxt["cid"]] = row
-        rows = [seen[c["cid"]] for c in cases if c["cid"] in seen]
-        entry = {
-            "judge": key,
-            "attempt": attempt,
-            "started_at": (current or {}).get("started_at") if (current or {}).get("attempt") == attempt else _now(),
-            "rows": rows,
-            "cases": len(cases),
-            "met": sum(1 for r in rows if not r["misses"]),
-            "missed": [r["cid"] for r in rows if r["misses"]],
-            "done": len(rows) >= len(cases),
-            "source": "settings",
-        }
-        if entry["done"]:
-            entry["finished_at"] = _now()
+            seen[nxt["cid"]] = _score_case(bucket, key, attempt, judge, nxt, judge_completer)
+        entry = _calibration_entry(key, attempt, current, cases, seen)
         eval_store.write_calibration_entry(bucket, key, entry)
     except eval_store.StoreError as exc:
         raise _store_error(exc) from exc
     return {"judge": key, "attempt": attempt, "result": entry}
+
+
+def _score_case(bucket: eval_store.Bucket, key: str, attempt: str | None, judge: dict[str, str], case: dict[str, Any],
+                judge_completer: Callable[..., str]) -> dict[str, Any]:
+    """Have the judge grade one synthetic case and write the result (which expectations it missed) once."""
+    if limits.read_counter(limits.eval_calls_key()) + 1 > limits.daily_eval_call_cap():
+        raise HTTPException(429, "Today's admin eval budget is used up (DAILY_EVAL_LLM_CALL_CAP).")
+    # Two calls: judge_one retries a malformed reply once (a budget of 1 made the retry hit the cap).
+    out = judge_one(judge, case, counted(judge_completer, Budget(2)), time.monotonic() + STEP_BUDGET_SECONDS,
+                    eval_core.judge_system_prompt())
+    row = {"cid": case["cid"], "misses": eval_core.check(case, out), "verdict": out.get("verdict"),
+           "error": out.get("error")}
+    eval_store.write_calibration_row(bucket, key, attempt, row)
+    return row
+
+
+def _calibration_entry(key: str, attempt: str | None, current: dict[str, Any] | None, cases: list[dict[str, Any]],
+                       seen: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """The judge's calibration result so far, in case order: cases met, cases missed, done when all are scored."""
+    rows = [seen[c["cid"]] for c in cases if c["cid"] in seen]
+    entry = {
+        "judge": key,
+        "attempt": attempt,
+        "started_at": (current or {}).get("started_at") if (current or {}).get("attempt") == attempt else _now(),
+        "rows": rows,
+        "cases": len(cases),
+        "met": sum(1 for r in rows if not r["misses"]),
+        "missed": [r["cid"] for r in rows if r["misses"]],
+        "done": len(rows) >= len(cases),
+        "source": "settings",
+    }
+    if entry["done"]:
+        entry["finished_at"] = _now()
+    return entry
 
 
 @router.get("/limits")
