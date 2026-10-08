@@ -1190,3 +1190,120 @@ Prompts below are verbatim, except where noted. Screenshot-only prompts are desc
 
 **Response summary.** Added "How this log is organized", a tools table, "One place the AI got it wrong", and "Key prompts" (36 verbatim) at the top, kept the full record below, and logged these last prompts.
 
+
+### Prompt 78 (screenshot of the Google form asking to describe what I built in 1 to 2 sentences, no text)
+
+**Response summary.** Gave two sentences describing Faculty Twin for the form.
+
+### Prompt 79
+
+> Go through the repo and add lots more documentation to the readme files and the visual diagrams of this the app works as well as taking screenshots of responses and narration over slides
+
+**Response summary.** An agent added seven architecture diagrams (`docs/ARCHITECTURE.md`), longer READMEs and screenshots of answers and narration over slides (`docs/screenshots/`).
+
+### Prompt 80
+
+> Slides are fine
+
+**Response summary.** Kept the slide screenshots as they were.
+
+### Prompt 81
+
+> After a code review boost the test harness and evaluation harness. I want the bot to be able to answer for things that are not 100% ok the slides but like how do you use agent frameworks or something with a simple web searchable framework or how do I setup n8n I want evals comparing sonnet, opus, fable, vs gpt 5.6 and gpt 6 sol and whatever the comparison is
+
+**Response summary.** Code review fixes (PRs #58 to #68), a larger test harness and CI (#56), a "beyond the slides" web answer path (#70), and a model comparison across Sonnet, Opus, Fable, GPT-5.6 and GPT-6.1 Sol (#69, #71).
+
+### Prompt 82
+
+> I want to see beautiful visuals for the evals test retest validity I want better questions in the evaluation like this was good teaching or this was a strong and effective way to communicate a concept .
+
+**Response summary.** Added teaching-quality rubric questions, repeated runs for test-retest reliability (ICC, kappa, Krippendorff's alpha) and a visual report with zero-based charts.
+
+### Prompt 83
+
+> Bonus feature, if it is helpful to have the ai write a slide for Ben to use in reviewing or discussing content that is fine for vector graphics or to demo in python code issues etc
+
+**Response summary.** AI-drawn helper slides (diagrams and code), labeled as AI-drawn, with drafts in Settings (#72).
+
+### Prompt 84
+
+> Bonus feature if a student mentions an api key out of Money or a submission broken or a quiz broken text my cell and say there is a simple problem to fix have the agent figure out which course is the issue
+
+**Response summary.** Asked how to send the text; see the next prompt.
+
+### Prompt 85 (answer to a multiple-choice question: Twilio SMS)
+
+**Response summary.** Student alerts that work out the course and text me through Twilio (#57). The Twilio account and number are still mine to set up.
+
+### Prompt 86
+
+> Do all fixes and improvements . Go through the code carefully and refactor and  comment on code to follow clean code principles . For now set the active model to openrouter then use clause 5.5 I have lots of openrouter money
+
+**Response summary.** Set the live model to Claude Opus 5.5 through OpenRouter. One agent merged the pending fixes (#75, #76, #78, #81 to #84, #86, #87, #89); another did a clean-code pass with ruff in CI and `docs/CODE_STYLE.md` (#80, #88, #90, #92 to #95). My hand-written code was not changed; suggestions for it are listed in #95.
+
+### Prompt 87
+
+> Show database diagrams for faculty twin in readme
+
+**Response summary.** A Postgres ER diagram and the private bucket layout in the README and `docs/DATABASE.md` (#74).
+
+### Prompt 88
+
+> Make the format match the style of collier.PhD.  Add a feature in my main collier.PhD home page to open chat with a course assistant . Have a cool animation that transitions from the home page into the chat or page
+
+**Response summary.** Restyled the student page and Settings in the site's notebook look (#85). A legal-pad note on the home page and /courses/ grows into a full page and hands off to the twin, which opens on the same frame (ben.collier.phd #144).
+
+### Prompt 89
+
+> Make the connections page integrated into the portfolio as well, and visually style it in a similar way. Expland connections readme to be expansive and deep. Make different demo versions of of the connection such as  Star Wars theme a lord of the rings theme and a Carnegie Mellon theme. Make it animated and fun and engaging
+
+**Response summary.** Star Wars, Lord of the Rings and Carnegie Mellon puzzle packs (fact-checked by a second agent), an animated player, a page at ben.collier.phd/connections/, and a long README with GIFs (connections_demo #4 to #8, ben.collier.phd #145 to #147).
+
+### Prompt 90
+
+> Put reels and travel strengths and evaluations all under ai generated apps and visualizations, remove them from the top header
+
+**Response summary.** Moved the four pages under one tab (ben.collier.phd #139).
+
+### Prompt 91
+
+> Make a good search function for my portfolio page
+
+**Response summary.** Site search with typo matching and course-number folding, a search tab and a /search/ page (ben.collier.phd #143).
+
+### Prompt 92
+
+> For faculty twin there should be an animation as the narration is read like on ignatius text. Label the narration box. Make an animation that lights up the slide or highlighting the slide the narrator is talking about
+
+**Response summary.** A labeled narration box that highlights each word as it is spoken, a spotlight on the current slide, and highlights on the slide words the narrator says, using word timings from every voice option (#91).
+
+### Prompt 93
+
+> Change from ai generated to something like ai engineered or coded with ai assistant
+
+**Response summary.** Renamed the tab and headings to "apps coded with AI" and "AI-engineered" (ben.collier.phd #140).
+
+### Prompt 94
+
+> Put a complete list of all api used anywhere in the app for anything and put that as a diagram in the readme
+
+**Response summary.** `docs/APIS.md` with every outside service and all 67 routes, seven diagrams, and an "APIs used" section in the README (#77).
+
+### Prompt 95
+
+> Merge apps coded with ai and coding with ai projects tabs into the same tab
+
+**Response summary.** One "coding with AI" tab holds the projects and, below them, the apps and visualizations; the old address forwards (ben.collier.phd #141).
+
+### Prompt 96
+
+> The robot comes out pretty quickly add 30 more second before the robot comes out and add more time in Between robot coming out
+
+**Response summary.** The site robot now visits at about 36.5, 90 and 180 seconds instead of 6.5, 30 and 90 (ben.collier.phd #142).
+
+### Places the AI got something wrong in this part (facts only)
+
+- The new API doc and an older README line said every merge to `main` deploys. The repo is not connected to Vercel's Git integration; deploys are run by hand. Corrected in #79.
+- A leak check run with code older than #78 flagged four Canvas pages as containing a student name. They said "Andrew ID", CMU's account name. The live content was clean.
+- The 0.05 Canvas margin change (#75) was followed by a live check where "Where is the syllabus on Canvas?" went to the "for me directly" referral instead of Canvas. Fixed in #89, and the question is now in the eval set.
+- The agent restyling the twin could not retake the live screenshots, because logging in with the production passcode was blocked. They still show the old look.
