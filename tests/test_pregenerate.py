@@ -6,6 +6,7 @@ injects a clearly labeled TEST FAKE retriever (as tests/test_api.py does).
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
@@ -64,8 +65,11 @@ def test_generates_playlists_and_audio_with_test_fakes(content_dir: Path, monkey
 
     def tts(request: httpx.Request) -> httpx.Response:
         spoken.append(json.loads(request.content)["text"])
-        assert request.url.path == "/v1/text-to-speech/voice123/stream"
-        return httpx.Response(200, content=b"ID3fake-mp3")
+        assert request.url.path == "/v1/text-to-speech/voice123/with-timestamps"  # read-along, Oct 8
+        text = json.loads(request.content)["text"]
+        alignment = {"characters": list(text), "character_start_times_seconds": [i * 0.05 for i in range(len(text))]}
+        return httpx.Response(200, json={"audio_base64": base64.b64encode(b"ID3fake-mp3").decode(),
+                                         "alignment": alignment})
 
     monkeypatch.setenv("ELEVENLABS_API_KEY", "test-eleven-key")
     code = pregenerate.generate(
@@ -85,6 +89,10 @@ def test_generates_playlists_and_audio_with_test_fakes(content_dir: Path, monkey
     assert [s["slide_id"] for s in segs] == ["70445-s01-002", "70445-s01-003"]
     tag = speech.voice_tag("voice123")
     assert all(s["audio_path"].startswith(f"audio/{tag}/") and (content_dir / s["audio_path"]).exists() for s in segs)
+    for s in segs:  # each clip has its word timings next to it
+        assert (content_dir / s["audio_path"]).read_bytes() == b"ID3fake-mp3"
+        words = json.loads((content_dir / s["audio_path"].replace(".mp3", ".words.json")).read_text())
+        assert words["source"] == "elevenlabs" and words["words"][0] == [0.0, 0]
     assert len(spoken) == 2
 
     # The backend replays it as a stored topic.

@@ -4,8 +4,10 @@ Uploads only an allowlist, built from the index itself:
   content/index.json, content/embeddings.npy, content/manifest.json
   content/info_index.json, content/info_embeddings.npy (Canvas course info, when built)
   slides/<course>/s<NN>/<slide_id>.webp and <slide_id>-thumb.webp, for indexed slides only
+  slides/<course>/s<NN>/<slide_id>.boxes.json, the slide's word boxes (read-along), when built
   clips/<slide_id>.mp4 for indexed slides that have a clip, and clips/manifest.json (those rows only)
-  topics/topics.json and the audio/<voice_id>/<hash>.mp3 files it points to
+  topics/topics.json and the audio/<voice_id>/<hash>.mp3 files it points to, with each mp3's
+  <hash>.words.json word timings (read-along) when there is one
 
 Never uploaded, whatever is in _build/: transcripts, alignment, review files,
 rosters, notebooks and code JSON, slides.json / deck.json, source_converted.pdf,
@@ -58,10 +60,12 @@ EXIT_OK, EXIT_PLAN, EXIT_LEAK, EXIT_UPLOAD, EXIT_CONFIG = 0, 2, 4, 5, 6
 ALLOWED = [
     re.compile(r"^content/(index\.json|embeddings\.npy|manifest\.json|info_index\.json|info_embeddings\.npy)$"),
     re.compile(r"^slides/\d{5}/s\d{2}/\d{5}-s\d{2}-\d{3}(-thumb)?\.webp$"),
+    re.compile(r"^slides/\d{5}/s\d{2}/\d{5}-s\d{2}-\d{3}\.boxes\.json$"),
     re.compile(r"^clips/\d{5}-s\d{2}-\d{3}\.mp4$"),
     re.compile(r"^clips/manifest\.json$"),
     re.compile(r"^topics/topics\.json$"),
     re.compile(r"^audio/[A-Za-z0-9_\-]{1,100}/[A-Za-z0-9_\-]{1,100}\.mp3$"),
+    re.compile(r"^audio/[A-Za-z0-9_\-]{1,100}/[A-Za-z0-9_\-]{1,100}\.words\.json$"),
 ]
 CLIP_FIELDS = ("slide_id", "course", "session", "start", "end", "duration", "reason_kept")
 # Never uploaded, even if a path would otherwise match the allowlist (belt and braces).
@@ -193,6 +197,9 @@ def _add_media(plan: _Plan, records: list[dict[str, Any]]) -> None:
         for key in ("image", "thumb"):
             if rec.get(key):
                 plan.add_file(rec[key])
+        boxes = boxes_for(rec.get("image"))
+        if boxes and (plan.build / boxes).is_file():  # word boxes are optional (read-along highlights)
+            plan.add_file(boxes)
         if rec.get("clip"):
             plan.add_file(rec["clip"])
             clip_ids.add(rec["id"])
@@ -218,6 +225,9 @@ def _add_topics(plan: _Plan) -> None:
         for seg in ((t or {}).get("playlist") or {}).get("segments", []):
             if seg.get("audio_path"):
                 plan.add_file(seg["audio_path"])
+                words = words_for(seg["audio_path"])
+                if words and (plan.build / words).is_file():  # word timings are optional
+                    plan.add_file(words)
 
 
 def plan(build: Path) -> tuple[list[Item], dict[str, Any]]:
@@ -244,6 +254,18 @@ def plan(build: Path) -> tuple[list[Item], dict[str, Any]]:
         info_hash = common.sha256_bytes(info[1][1])[:8]
         manifest = {**manifest, "index_version": f"{manifest['index_version']}+info-{info_hash}"}
     return ordered, manifest
+
+
+def boxes_for(image: str | None) -> str | None:
+    """`slides/.../<slide_id>.webp` -> its word-box sidecar `slides/.../<slide_id>.boxes.json`."""
+    image = str(image or "").lstrip("/")
+    return image[: -len(".webp")] + ".boxes.json" if image.endswith(".webp") else None
+
+
+def words_for(audio_path: str | None) -> str | None:
+    """`audio/<tag>/<hash>.mp3` -> its word timings `audio/<tag>/<hash>.words.json`."""
+    path = str(audio_path or "").lstrip("/")
+    return path[: -len(".mp3")] + ".words.json" if path.endswith(".mp3") else None
 
 
 def info_files(content: Path) -> list[tuple[str, bytes]]:
@@ -306,13 +328,22 @@ def run(
     force: bool = False,
     prune: bool = True,
     log: Callable[[str], None] = print,
+    only: tuple[str, ...] = (),
 ) -> int:
-    """Plan, leak-check, then upload what changed, prune what left the index, and bump the version."""
+    """Plan, leak-check, then upload what changed, prune what left the index, and bump the version.
+
+    `only` (bucket path prefixes, e.g. ("slides/", "audio/")) limits the run to those objects:
+    nothing else is checked, sent or deleted, and settings.index_version is left alone.
+    """
     try:
         items, manifest = plan(build)
     except PlanError as exc:
         log(f"Upload stopped: {exc}")
         return EXIT_PLAN
+    if only:
+        items = [it for it in items if it.path.startswith(only)]
+        prune = False
+        log(f"Only objects under {', '.join(only)}: {len(items)} in the plan; the index version is not changed.")
     try:
         checker = RosterChecker.from_dir(roster)
     except RosterMissing as exc:
@@ -337,7 +368,7 @@ def run(
     version = manifest["index_version"]
 
     if dry_run:
-        _report_dry_run(items, todo, stale, known, state is None, version, log)
+        _report_dry_run(items, todo, stale, known, state is None, None if only else version, log)
         if hits.total:
             log("BLOCKED: the real upload would stop at the leak check above. Fix those places and rebuild first.")
             return EXIT_LEAK
@@ -356,6 +387,9 @@ def run(
     if failed:
         log(f"Upload incomplete: {len(failed)} objects failed. Re-run the same command; finished objects are skipped.")
         return EXIT_UPLOAD
+    if only:
+        log("Done. The index was not part of this run, so settings.index_version is unchanged.")
+        return EXIT_OK
     try:
         sb.upsert("settings", [{"key": "index_version", "value": version}], on="key")
     except common.SupabaseError as exc:
@@ -366,11 +400,14 @@ def run(
 
 
 def _report_dry_run(items: list[Item], todo: list[Item], stale: list[str], known: dict[str, Any],
-                    state_unknown: bool, version: str, log: Callable[[str], None]) -> None:
-    """List what an upload would send and delete, with sizes per top-level folder. Sends nothing."""
+                    state_unknown: bool, version: str | None, log: Callable[[str], None]) -> None:
+    """List what an upload would send and delete, with sizes per top-level folder. Sends nothing.
+
+    `version` is None for an `--only` run, which leaves settings.index_version alone.
+    """
     label = ("remote state unknown (Supabase not configured), so every object is listed" if state_unknown
              else "compared with the bucket")
-    log(f"Dry run for index {version}: {label}.")
+    log(f"Dry run for index {version or 'unchanged'}: {label}.")
     for it in todo:
         status = "new" if it.path not in known else "changed"
         log(f"  {status:8} {it.size:>12,d}  {it.path}")
@@ -389,7 +426,8 @@ def _report_dry_run(items: list[Item], todo: list[Item], stale: list[str], known
     total = sum(it.size for it in todo)
     log(
         f"Would upload {len(todo)} of {len(items)} objects ({total / 1e6:.1f} MB), "
-        f"skip {len(items) - len(todo)} unchanged, delete {len(stale)}, then set settings.index_version = {version}."
+        f"skip {len(items) - len(todo)} unchanged, delete {len(stale)}"
+        + (f", then set settings.index_version = {version}." if version else ".")
     )
 
 
@@ -459,13 +497,16 @@ def main(argv: list[str] | None = None, client: httpx.Client | None = None) -> i
     ap.add_argument("--dry-run", action="store_true", help="list what would upload, with sizes; send nothing")
     ap.add_argument("--force", action="store_true", help="re-upload every object even if unchanged")
     ap.add_argument("--no-prune", action="store_true", help="keep objects that are no longer in the index")
+    ap.add_argument("--only", action="append", default=[], metavar="PREFIX",
+                    help="only objects under this bucket prefix (repeatable, e.g. --only slides/ --only audio/); "
+                         "no pruning and no index version change")
     a = ap.parse_args(argv)
     common.load_env()
     archive = common.archive_dir(a.archive)
     build = Path(a.build).expanduser() if a.build else common.build_dir(archive)
     roster = Path(a.roster).expanduser() if a.roster else common.roster_dir(archive)
     sb = common.Supabase(client=client) if common.Supabase.configured() else None
-    return run(build, roster, sb, dry_run=a.dry_run, force=a.force, prune=not a.no_prune)
+    return run(build, roster, sb, dry_run=a.dry_run, force=a.force, prune=not a.no_prune, only=tuple(a.only))
 
 
 if __name__ == "__main__":

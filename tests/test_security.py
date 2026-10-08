@@ -265,7 +265,7 @@ def _fake_voice(monkeypatch):
     async def fake_open(text, voice):
         return None, None
 
-    async def fake_stream(client, resp):
+    async def fake_stream(client, resp, collector=None):
         yield b"ID3"
 
     monkeypatch.setattr(speech, "open_stream", fake_open)

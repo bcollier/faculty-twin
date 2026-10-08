@@ -88,6 +88,7 @@ def test_ask_end_to_end_with_test_fake(student, monkeypatch):
     assert set(seg) == {
         "n", "slide_id", "course", "course_title", "session", "session_title", "date", "slide_number",
         "image", "narration", "audio", "voice", "audio_fallback", "voice_fallback", "code", "clip",
+        "timings", "timings_fallback", "boxes",
     }
     assert seg["n"] == 1 and seg["course"] == "70445" and seg["session"] == 1 and seg["slide_number"] == 2
     assert seg["date"] == "2026-09-01" and seg["course_title"] == "Fake Course A"

@@ -231,3 +231,37 @@ def test_topics_and_their_audio_are_uploaded(built):
     assert {"topics/topics.json", "audio/voice123/abc123.mp3"} <= set(fake.uploads)
     assert "audio/voice123/unused.mp3" not in fake.uploads
     assert "topics/draft_questions.json" not in fake.uploads
+
+
+def test_read_along_sidecars_are_uploaded_for_indexed_slides_only(built):
+    """Word boxes (slides) and word timings (stored clips) go up next to what they describe."""
+    build = built / "_build"
+    words = {"v": 1, "src": "pdf", "words": [["Apples", 0.1, 0.1, 0.3, 0.2, 0]]}
+    for sid in ("70445-s01-001", "70445-s01-002"):  # -002 is excluded from the index
+        (build / "slides" / "70445" / "s01" / f"{sid}.boxes.json").write_text(json.dumps(words))
+    (build / "audio" / "voice123").mkdir(parents=True)
+    (build / "audio" / "voice123" / "abc123.mp3").write_bytes(b"ID3fake")
+    (build / "audio" / "voice123" / "abc123.words.json").write_text(json.dumps({"words": [[0.0, 0]]}))
+    (build / "topics").mkdir()
+    (build / "topics" / "topics.json").write_text(json.dumps([{"question": "q", "course": "70445", "playlist": {
+        "segments": [{"slide_id": "70445-s01-001", "narration": "Apples.", "audio_path": "audio/voice123/abc123.mp3"}],
+        "follow_ups": []}}]))
+    fake = pf.FakeSupabase()
+    assert do(built, fake)[0] == 0
+    sent = set(fake.uploads)
+    assert "slides/70445/s01/70445-s01-001.boxes.json" in sent
+    assert "slides/70445/s01/70445-s01-002.boxes.json" not in sent
+    assert "slides/70445/s01/70445-s01-003.boxes.json" not in sent  # never built: nothing to send
+    assert "audio/voice123/abc123.words.json" in sent
+
+
+def test_only_prefixes_limit_the_run_and_keep_the_index_version(built):
+    build = built / "_build"
+    (build / "slides" / "70445" / "s01" / "70445-s01-001.boxes.json").write_text('{"v": 1, "src": "pdf", "words": []}')
+    fake = pf.FakeSupabase()
+    code, out = do(built, fake, only=("slides/",))
+    assert code == 0, out
+    sent = set(fake.uploads) - {upload.STATE_PATH}
+    assert sent and all(p.startswith("slides/") for p in sent)
+    assert "slides/70445/s01/70445-s01-001.boxes.json" in sent
+    assert fake.settings == {} and "index_version is unchanged" in out

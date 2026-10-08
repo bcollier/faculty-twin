@@ -49,6 +49,21 @@
 | [settings-analytics-spend-tokens.webp](settings-analytics-spend-tokens.webp) | Analytics, last 30 days, test traffic hidden: tiles, estimated spend over time, tokens by model and purpose, voice characters, embeddings |
 | [settings-analytics-topic-tree.webp](settings-analytics-topic-tree.webp) | Analytics: questions by course, session and slide (from each answered question's top slide) |
 
+## Read-along (taken October 8, 2026, in the collier.phd look)
+
+Taken by Claude Code (Claude Opus 5.5) with headless Chromium against the real FastAPI app and the page from this branch, running locally on the private build folder with no Supabase (nothing was logged or counted in production) and no model or voice call: the question is a suggested one, so the stored answer and its stored mp3s replay, with word timings from ElevenLabs forced alignment. Desktop 1440 x 900, phone 390 x 844 at 2x. Audio muted. Only slide 70445-s05-042 is on the stage (the k-means slide already used in the shots above); the dock shows the same answer's thumbnails as before.
+
+| File | What it shows |
+| --- | --- |
+| [read-along-desktop-1.webp](read-along-desktop-1.webp) | The narrator says "you choose k centers": the word "centers," is swept in the narration box, words said are in ink and words to come are lighter, and "Choose k centers" lights up on the slide. The slide has the spotlight (lifted, highlighter glow), the box is labeled "Narration" with the voice label, and the first progress dot glows |
+| [read-along-desktop-2.webp](read-along-desktop-2.webp) | A few seconds later: "the right number up front," and "(Number" lit on the slide |
+| [read-along-desktop-3.webp](read-along-desktop-3.webp) | Later again: "assign every point" and "Assign" lit |
+| [read-along-dark-desktop.webp](read-along-dark-desktop.webp) | The same moment in dark mode |
+| [read-along-phone.webp](read-along-phone.webp) | On a phone: the box scrolls to keep the spoken line in view; "Assign" lit on the slide |
+| [read-along-phone-dark.webp](read-along-phone-dark.webp) | On a phone in dark mode, "Choose k centers" lit |
+| [read-along-reduced-motion-desktop.webp](read-along-reduced-motion-desktop.webp) | With reduced motion: the whole sentence being read is highlighted, nothing sweeps or lifts |
+| [read-along-mock.webp](read-along-mock.webp) | The dev mock (`?mock=1`, placeholder slide): "Set up the idea" lit while "the" is swept |
+
 ## Mock screenshots (placeholder content, `?mock=1`, taken headless)
 
 These come from the dev mock (`public/dev/mock.js`), not the live site: the words are placeholders and no course material is shown. Retaken on October 8, 2026 in the collier.phd look (headless Chromium, 1440 x 900, light mode, `?mock=1`).

@@ -150,9 +150,12 @@ sequenceDiagram
     UI->>B: GET the slide image (signed link)
     UI->>API: GET /api/audio with text, voice tag and signature
     API->>API: check the signature, the voice tag and today's character cap
-    API->>T: speak the signed text
-    T-->>API: mp3 bytes
-    API-->>UI: mp3 stream (nothing saved on the server)
+    API->>T: speak the signed text (ElevenLabs stream with timestamps, or edge-tts with word boundaries)
+    T-->>API: mp3 bytes and word or character times
+    API-->>UI: mp3 stream; when it ends, the word timings (not the audio) are kept in the bucket's timings/
+    UI->>API: GET /api/audio/timings, same signature (read-along; never calls a voice)
+    UI->>B: GET the slide's word boxes (signed link, slides/...boxes.json)
+    Note over UI: the narration box sweeps the spoken word; slide words the narrator says get a highlighter
     rect rgb(255, 243, 196)
         Note over UI: Ben's code: onClipEnded() runs when a narration clip ends: show the next segment, play it, preload the one after, finish after the last
     end
@@ -160,7 +163,7 @@ sequenceDiagram
     UI->>B: GET the class clip (signed link), the walkthrough pauses
 ```
 
-A question starts in the browser and goes to `/api/ask` with the 7-day `ft_session` cookie. The function checks the cookie, the length and the rate limits, then tries the cheap answers first: a suggested question replays its stored playlist, and Ben's course FAQ answers with his own words, neither calling a model. Otherwise the question is embedded once, and Ben's `rank()` scores both the slides and the Canvas chunks with that one vector; a strong Canvas match becomes a short "From Canvas" answer, and otherwise Ben's `select_segments()` picks the slides against the 0.52 threshold. Chosen slides pass a logistics check and then one narration call, whose JSON is validated in code before anything is signed for the voice. The page shows each slide from a signed link, plays each narration through `/api/audio` (which speaks only text the server signed), and Ben's `onClipEnded()` moves the walkthrough along when each narration ends.
+A question starts in the browser and goes to `/api/ask` with the 7-day `ft_session` cookie. The function checks the cookie, the length and the rate limits, then tries the cheap answers first: a suggested question replays its stored playlist, and Ben's course FAQ answers with his own words, neither calling a model. Otherwise the question is embedded once, and Ben's `rank()` scores both the slides and the Canvas chunks with that one vector; a strong Canvas match becomes a short "From Canvas" answer, and otherwise Ben's `select_segments()` picks the slides against the 0.52 threshold. Chosen slides pass a logistics check and then one narration call, whose JSON is validated in code before anything is signed for the voice. The page shows each slide from a signed link, plays each narration through `/api/audio` (which speaks only text the server signed), and Ben's `onClipEnded()` moves the walkthrough along when each narration ends. While it plays, the labeled narration box highlights the word being spoken (word timings from the voice service, or a syllable estimate until they arrive) and the slide lights up, with a highlighter over the slide words the narrator is saying (word boxes the indexer read from the PDF, or OCR for picture slides; `public/readalong.js`).
 
 ## 3. How a question is routed
 
@@ -226,7 +229,7 @@ flowchart TD
     end
 
     subgraph Up["Uploaded to the private bucket"]
-        OUT["content/index.json + embeddings.npy<br/>content/info_index.json + info_embeddings.npy<br/>slides/*.webp, clips/*.mp4 + manifest,<br/>topics/topics.json, audio/*.mp3"]
+        OUT["content/index.json + embeddings.npy<br/>content/info_index.json + info_embeddings.npy<br/>slides/*.webp, clips/*.mp4 + manifest,<br/>topics/topics.json, audio/*.mp3 + .words.json,<br/>slides/*.boxes.json (word boxes)"]
     end
 
     PDF --> S1

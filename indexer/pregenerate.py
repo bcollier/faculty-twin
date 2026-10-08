@@ -17,10 +17,19 @@
 4. Writes `_build/topics/topics.json`:
    `[{question, course, playlist: {segments: [{slide_id, narration, audio_path}], follow_ups}, generated}]`.
    `indexer/upload.py` mirrors it and the mp3s to the bucket.
+5. Read-along (Oct 8): each mp3 gets its word timings next to it,
+   `<hash>.words.json` = `{"words": [[seconds, char_index], ...], "source"}`.
+   New clips take them from ElevenLabs' `/with-timestamps` reply (same price).
+   `--timings-only` adds them to clips made before that, with ElevenLabs
+   forced alignment (`POST /v1/forced-alignment`: the mp3 and its narration;
+   billed like speech to text, a few cents for every stored clip) and no
+   other call; a clip whose alignment fails is left without, and the page
+   estimates its timings.
 
 Run from the repo root:
   uv run --no-project --with-requirements requirements.txt python -m indexer.pregenerate --draft-only
   uv run --no-project --with-requirements requirements.txt python -m indexer.pregenerate
+  uv run --no-project --with-requirements requirements.txt python -m indexer.pregenerate --timings-only
 """
 
 from __future__ import annotations
@@ -96,15 +105,81 @@ def voice_tag(voice: str) -> str:
     return speech.voice_tag(voice)
 
 
-def speak(text: str, voice: str, client: httpx.Client) -> bytes:
-    """Speak one narration with ElevenLabs; mp3 bytes."""
+def speak(text: str, voice: str, client: httpx.Client) -> tuple[bytes, list]:
+    """The mp3 and its word timings, from one `/with-timestamps` call (the same price as plain audio)."""
     from app import speech
 
-    url, headers, params, body = speech.tts_request(text, voice)
+    url, headers, params, body = speech.tts_request(text, voice, speech.TIMESTAMPS_URL)
     resp = client.post(url, headers=headers, params=params, json=body)
     if resp.status_code >= 400:
         raise RuntimeError(f"ElevenLabs returned {resp.status_code}")
-    return resp.content
+    if resp.headers.get("content-type", "").startswith("audio/"):
+        return resp.content, []
+    return speech.eleven_audio_and_words(resp.json(), text)
+
+
+def words_file(mp3: Path) -> Path:
+    """`<hash>.mp3` -> `<hash>.words.json` (the read-along timings next to a stored clip)."""
+    return mp3.with_name(mp3.name[: -len(".mp3")] + ".words.json")
+
+
+def write_words(mp3: Path, words: list, source: str) -> None:
+    if words:
+        common.write_json(words_file(mp3), {"words": words, "source": source})
+
+
+FORCED_ALIGNMENT_URL = "https://api.elevenlabs.io/v1/forced-alignment"
+
+
+def forced_alignment(mp3: Path, text: str, client: httpx.Client) -> list:
+    """Word timings for an existing clip from ElevenLabs forced alignment (no speech is generated)."""
+    from app import timings
+
+    key = common.env("ELEVENLABS_API_KEY")
+    if not key:
+        raise RuntimeError("ELEVENLABS_API_KEY is not set")
+    resp = client.post(FORCED_ALIGNMENT_URL, headers={"xi-api-key": key},
+                       files={"file": (mp3.name, mp3.read_bytes(), "audio/mpeg")}, data={"text": text})
+    if resp.status_code >= 400:
+        raise RuntimeError(f"ElevenLabs forced alignment returned {resp.status_code}")
+    return timings.align(text, timings.words_from_forced_alignment(resp.json()))
+
+
+def add_timings(build: Path, client: httpx.Client | None = None, log: Callable[[str], None] = print) -> int:
+    """`--timings-only`: word timings for every stored clip that has none yet. Returns the exit code."""
+    topics = common.read_json(build / "topics" / "topics.json", []) or []
+    todo = []
+    for t in topics:
+        for seg in ((t or {}).get("playlist") or {}).get("segments", []):
+            rel = str(seg.get("audio_path") or "")
+            mp3 = build / rel
+            if rel.endswith(".mp3") and mp3.is_file() and not words_file(mp3).exists() and seg.get("narration"):
+                todo.append((mp3, seg["narration"]))
+    todo = list(dict(todo).items())  # one per mp3
+    if not todo:
+        log("Every stored clip already has its word timings.")
+        return EXIT_OK
+    if not common.env("ELEVENLABS_API_KEY"):
+        log("Needs ELEVENLABS_API_KEY in .env for forced alignment.")
+        return EXIT_NEEDS_KEYS
+    own = client is None
+    client = client or httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0))
+    done = 0
+    try:
+        for mp3, text in todo:
+            try:
+                words = forced_alignment(mp3, text, client)
+            except (RuntimeError, httpx.HTTPError, ValueError) as exc:
+                log(f"  no timings for {mp3.name}: {exc}")
+                continue
+            if words:
+                write_words(mp3, words, "elevenlabs-forced-alignment")
+                done += 1
+    finally:
+        if own:
+            client.close()
+    log(f"Word timings written for {done} of {len(todo)} stored clips. Next: indexer/upload.py")
+    return EXIT_OK
 
 
 def generate(
@@ -199,7 +274,9 @@ def _stored_segment(seg: dict[str, Any], build: Path, voice: str | None, client:
         rel = f"audio/{voice_tag(voice)}/{audio_name(seg['narration'])}.mp3"
         dest = build / rel
         if not dest.exists():
-            common.write_bytes_atomic(dest, speak(seg["narration"], voice, client))
+            mp3, words = speak(seg["narration"], voice, client)
+            common.write_bytes_atomic(dest, mp3)
+            write_words(dest, words, "elevenlabs")
             spoken["chars"] += len(seg["narration"])
         entry["audio_path"] = rel
     return entry
@@ -230,9 +307,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--draft-only", action="store_true", help="write the draft question list and stop")
     ap.add_argument("--voice", help="ElevenLabs voice id (default: Settings voice, else ELEVENLABS_VOICE_ID)")
     ap.add_argument("--no-audio", action="store_true", help="playlists only, captions (no ElevenLabs calls)")
+    ap.add_argument("--timings-only", action="store_true",
+                    help="only add word timings to stored clips that have none (ElevenLabs forced alignment)")
     a = ap.parse_args(argv)
     common.load_env()
     build = Path(a.build).expanduser() if a.build else common.build_dir(common.archive_dir(a.archive))
+    if a.timings_only:
+        return add_timings(build)
     questions = ensure_draft(build)
     if a.draft_only:
         return EXIT_OK

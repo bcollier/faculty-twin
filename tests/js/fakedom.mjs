@@ -6,6 +6,8 @@
 // no-ops. fetch is whatever the test passes in. Nothing here touches the network.
 
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
@@ -117,7 +119,9 @@ export function makeBrowser({ fetch, confirm = () => true, hostname = 'faculty-t
 
 /** Run `file` (a public/*.js page script) in the fake browser and return the named top-level bindings. */
 export async function loadPage(file, browser, expose) {
-  const src = readFileSync(file, 'utf8');
+  // A page's `import('./x.js')` would resolve next to this file; point it at the page's own folder.
+  const base = pathToFileURL(resolve(dirname(file))).href;
+  const src = readFileSync(file, 'utf8').replace(/import\((['"])\.\//g, `import($1${base}/`);
   const names = Object.keys(browser.globals);
   const body = `${src}\n;return { ${expose.map(n => `${n}: typeof ${n} === 'undefined' ? undefined : ${n}`).join(', ')} };`;
   const run = new AsyncFunction(...names, body);

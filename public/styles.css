@@ -338,10 +338,32 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .media.has-code .slide-frame { width: min(100%, calc(44vh * 16 / 9)); justify-self: center; }
 /* the slide: a white print on the page, as large as before */
 .slide-frame {
+  position: relative;
   margin: 0; background: var(--slide-bg); border: 0; border-radius: 2px;
   overflow: hidden; aspect-ratio: 16 / 9; display: grid; place-items: center;
   box-shadow: 0 1px 2px rgba(0, 0, 0, .15), 0 22px 34px -18px rgba(0, 0, 0, .5);
+  transition: transform .45s cubic-bezier(.2, .8, .2, 1), box-shadow .45s cubic-bezier(.2, .8, .2, 1);
 }
+/* Read-along: the slide being talked about is lifted into a soft highlighter spotlight while it is narrated,
+   and sits back a little while paused. */
+.slide-frame.is-speaking {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hl-yellow) 70%, transparent),
+    0 0 26px 6px color-mix(in srgb, var(--hl-yellow) 38%, transparent),
+    0 1px 2px rgba(0, 0, 0, .15), 0 26px 38px -18px rgba(0, 0, 0, .55);
+}
+.player.is-paused .slide-frame img { filter: saturate(.85) brightness(.97); transition: filter .3s; }
+/* highlighter marks over the slide words being said: drawn on the picture's own box (app.js layoutMarks) */
+.slide-marks { position: absolute; pointer-events: none; z-index: 1; }
+.slide-mark {
+  position: absolute; border-radius: 3px 6px 4px 7px / 6px 3px 7px 4px;
+  background: #ffe56b; mix-blend-mode: multiply; opacity: .62;
+  box-shadow: 0 0 0 1px rgba(201, 151, 0, .25);
+  animation: mark-in .32s cubic-bezier(.2, .8, .2, 1) both;
+}
+.mark-group { transition: opacity .42s ease-out; }
+.mark-group.out { opacity: 0; }
+@keyframes mark-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 .slide-frame img, .slide-frame video { width: 100%; height: 100%; object-fit: contain; }
 .slide-frame video { background: #000; }
 /* While the next slide loads, show the empty frame rather than the previous slide under the new caption. */
@@ -365,9 +387,18 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .clip-row:has(> :not([hidden])) { min-height: var(--tap); }
 #clip-note { font: 400 1.05rem/1.3 var(--hand); color: var(--ink-2); }
 
+/* The narration box (read-along): a hand-lettered "Narration" tag and the voice in mono, over the legal pad. */
+.narration { margin: .9rem 0 0; }
+.narration-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: .2rem .8rem; padding: 0 0 .25rem 4px; }
+.narration-tag {
+  margin: 0; font: 700 1.2rem/1.1 var(--hand); color: var(--accent); letter-spacing: 0;
+  display: inline-block; transform: rotate(-1.5deg);
+}
+.narration-voice { font: 500 .72rem/1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.narration-note { font: 400 1rem/1.3 var(--hand); color: var(--ink-2); margin-left: auto; }
 /* the caption: a strip of legal pad, red double margin line, the text written on 32px rules */
 .caption {
-  margin: .9rem 0 0; padding: 12px 18px 12px 66px; color: var(--ink);
+  margin: 0; padding: 12px 18px 12px 66px; color: var(--ink);
   background-color: var(--legal-bg);
   background-image:
     linear-gradient(90deg, transparent 40px, var(--legal-margin) 40px 42px, transparent 42px 46px, var(--legal-margin) 46px 48px, transparent 48px),
@@ -378,6 +409,28 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   border: 0; border-radius: 2px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, .14), 0 10px 18px -12px rgba(0, 0, 0, .35);
   font-size: 1.1rem; line-height: 32px; min-height: 88px;
+  /* the whole narration, four ruled lines at a time; the spoken line scrolls into view */
+  max-height: calc(4 * 32px + 24px); overflow-y: auto; overscroll-behavior: contain;
+  background-attachment: local;
+}
+.caption:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+/* words still to come are lighter, words said are in ink, the word being said gets a highlighter sweep */
+.caption .w { opacity: .62; transition: opacity .25s, color .25s; border-radius: 2px; }
+.caption .w.said { opacity: 1; }
+.caption .w.now {
+  opacity: 1; color: var(--paper-ink);
+  /* a deeper yellow than the pad itself, so the sweep reads on the legal-pad yellow */
+  --sweep: color-mix(in srgb, var(--hl-yellow) 55%, var(--mark-edge));
+  background: linear-gradient(var(--sweep), var(--sweep)) 0 55% / 0% 78% no-repeat;
+  animation: sweep .18s cubic-bezier(.2, .8, .2, 1) forwards;
+}
+@keyframes sweep { to { background-size: 100% 78%; } }
+/* reduced motion: the sentence being read is highlighted as a whole, nothing sweeps */
+.caption.reduce .w.now { animation: none; background: none; }
+.caption.reduce .w.in-sentence {
+  --sweep: color-mix(in srgb, var(--hl-yellow) 55%, var(--mark-edge));
+  opacity: 1; color: var(--paper-ink);
+  background: linear-gradient(var(--sweep), var(--sweep)) 0 55% / 100% 78% no-repeat;
 }
 
 .controls { display: flex; align-items: center; gap: .55rem; margin-top: .9rem; flex-wrap: wrap; }
@@ -394,6 +447,14 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .dots button.done::before { background: var(--line-strong); }
 .dots button[aria-current="step"]::before { background: var(--accent); border-color: var(--accent); transform: scale(1.35); }
 .dots button:focus-visible { outline: none; box-shadow: var(--focus); }
+.dots button { position: relative; }
+.dots button::before { position: relative; z-index: 1; }
+.player:not(.is-paused) .dots button[aria-current="step"]::after {
+  content: ""; position: absolute; inset: 0; margin: auto; width: 15px; height: 15px; border-radius: 50%;
+  background: color-mix(in srgb, var(--hl-yellow) 75%, transparent); z-index: 0;
+  animation: dot-glow 1.6s ease-in-out infinite;
+}
+@keyframes dot-glow { 0%, 100% { transform: scale(1.3); opacity: .9; } 50% { transform: scale(2); opacity: .35; } }
 .audio-note {
   margin: .6rem 0 0; font-size: .88rem; color: var(--ink); padding: .45rem .75rem .45rem 1.1rem; border-radius: var(--radius-sm);
   background: var(--legal-bg) linear-gradient(90deg, transparent 6px, var(--legal-margin) 6px 8px, transparent 8px);
@@ -492,7 +553,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   .player > .media { order: 0; }
   .player > .clip-row { order: 1; }
   .player > .source-card { order: 2; margin-top: .8rem; }
-  .player > .caption { order: 3; }
+  .player > .narration { order: 3; }
+  .narration-note { margin-left: 0; flex-basis: 100%; }
+  .caption { max-height: calc(5 * 32px + 24px); }
   .player > .controls { order: 4; }
   .player > .audio-note { order: 5; }
   .source-card { padding: .55rem .8rem .7rem; }
@@ -531,6 +594,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
   ::view-transition-group(*) { animation: none !important; }
+  .slide-frame.is-speaking { transform: none; }
+  .slide-mark { animation: none; }
+  .player:not(.is-paused) .dots button[aria-current="step"]::after { animation: none; }
   /* nothing tilts or lifts when pointed at */
   .btn:hover, .followups .chip:hover, .followups .chip:focus-visible,
   .followups li:nth-child(2n) .chip:hover, .followups li:nth-child(2n) .chip:focus-visible { transform: none; }

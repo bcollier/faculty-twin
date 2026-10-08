@@ -149,7 +149,7 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("ADMIN_PASSCODE", "admin-pass")
     monkeypatch.delenv("CONTENT_DIR", raising=False)
 
-    from app import alerts, edge_voice, limits, playlist, prompts, settings_store, speech, storage
+    from app import alerts, edge_voice, limits, playlist, prompts, settings_store, speech, storage, timings
 
     storage.store.reset()
     settings_store.clear_cache()
@@ -159,6 +159,7 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     speech.clear_cache()
     edge_voice.clear_cache()
     alerts.reset_memory()
+    timings.clear_memory()
     # Helper slides (app/helper_slide.py) default to on, but most tests' fake models do not know their
     # prompt; tests/test_helper_slide.py turns them back on where it tests them.
     settings_store.put({"helper_slides_enabled": False})

@@ -105,7 +105,7 @@ def test_open_stream_and_stream_bytes(monkeypatch):
     assert data.startswith(b"ID3") and len(data) == 5003
     assert client.is_closed
     req = seen[0]
-    assert req.url.path == "/v1/text-to-speech/voice123/stream"
+    assert req.url.path == "/v1/text-to-speech/voice123/stream/with-timestamps"  # read-along, Oct 8
     assert req.url.params["output_format"] == "mp3_44100_128"
     assert req.headers["xi-api-key"] == "el-test"
 
