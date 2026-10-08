@@ -20,6 +20,9 @@ describes (safe to run again; it replaces its own entries):
 
 It prints counts only, never question text.
 
+With `--run <folder> --generator provider:model` it instead uploads any `evals.run` folder (for
+example a run judged by Jev) as a finished run; add `--note` for anything the report card should say.
+
 With `--compare <run folder>` it instead uploads one model comparison run from `evals/compare.py`
 (docs/SPEC.md, Block 8c): run 1 of every question x answering model, as a finished run with up to six
 answering models, so it appears on the Settings report card next to admin runs. Repeated answers
@@ -69,9 +72,13 @@ def _stamp(run_id: str) -> datetime:
     return datetime.strptime(run_id, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
 
 
-def convert_run(run_dir: Path, run_id: str, generator: dict[str, str],
-                excluded: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """A CLI run folder -> (run.json, result rows) in the Settings format."""
+def convert_run(run_dir: Path, run_id: str, generator: dict[str, str], excluded: bool,
+                name: str | None = None, label: str | None = None,
+                notes: list[str] | None = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """A CLI run folder -> (run.json, result rows) in the Settings format.
+
+    `name`, `label` and `notes` default to the October 7 run's; `import_run` passes its own.
+    """
     results = read_jsonl(run_dir / "results.jsonl")
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     meta = summary.get("meta") or {}
@@ -93,7 +100,8 @@ def convert_run(run_dir: Path, run_id: str, generator: dict[str, str],
     errors = sum(1 for r in results if r["response"]["status"] == "error")
     run = {
         "id": run_id,
-        "name": "October 7 twin run (command line)" if not excluded else "October 7 first attempt (command line)",
+        "name": name
+        or ("October 7 twin run (command line)" if not excluded else "October 7 first attempt (command line)"),
         "kind": "imported",
         "source": f"evals/private/runs/{run_id}",
         "created_at": started.isoformat(timespec="seconds"),
@@ -103,7 +111,7 @@ def convert_run(run_dir: Path, run_id: str, generator: dict[str, str],
         "status_note": None,
         "excluded": excluded,
         "generators": [generator],
-        "generator_labels": {key: TWIN_LABEL},
+        "generator_labels": {key: label or TWIN_LABEL},
         "judges": [model_ref(j) for j in judges],
         "top": len(results),
         "categories": None,
@@ -114,7 +122,7 @@ def convert_run(run_dir: Path, run_id: str, generator: dict[str, str],
         "calls_used": None,
         "call_cap": None,
         "self_grading": eval_runs.self_grading([generator], [model_ref(j) for j in judges]),
-        "notes": [eval_runs.IMPORTED_NOTE],
+        "notes": list(notes) if notes is not None else [eval_runs.IMPORTED_NOTE],
         "lease": None,
     }
     if excluded:
@@ -323,13 +331,64 @@ def import_compare(run_dir: Path, bucket: eval_store.Bucket, out: Callable[[str]
     return 0
 
 
+CLI_RUN_NOTE = ("Imported from a command-line run (python -m evals.run). The command line records every decline as "
+                "not covered: FAQ, logistics and not-covered replies are not told apart.")
+
+
+def parse_generator(spec: str) -> dict[str, str]:
+    """"provider:model" -> {"provider", "model"}; the narration model the run used (the CLI does not record it)."""
+    provider, sep, model = (spec or "").partition(":")
+    if not sep or not provider or not model:
+        raise ValueError("--generator must look like provider:model, for example anthropic:claude-sonnet-5-5")
+    return {"provider": provider, "model": model}
+
+
+def import_run(run_dir: Path, bucket: eval_store.Bucket, generator: dict[str, str], notes: list[str] | None = None,
+               out: Callable[[str], None] = print) -> int:
+    """Upload any `evals.run` folder (results.jsonl + summary.json) as a finished run on the report card.
+
+    Use it for runs the October 7 import does not cover, such as a Jev-judged run. The run id is the
+    folder name. The generator is given by the caller: in-process runs do not record the narration model.
+    """
+    run_id = eval_store.check_run_id(run_dir.name)
+    if not (run_dir / "results.jsonl").is_file() or not (run_dir / "summary.json").is_file():
+        out(f"{run_id}: no results.jsonl and summary.json here, skipped.")
+        return 2
+    key = eval_runs.model_key(generator)
+    meta = json.loads((run_dir / "summary.json").read_text(encoding="utf-8")).get("meta") or {}
+    judges = str(meta.get("judges") or "none")
+    run_json, rows = convert_run(
+        run_dir, run_id, generator, excluded=False,
+        name=f"Command-line run {run_id} (judges: {judges})",
+        label=f"Twin with {key} (narration model given at import)",
+        notes=[CLI_RUN_NOTE, *(notes or [])],
+    )
+    eval_store.write_run(bucket, run_json)
+    for row in rows:
+        eval_store.write_row(bucket, run_id, row)
+    eval_store.write_results(bucket, run_id, rows)
+    eval_store.mark_finished(bucket, run_id, run_json["status"], run_json["finished_at"])
+    eval_store.upsert_index(bucket, eval_runs.index_entry(run_json))
+    with_p = sum(1 for r in rows for j in r["judgements"] if isinstance(j, dict) and "p_pass" in j)
+    out(f"{run_id}: {len(rows)} rows, judges {judges}, {with_p} judgements with P(pass).")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--private", type=Path, default=PRIVATE, help="the evals/private folder that holds runs/")
     p.add_argument("--env-file", type=Path, default=ROOT / ".env")
     p.add_argument("--compare", type=Path, action="append", default=[],
                    help="a model comparison run folder (evals/compare.py) to upload instead")
+    p.add_argument("--run", type=Path, action="append", default=[],
+                   help="an evals.run folder to upload instead (needs --generator)")
+    p.add_argument("--generator", help="provider:model the --run folders' twin narrated with")
+    p.add_argument("--note", action="append", default=[], help="a note shown with the --run (repeatable)")
     args = p.parse_args(argv)
+    if args.run and not args.generator:
+        print("--run needs --generator provider:model (the CLI does not record the narration model).",
+              file=sys.stderr)
+        return 2
     load_dotenv(args.env_file)
     from app import config
 
@@ -337,6 +396,10 @@ def main(argv: list[str] | None = None) -> int:
         print("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (environment or .env).", file=sys.stderr)
         return 3
     try:
+        if args.run:
+            bucket = eval_store.SupabaseBucket()
+            gen = parse_generator(args.generator)
+            return max(import_run(folder, bucket, gen, args.note) for folder in args.run)
         if args.compare:
             bucket = eval_store.SupabaseBucket()
             return max(import_compare(folder, bucket) for folder in args.compare)
