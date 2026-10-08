@@ -85,7 +85,7 @@ Prompts below are verbatim, typos included. Responses are summarized.
 **Response summary.** Read Vercel's FastAPI guide and updated the spec.
 
 - One Vercel project: FastAPI as a single function in `app/main.py`, frontend and slide images and pre-generated audio in `public/` served from the CDN.
-- Nothing saved on the server. Live audio is streamed back; suggested-question audio is generated on my laptop and committed.
+- Nothing saved on the server. Live audio is streamed back; suggested-question audio is generated locally ahead of time and committed.
 - The "only speak text the backend wrote" rule is now enforced with a signed link, since a function cannot remember what it issued.
 - Rate-limit and daily-cap counters moved to a Supabase table, which also covers the database requirement.
 - Block 0 rewritten for Vercel with a paid Render instance as fallback.
@@ -213,9 +213,9 @@ Prompts below are verbatim. Responses are summarized.
 
 > gently smooth over any cursing in the text with a simple word substitue since there may be cursing and we want to keep this PG
 
-**Response summary (Prompts 8 and 9).** Tool: Claude Code on the laptop, Claude Opus 5.5, with read-only Gmail access and background subagents.
+**Response summary (Prompts 8 and 9).** Tool: Claude Code (this repo setup session), Claude Opus 5.5, with read-only Gmail access and background subagents.
 
-- **Coordination.** Another Claude session on the Mac mini was merging pull requests at the same time. They agreed to split the work: that session owns `indexer/`, suggested-question playlists, and deploys. This session took `evals/` and the demo script.
+- **Coordination.** Another Claude Code session (the build session below) was merging pull requests at the same time. They agreed to split the work: that session owns `indexer/`, suggested-question playlists, and deploys. This session took `evals/` and the demo script.
 - **Email questions.** Four read-only subagents, each covering a date range, read student emails and wrote each question back as a rewritten, de-identified, PG version. The rewrites have no names, IDs, exact dates, or personal details, and avoid the original writing style. Each got a category, a paraphrase of Ben's or the TA's reply, and whether the course materials could answer it.
   - Claude Code's permission check blocked two of the four subagents, the ones for August 15 to September 14, 2026 and January to August 2026. Those ranges were not read, so the set has 22 questions, not 100.
   - The questions are in the git-ignored `evals/private/` and are not reproduced here.
@@ -233,25 +233,25 @@ Prompts below are verbatim. Responses are summarized.
 
 (Quoted the AI's earlier answer about the four hand-written pieces.)
 
-**Response summary.** All four are in `bcollier/faculty-twin` on `main`: `NOT_COVERED_THRESHOLD` at `app/retrieval.py:30`, `rank` at line 36, `select_segments` at line 45, `onClipEnded()` at `public/app.js:859`, with the tests in `tests/test_retrieval.py`. Gave the laptop and Mac mini paths and the test command.
+**Response summary.** All four are in `bcollier/faculty-twin` on `main`: `NOT_COVERED_THRESHOLD` at `app/retrieval.py:30`, `rank` at line 36, `select_segments` at line 45, `onClipEnded()` at `public/app.js:859`, with the tests in `tests/test_retrieval.py`. Gave the local clone paths and the test command.
 
 ### Prompt 11 (9:42 PM)
 
 > ok bring this repo local so I can edit it
 
-**Response summary.** It was already on the laptop and current with GitHub. Created the branch `feat/retrieval-by-hand` for my edits and opened the repo in the editor at the four places. No code was written in those files.
+**Response summary.** It was already cloned locally and current with GitHub. Created the branch `feat/retrieval-by-hand` for my edits and opened the repo in the editor at the four places. No code was written in those files.
 
 ### Prompt 12 (9:43 PM)
 
 > this needs to be moved out of the gaimdev folder it isn't associated iwth gaim
 
-**Response summary.** Moved the laptop clone from `~/Code/gaim_claude_dev/faculty_twin` to `~/Code/faculty-twin`, matching the repo name and the Mac mini path. Git history, the remote, my branch, and the git-ignored eval data moved with it. Updated `AGENTS.md` so it no longer says the repo sits inside the GAIM folder.
+**Response summary.** Moved this local clone from `~/Code/gaim_claude_dev/faculty_twin` to `~/Code/faculty-twin`, matching the repo name and the build session's clone. Git history, the remote, my branch, and the git-ignored eval data moved with it. Updated `AGENTS.md` so it no longer says the repo sits inside the GAIM folder.
 
 ---
 
-## Build session on the Mac mini, Monday October 5 into Tuesday October 6, 2026
+## Build session, Monday October 5 into Tuesday October 6, 2026
 
-**Tool:** Claude Code (CLI agent in the terminal on my Mac mini, driven from my laptop). Model: Claude Opus 5.5. It ran a team of sub-agents in parallel: spec, backend, frontend, slide pipeline, transcript de-identification, alignment and clips, index and upload, security review, frontend QA, voice tiers, PG filter, avatar research, and a multi-course lecture archive. A second Claude Code session on my laptop wrote `evals/`, `localvoice/`, and the demo script (its prompts are logged in the section above).
+**Tool:** Claude Code (CLI agent in the terminal, on the local build machine that holds the private lecture archive). Model: Claude Opus 5.5. It ran a team of sub-agents in parallel: spec, backend, frontend, slide pipeline, transcript de-identification, alignment and clips, index and upload, security review, frontend QA, voice tiers, PG filter, avatar research, and a multi-course lecture archive. A second Claude Code session (the repo setup session) wrote `evals/`, `localvoice/`, and the demo script (its prompts are logged in the section above).
 
 **What this tool was used for:** everything in the app except the four pieces I write by hand. The agents left signatures, docstrings, and failing tests for `rank`, `select_segments`, `NOT_COVERED_THRESHOLD`, and `onClipEnded()`, and did not write their bodies.
 
@@ -261,7 +261,7 @@ Prompts below are verbatim, except that passcodes and secrets are redacted (per 
 
 > get the digital twin faculty twin repo from my github. start a deep session on building this out read the spec and build out the app. ask for credentials or secrets as needed. launch a whole team of agents to work on designing, building, testing, and doing a security analysis of the MVP of this working. as sources go through my two current teaching courses from Google cloud and get the transcripts for every day of class from the Zoom recordings. de-identify the names of any students mentioned as you import . take the most current slide deck PDF from all the slides and do whatever you need to do in pre-processing so students can ask a question and be pointed to the current slides from the semester based on the course transcripts and the slides. if claude code can process the video from the courses you may build a version that cuts up class video and shows it to illustrate a point
 
-**Response summary.** Cloned the repo, read the spec and `AGENTS.md`, found both Fall 2026 courses in Google Drive (70-445 and 45-884), and pulled all 22 sessions (video, Zoom captions, slide PDFs, notebooks) into a private archive on the Mac mini, outside the repo. Asked four questions before building:
+**Response summary.** Cloned the repo, read the spec and `AGENTS.md`, found both Fall 2026 courses in Google Drive (70-445 and 45-884), and pulled all 22 sessions (video, Zoom captions, slide PDFs, notebooks) into a private archive on the local build machine, outside the repo. Asked four questions before building:
 
 - Content: **private, behind a course passcode** (repo holds code only).
 - Class video clips: **build them and publish automatically**, behind the passcode.
@@ -284,13 +284,13 @@ Then wrote a shared team brief and launched agents for the spec, backend, fronte
 
 > there should be a settings page, choose the voice, the model, add source material to a course, etc.
 
-**Response summary.** The admin page became a full Settings page: model, voice, courses and source-material uploads, limits and access, and activity. Uploads go straight from the browser to private storage (Vercel caps request bodies at 4.5 MB) and a worker on my Mac processes them.
+**Response summary.** The admin page became a full Settings page: model, voice, courses and source-material uploads, limits and access, and activity. Uploads go straight from the browser to private storage (Vercel caps request bodies at 4.5 MB) and a local processing worker on the build machine processes them.
 
 ### Prompt 5
 
 > /Users/bcollier/Code/FacultyTwinContent. check out the data in here for formats available in previous step. de-identify anyone named except Benjamin (Ben) Collier
 
-**Response summary.** The folder was on my laptop, so it pulled the Drive copy. It holds an earlier archive of 45-884 with ASR-corrected transcripts (`.cleaned.timed.jsonl`, `.cleaned.vtt`, `.cleaned.md`) and RAG chunks, none de-identified. Switched 45-884 to the corrected text and made the rule strict: every person named in a transcript is replaced (`[student]` or `[person]`) except me, public figures included.
+**Response summary.** The folder was not on the build machine, so it pulled the Drive copy. It holds an earlier archive of 45-884 with ASR-corrected transcripts (`.cleaned.timed.jsonl`, `.cleaned.vtt`, `.cleaned.md`) and RAG chunks, none de-identified. Switched 45-884 to the corrected text and made the rule strict: every person named in a transcript is replaced (`[student]` or `[person]`) except me, public figures included.
 
 ### Prompt 6 (with a screenshot of CMU's LinkedIn post about Jordan Usdan's AI clone)
 
@@ -308,7 +308,7 @@ Then wrote a shared team brief and launched agents for the spec, backend, fronte
 
 > go through all of my courses content from the last few years, organize clearly all the data and downloads. i want the code, slides, recordings, recommended readings etc. these are in bookmarks . go through the same process of cleaning up as with ai methods course
 
-**Response summary.** Started a separate lecture-archive agent in `~/Lecture Archive` on the Mac mini, read-only on Drive, and asked me for a Canvas token and a Zoom login. Flagged four bookmarks named after other people as possibly not mine.
+**Response summary.** Started a separate lecture-archive agent in `~/Lecture Archive` on the local build machine, read-only on Drive, and asked me for a Canvas token and a Zoom login. Flagged four bookmarks named after other people as possibly not mine.
 
 ### Prompt 9
 
@@ -326,7 +326,7 @@ Then wrote a shared team brief and launched agents for the spec, backend, fronte
 
 > i don't see how to do this ~/Code/ft-data/set_canvas_token.sh
 
-**Response summary.** The script was on the Mac mini, not my laptop. Gave step-by-step SSH instructions: make the token, connect, run the script, and what I would see.
+**Response summary.** The script was on the local build machine, not the computer I was typing on. Gave step-by-step SSH instructions: make the token, connect, run the script, and what I would see.
 
 ### Prompt 12 (pasted terminal output: the Canvas token was saved and verified)
 
@@ -400,7 +400,7 @@ The paste included the student passcode, shown here as `[student passcode redact
 
 > where are these files locally Your hand-written code. Until you write rank, select_segments and NOT_COVERED_THRESHOLD in app/retrieval.py, questions get the "still writing the code" message, which is correct at that point. The three tests in tests/test_retrieval.py show what each one needs to do. Choose the threshold by asking five on-topic and five off-topic questions and looking at the top scores.
 
-**Response summary.** Gave the file and line locations on the Mac mini, on GitHub, and how to pull them to my laptop.
+**Response summary.** Gave the file and line locations in the build session's clone and on GitHub, and how to pull them into another clone.
 
 ### Prompt 28
 
@@ -550,11 +550,11 @@ Tool: Cursor, model Claude Opus 5.5 (the session heading above names Grok 4.7 fo
 
 > ok what else do i have to do iwth the threshold value
 
-**Response summary.** Checked the laptop: no `.env` and no local index, so real scores have to come from the deployed site (or the Mac mini). Laid out the steps: replace `None` with a provisional number so the live site never treats every question as covered, merge, ask five on-topic and five off-topic questions per course (not the suggested questions, which skip retrieval and log no score), read the Top score column in the Settings activity list, pick a value between the highest off-topic and lowest on-topic score, update the constant in a small follow-up PR, re-run the Block 2 Check, and write how I chose it in the prompt log in my own words. Noted the pytest tests pass their own 0.5 and do not read the constant.
+**Response summary.** Checked this clone: no `.env` and no local index, so real scores have to come from the deployed site (or the build session, which has the index). Laid out the steps: replace `None` with a provisional number so the live site never treats every question as covered, merge, ask five on-topic and five off-topic questions per course (not the suggested questions, which skip retrieval and log no score), read the Top score column in the Settings activity list, pick a value between the highest off-topic and lowest on-topic score, update the constant in a small follow-up PR, re-run the Block 2 Check, and write how I chose it in the prompt log in my own words. Noted the pytest tests pass their own 0.5 and do not read the constant.
 
 ---
 
-## Laptop Claude Code session, continued (October 5 to 7, 2026)
+## Repo setup session, continued (October 5 to 7, 2026)
 
 **Tool:** Claude Code, Claude Opus 5.5. These entries continue "Repo setup session" (Prompts 1 to 12), from the same session; numbering continues from there.
 
@@ -583,9 +583,9 @@ Tool: Cursor, model Claude Opus 5.5 (the session heading above names Grok 4.7 fo
 - `faculty-twin` is the app's git repo.
 - `FacultyTwinContent` (5.4 GB) is the raw material for the two AI Methods courses: slides, recordings, transcripts, notebooks, plus a small archive viewer.
 - `FacultyCourseArchive` (22 MB) is an inventory of my other Canvas courses.
-- The content folders are separate because the spec bans course content from the public repo, and the Mac mini builds from its own imported copy.
+- The content folders are separate because the spec bans course content from the public repo, and the local build machine builds from its own imported copy.
 
-The AI flagged that 5.4 GB of recordings, which likely include student voices, is syncing to Google Drive under `~/Code`. It offered three options (consolidate outside `~/Code`, add READMEs, or delete the laptop copy) and changed nothing.
+The AI flagged that 5.4 GB of recordings, which likely include student voices, is syncing to Google Drive under `~/Code`. It offered three options (consolidate outside `~/Code`, add READMEs, or delete this local copy) and changed nothing.
 
 ### Prompt 16 (10:38 PM)
 
@@ -602,17 +602,17 @@ The AI flagged that 5.4 GB of recordings, which likely include student voices, i
 - Wrote `docs/EXPLORATION_JEV.md`: five questions to answer, plus two in-app ideas (routing logistics before retrieval, a probabilistic grounding check).
 - Tested with a fake Jev (9 tests). No real Jev call yet: the TypeSafe key isn't set up for this repo.
 
-### Work done while waiting (laptop session, same goal)
+### Work done while waiting (repo setup session, same goal)
 
 Tool: Claude Code, Claude Opus 5.5.
 
 - **Browser QA (PR #23).** A WebKit and Firefox pass with Playwright in mock mode: 56 runs over every error state, phone and desktop, light and dark. Fixed one bug: Safari drew the side panel's course picker 23 px tall. Results are in `docs/QA.md`.
-- **Judge calibration (PR #24).** Eight synthetic cases with known verdicts. `openai:gpt-6.1-sol` met 8 of 8 on two runs; `gpt-6-luna` met 8 of 8 but is lenient on verdicts. The OpenRouter key on the laptop is dead (401).
+- **Judge calibration (PR #24).** Eight synthetic cases with known verdicts. `openai:gpt-6.1-sol` met 8 of 8 on two runs; `gpt-6-luna` met 8 of 8 but is lenient on verdicts. The OpenRouter key in this session's local `.env` is dead (401).
 - **Baseline eval (PR #25).** Added `--target baseline`: a generic chatbot (`gpt-6.1-sol`) with no course material answered the 22 de-identified email questions, rated by two judges. Pass rate was 0.68 from `gpt-6.1-sol`, grading its own answers, and 0.27 from `gpt-6-luna`; the judges agreed on 59% of verdicts. The baseline rarely declines logistics, invented quiz policy once, and missed my specific explanations on concept questions. Per-question results are in the git-ignored `evals/private/runs/baseline-20261006/`.
 
 **Places the AI got it wrong (facts for my own write-up):**
 - The first browser QA ran against the wrong page. Another local server already held port 8765 and was serving the `FacultyTwinContent` archive viewer, so every Faculty Twin check "failed" for an hour. The AI found it by printing the page text, then moved to a free port and verified the page title before testing.
-- The AI said `gpt-6-astra` was unavailable "to Ben's OpenAI key" after listing the models for the key in my laptop shell. The Mac mini session checked the key Vercel actually uses, and it does have `gpt-6-astra`; the laptop key belongs to a different account. The examples now use `gpt-6.1-sol`, which both keys have.
+- The AI said `gpt-6-astra` was unavailable "to Ben's OpenAI key" after listing the models for the key in this session's local shell. The build session checked the key Vercel actually uses (its environment variable), and it does have `gpt-6-astra`; the local key belongs to a different account. The examples now use `gpt-6.1-sol`, which both keys have.
 
 ### Prompt 18 (October 7)
 
@@ -640,7 +640,7 @@ Tool: Claude Code, Claude Opus 5.5.
 
 > Closer to 0.54: declines more safely, add notes on how the value was chosen
 
-**How the threshold was chosen.** The Mac mini session ran test questions through my `rank()` on the live index:
+**How the threshold was chosen.** The build session ran test questions through my `rank()` on the live index:
 - **On-topic questions:** top-1 cosine scores from 0.543 to 0.693.
 - **Off-topic questions:** 0.377 to 0.448.
 - **My first value, 0.30:** let every off-topic question through, so "who won the Stanley Cup" got narrated slides.
@@ -649,7 +649,7 @@ Any value between 0.448 and 0.543 separates the two groups. I chose to lean towa
 
 **Who chose what.** I chose the direction. Claude Code proposed the exact number, 0.52, which sits 0.072 above the highest off-topic score and 0.023 below the lowest on-topic one. The reasoning is also recorded as a comment above `NOT_COVERED_THRESHOLD` in `app/retrieval.py`.
 
-**Response summary.** Set `NOT_COVERED_THRESHOLD = 0.52` with that comment, through a pull request. The Mac mini session deploys it and then runs the real evaluation of the twin on the de-identified email questions.
+**Response summary.** Set `NOT_COVERED_THRESHOLD = 0.52` with that comment, through a pull request. The build session deploys it and then runs the real evaluation of the twin on the de-identified email questions.
 
 ### Prompt 22 (6:50 PM)
 
@@ -698,4 +698,8 @@ Then built the FAQ answers:
 
 Tests: 19 new FAQ tests. Two logistics tests changed, because office hours now gets my Calendly answer. The full suite passed (598). Checked in WebKit and Chromium at phone width.
 
-The only wording change to my FAQ text is a typo fix ("The final presentation on during" became "The final presentation during"). The Mac mini session deploys.
+The only wording change to my FAQ text is a typo fix ("The final presentation on during" became "The final presentation during"). The build session deploys.
+
+---
+
+**Edit note (October 7, 2026, requested by me):** session headings and AI-written summaries in this log were reworded to describe the real stack (Vercel, Supabase, the model and voice providers, and the local build machine that holds the private archive) instead of naming which computer I was typing on. My prompts above are unchanged and still verbatim.

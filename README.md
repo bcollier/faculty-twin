@@ -130,7 +130,7 @@ uv run --no-project --with-requirements requirements.txt python -m evals.run \
 
 ### More docs
 
-- [docs/ROADMAP.md](docs/ROADMAP.md): ideas for after submission, starting with free open-source voice models on the Mac mini
+- [docs/ROADMAP.md](docs/ROADMAP.md): ideas for after submission, starting with free open-source voice models run on the local build machine
 - [docs/SECURITY.md](docs/SECURITY.md): threat model, findings, and the pre-launch checklist
 - [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md): shot list and pre-flight checklist for the demo video
 - [docs/EXPLORATION_JEV.md](docs/EXPLORATION_JEV.md): exploration of Jev (TypeSafe's System One model) as an evaluation judge

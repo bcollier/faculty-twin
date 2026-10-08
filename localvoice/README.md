@@ -1,6 +1,6 @@
 # localvoice: free local voices for pre-generated audio
 
-This is roadmap steps 1 and 2 from [docs/ROADMAP.md](../docs/ROADMAP.md): free, open-source voices that run on the Mac mini, for the suggested-question clips only. Live answers keep using the hosted voice tiers (`app/voices.py`), because Vercel can't run these models.
+This is roadmap steps 1 and 2 from [docs/ROADMAP.md](../docs/ROADMAP.md): free, open-source voices that run on the local build machine (the computer that holds the private archive), for the suggested-question clips only. Live answers keep using the hosted voice tiers (`app/voices.py`), because Vercel can't run these models.
 
 | Engine | Package (checked Oct 5, 2026) | Voice | Label shown to students |
 | --- | --- | --- | --- |
@@ -14,12 +14,12 @@ This is roadmap steps 1 and 2 from [docs/ROADMAP.md](../docs/ROADMAP.md): free, 
   - labelled `instructor`
   - no `[student]` or `[person]` token
   - not flagged by the PG check
-- **Cutting the clip and any render with it happen on the Mac mini.** The clip and the renders are private. Keep the clip under `~/Lecture Archive/_private/`. Renders go to `localvoice/out/`, which is git-ignored.
+- **Cutting the clip and any render with it happen on the local build machine.** The clip and the renders are private. Keep the clip under `~/Lecture Archive/_private/`. Renders go to `localvoice/out/`, which is git-ignored.
 - **Only a clone of Ben's own voice gets the clone label.** Kokoro, and Chatterbox with anyone else's reference clip, get the stock label.
 
 ## Steps
 
-1. **Cut a reference clip.** This runs on the Mac mini and needs ffmpeg.
+1. **Cut a reference clip.** This runs on the local build machine and needs ffmpeg.
 
    ```bash
    uv run --no-project --with numpy python -m localvoice.sample \
@@ -51,13 +51,13 @@ This is roadmap steps 1 and 2 from [docs/ROADMAP.md](../docs/ROADMAP.md): free, 
 
 Warm real-time factor is render time divided by audio length; lower is faster.
 
-| Engine | Where | Warm real-time factor |
+| Engine | Hardware (local run) | Warm real-time factor |
 | --- | --- | --- |
-| Kokoro `am_michael` | laptop CPU | 0.16 |
-| Kokoro | Mac mini (Apple GPU) | 0.11 |
-| Chatterbox (clone) | Mac mini (Apple GPU) | 2.0 |
-| edge-tts (free Microsoft) | Mac mini | 0.44 |
-| ElevenLabs (hosted) | Mac mini | 0.18 |
+| Kokoro `am_michael` | CPU only | 0.16 |
+| Kokoro | Apple GPU (MPS) | 0.11 |
+| Chatterbox (clone) | Apple GPU (MPS) | 2.0 |
+| edge-tts (free Microsoft) | network call to Microsoft | 0.44 |
+| ElevenLabs (hosted) | network call to ElevenLabs | 0.18 |
 
 Notes:
 - The first call loads the model: about 25 seconds for Kokoro, against 3 seconds warm. `ab.py` now renders a throwaway sentence per engine before timing.
@@ -65,10 +65,10 @@ Notes:
 
 ## Fixed after the first real run (October 5)
 
-The Mac mini session's A/B run found six problems, all fixed:
+The first A/B run on the local build machine found six problems, all fixed:
 - **Missing pin:** `setuptools<81` was missing from `localvoice/requirements.txt`, so Chatterbox failed with `TypeError: 'NoneType' object is not callable`.
 - **Crashes:** one engine crashing stopped the whole run.
 - **Hand-made clips:** ElevenLabs clips dropped into the run folder never appeared on the page and weren't loudness-matched.
 - **Not truly blind:** file names and hidden labels gave the answer away, and the order never changed. Files now get random names, the answer key is a separate `answer_key.json`, and the shuffle is seeded (`--seed`).
 - **Timing:** model loading was counted in segment 1.
-- **Permissions:** the reference clip was readable by every account on the Mac. It's now mode 600, and folders under `_private/` are 700.
+- **Permissions:** the reference clip was readable by every account on the machine. It's now mode 600, and folders under `_private/` are 700.

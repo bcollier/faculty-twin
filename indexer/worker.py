@@ -1,6 +1,7 @@
 """Local worker: process files uploaded through the Settings page (docs/SPEC.md, Block 8).
 
-Runs on Ben's Mac, because the rosters, the archive, and ffmpeg are there.
+Runs on the local build machine (the computer that holds the private archive),
+because the rosters, the archive, and ffmpeg are there.
 
 Every 30 seconds it reads the `sources` table for rows with status `uploaded`
 (kinds slides | transcript | video | notebook), claims each one by moving it to
@@ -254,18 +255,18 @@ def run_external(stage: str, course: str, session: int, logs: Path, stopper: Sto
     if stopper and stopper.hard.is_set():
         raise WorkerError(f"stage {stage} was stopped")
     if code != 0:
-        raise WorkerError(f"stage {stage} failed (exit {code}); see the worker log on Ben's Mac")
+        raise WorkerError(f"stage {stage} failed (exit {code}); see the local worker log")
 
 
 BUILD_MESSAGES = {
-    3: "index built, but embeddings need VOYAGE_API_KEY in .env on Ben's Mac",
-    4: "the leak check found a roster name in the index; see the build log on Ben's Mac",
+    3: "index built, but embeddings need VOYAGE_API_KEY in the local .env",
+    4: "the leak check found a roster name in the index; see the local build log",
 }
 UPLOAD_MESSAGES = {
     2: "the index is not ready to upload (embeddings missing or out of date)",
     4: "upload blocked by the roster leak check; nothing was uploaded",
     5: "some objects failed to upload; Re-run to retry",
-    6: "Supabase is not configured in .env on Ben's Mac",
+    6: "Supabase is not configured in the local .env",
 }
 
 
@@ -329,7 +330,7 @@ class Worker:
             got = self.sb.update(
                 "sources",
                 {"id": f"eq.{row['id']}", "status": "eq.uploaded"},
-                {"status": "processing", "message": "Processing on Ben's Mac", "updated_at": now_iso()},
+                {"status": "processing", "message": "Processing locally", "updated_at": now_iso()},
             )
             if got:
                 claimed.append(got[0])
@@ -359,7 +360,7 @@ class Worker:
                     self._fail(rows, str(exc))
             except Exception as exc:  # never let one bad file stop the worker
                 log.exception("source group %s s%02d crashed", course, session)
-                self._fail(rows, f"unexpected {type(exc).__name__} in the worker; see its log on Ben's Mac")
+                self._fail(rows, f"unexpected {type(exc).__name__} in the worker; see the local worker log")
         if done and not self.stopper.hard.is_set():
             try:
                 for stage in GLOBAL_STAGES:
@@ -409,7 +410,7 @@ class Worker:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Process Settings uploads on Ben's Mac")
+    ap = argparse.ArgumentParser(description="Process Settings uploads on the local build machine")
     ap.add_argument("--archive", help="Lecture Archive folder (default ~/Lecture Archive or $LECTURE_ARCHIVE)")
     ap.add_argument("--once", action="store_true", help="poll once and exit")
     ap.add_argument("--interval", type=float, default=POLL_SECONDS)

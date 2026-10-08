@@ -429,7 +429,7 @@ async function route(url, method, body) {
     const s = admin.sources.find(x => x.id === Number(m[1]));
     if (!s) return json(404, { detail: 'No such source' });
     Object.assign(s, { status: 'uploaded', message: '', updated_at: new Date().toISOString() });
-    // Pretend the worker on Ben's Mac picks it up.
+    // Pretend the local processing worker picks it up.
     setTimeout(() => Object.assign(s, { status: 'processing', updated_at: new Date().toISOString() }), 2500);
     setTimeout(() => Object.assign(s, { status: 'ready', message: 'Mock: 24 slides indexed', updated_at: new Date().toISOString() }), 7000);
     return json(200, s);

@@ -2,7 +2,7 @@
 
 The question log may hold question text and scores only (docs/SPEC.md), but a
 student can type anything, including their own or a classmate's name. This is a
-roster-free heuristic: rosters never leave Ben's Mac, so the Vercel function
+roster-free heuristic: rosters never leave the local build machine, so the Vercel function
 cannot know who is in the class. It removes what can be recognised by shape:
 
 - email addresses -> [email]

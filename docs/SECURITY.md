@@ -1,6 +1,6 @@
 # Faculty Twin: security review and threat model
 
-Review date: October 5, 2026. Scope: the merged backend (`app/`, `supabase/schema.sql`, `vercel.json`, `tests/`, PR #6), the frontend in PR #5 (`public/`, reviewed from `gh pr diff 5`; not merged at review time), and the deploy configuration. The indexer (`indexer/`) runs only on Ben's Mac and was reviewed only where it meets the deployed system (what it uploads and where rosters live).
+Review date: October 5, 2026. Scope: the merged backend (`app/`, `supabase/schema.sql`, `vercel.json`, `tests/`, PR #6), the frontend in PR #5 (`public/`, reviewed from `gh pr diff 5`; not merged at review time), and the deploy configuration. The indexer (`indexer/`) runs only on the local build machine (the computer that holds the private archive) and was reviewed only where it meets the deployed system (what it uploads and where rosters live).
 
 Method: read the code against `docs/SPEC.md` (Architecture, API, Safety); ran the test suite; ran the real app on `127.0.0.1` with the synthetic fixture and TEST FAKE retrieval, embedding, and model functions (no provider keys in the process) and attacked it with `httpx` and `curl`; scanned the full git history for secrets; checked the Anthropic, Vercel, and Waddell guide claims against their published documents. Every fix has a regression test in `tests/test_security.py`; 36 of those tests fail on the pre-fix code and all pass after it.
 
@@ -10,8 +10,8 @@ Method: read the code against `docs/SPEC.md` (Architecture, API, Safety); ran th
 | --- | --- | --- |
 | Ben's cloned voice | ElevenLabs account; reached only through `/api/audio` | Anything it says sounds like Ben. Misuse is a reputational and impersonation harm, not just a cost |
 | Course content | Private Supabase bucket `twin-content` (slide images, index, de-identified transcript passages, clips) | Shared with enrolled students only, behind the passcode |
-| De-identified transcripts | Inside `index.json` in the bucket; full files stay on the Mac | Class records. De-identification lowers but does not remove the sensitivity |
-| Rosters | `~/Lecture Archive/_private/rosters/` on Ben's Mac only | FERPA-protected. Must never reach Vercel, Supabase, a model provider, logs, or git |
+| De-identified transcripts | Inside `index.json` in the bucket; full files stay on the local build machine | Class records. De-identification lowers but does not remove the sensitivity |
+| Rosters | `~/Lecture Archive/_private/rosters/` on the local build machine only | FERPA-protected. Must never reach Vercel, Supabase, a model provider, logs, or git |
 | API keys and spend | Vercel env vars; Ben's git-ignored `.env` | Anthropic, OpenAI, OpenRouter, Voyage, ElevenLabs, Supabase service role. Leaks or abuse cost money |
 | Admin settings | Supabase `settings` table, Settings page | Model choice (cost), voice choice, voice cap, student passcode hash, session visibility, uploads |
 | Students' typed questions | `question_log` table; sent to Voyage and the active model provider | Students may type names or other personal details |
@@ -37,14 +37,14 @@ flowchart LR
     V -- "2. service role key" --> S["Supabase<br/>Postgres + private bucket"]
     V -- "3. de-identified text only" --> P["LLM / Voyage / ElevenLabs"]
     B -- "4. signed URLs only" --> S
-    M["Ben's Mac<br/>worker, rosters"] -- "5. build outputs, service role key" --> S
+    M["Local build machine<br/>pipeline, worker, rosters"] -- "5. build outputs, service role key" --> S
 ```
 
 1. **Browser to function.** Everything from the browser is untrusted: question text, course filter, audio link parameters, upload metadata, Origin. The function authenticates with signed cookies and rate-limits by visitor and by address.
 2. **Function to Supabase.** Service role key, server side only. Row Level Security is on with no policies, so the anon key can do nothing.
 3. **Function to providers.** Only de-identified text leaves: slide text, notes, instructor transcript passages, code, and the student's question. Provider output is untrusted: it is parsed as JSON, validated, checked for grounding, and rendered as text, never HTML.
 4. **Browser to Supabase.** Only through short-lived signed URLs (1 hour for media; 2 hours for upload URLs, fixed by Supabase).
-5. **Mac to Supabase.** The worker and `indexer/upload.py` run with the service role key from Ben's `.env`. Rosters are read here and never uploaded; the de-identification leak check gates every upload.
+5. **Local build machine to Supabase.** The worker and `indexer/upload.py` run with the service role key from the git-ignored local `.env`. Rosters are read here and never uploaded; the de-identification leak check gates every upload.
 
 ## 4. Findings
 
@@ -78,7 +78,7 @@ Severity is for the deployed system as specified (Vercel, Supabase, passcode-gat
 | I3 | Info | Errors and logs: FastAPI runs without debug, docs and OpenAPI are off, unhandled errors return a plain 500 with no trace. The app never logs question text or addresses. Provider error bodies are logged (first 200-300 characters) and shown only to admin. Vercel's platform logs record client IPs and URLs; audio URLs contain narration text (course material, not student input) | Accepted | |
 | I4 | Info | `app/llm.py` sends `fallbacks: "default"` with `anthropic-beta: server-side-fallback-2026-07-01` for `claude-sonnet-5-5`, `claude-opus-5-5`, `claude-opus-5`, `claude-fable-5-1` | Verified OK | Matches Anthropic's documented shape (scalar `"default"` form uses the `-2026-07-01` header; the array form uses `-2026-06-01`; mixing them is a 400). Sonnet 5.5 supports only the `"default"` form, Claude API only. `output_config.effort: "low"` is valid on those models, and `stop_reason: "refusal"` is the right check. Kept. `test_anthropic_fallbacks_shape` |
 | I5 | Info | Audio signing: the HMAC covers the voice tag and the exact text, so a link cannot be edited to new text or moved to another voice (both 403 in the local test). Replays are allowed by design and are bounded by M4 | Verified OK | |
-| I6 | Info | The backend agent found an `ELEVENLABS_API_KEY` exported in the Mac shell and used it once, read-only. This review used no credential from the environment: the local server stripped every provider key before starting | Note | Local dev should read keys only from the git-ignored `.env`; remove the export from the shell profile (checklist) |
+| I6 | Info | The backend agent found an `ELEVENLABS_API_KEY` exported in the local shell and used it once, read-only. This review used no credential from the environment: the local server stripped every provider key before starting | Note | Local dev should read keys only from the git-ignored `.env`; remove the export from the shell profile (checklist) |
 
 ### Residual risk on C1
 
@@ -127,7 +127,7 @@ Stan Waddell, *Creating a Digital Twin GPT* (CMU Computing Services, August 2025
 | Guide rule | How Faculty Twin meets it | Status |
 | --- | --- | --- |
 | "Redact sensitive content before upload" | `indexer/deidentify.py` replaces every named person except Ben with `[student]` or `[person]`; the sweep must report zero hits before upload; clips are cut only where no replacement occurs; the question log is scrubbed (`app/privacy.py`) | Done in code; Ben runs the sweep before each upload |
-| "Avoid PII and FERPA-protected data" | Rosters stay on the Mac (chmod 600), are read only by the local pipeline, and are never uploaded, logged, or committed; student turns are excluded from narration and clips; no names, accounts, or addresses in `question_log`; no grades or graded material indexed | Done; Ben confirms no graded material or answer keys are in the decks |
+| "Avoid PII and FERPA-protected data" | Rosters stay on the local build machine (chmod 600), are read only by the local pipeline, and are never uploaded, logged, or committed; student turns are excluded from narration and clips; no names, accounts, or addresses in `question_log`; no grades or graded material indexed | Done; Ben confirms no graded material or answer keys are in the decks |
 | "Use internal-only access unless publishing publicly" | Course passcode on everything but `/api/health`; private bucket; 1-hour signed links; separate admin passcode; admin page not linked, `noindex` | Done; Ben shares the passcode only through Canvas |
 | "Maintain version control of instructions and document sets" | Grounding prompt and code in git (PR-only workflow); index versions tracked by `settings.index_version`; build outputs are reproducible from the archive by the pipeline | Done for code and prompt; Ben keeps the build folder backed up |
 | "Review outputs regularly to avoid drift or bias", and fact-check before distributing | "Test this model" before switching models; the question log (covered, top score, model) for review; narration is grounded and falls back to speaker notes; the page says the voice is AI-generated | Ongoing: Ben reviews the log weekly during the course |
@@ -150,7 +150,7 @@ Secrets and environment
 - [ ] `STUDENT_PASSCODE`: at least 4 random words (not a course number). `ADMIN_PASSCODE`: 20+ random characters, different from every other password.
 - [ ] Vercel -> Settings -> Environment Variables: tick **Automatically expose System Environment Variables** (secure cookies and production checks rely on it; the app also checks `VERCEL_ENV`).
 - [ ] Do not set `CONTENT_DIR` or `FT_LOCAL_DEV` in Vercel.
-- [ ] Remove the `export ELEVENLABS_API_KEY=...` line from your shell profile on the Mac and rotate that key in ElevenLabs if the profile was ever synced or shared; keep keys only in the git-ignored `.env`.
+- [ ] Remove the `export ELEVENLABS_API_KEY=...` line from your shell profile on the local build machine and rotate that key in ElevenLabs if the profile was ever synced or shared; keep keys only in the git-ignored `.env`.
 - [ ] Set `PUBLIC_SITE_URL` in Vercel to the public URL (also used by the cross-site check).
 
 Spend limits at each provider (the backstop if everything else fails)

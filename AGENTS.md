@@ -5,8 +5,7 @@ Conventions for AI agents working in this repository.
 ## This is not a GAIM repository
 
 Faculty Twin is Ben Collier's personal project for CMU 15-113 (Project 2), not
-GAIM work. It lives at `~/Code/faculty-twin` on the laptop and
-`/Users/jarvis/Code/faculty-twin` on the Mac mini, outside any GAIM folder
+GAIM work. Clones live at `~/Code/faculty-twin`, outside any GAIM folder
 (it was moved out of `gaim_claude_dev/` on October 5). If an older GAIM
 `AGENTS.md` is ever loaded alongside this one, **this file wins.** The GAIM
 rules do not apply to this repo:
@@ -17,6 +16,25 @@ rules do not apply to this repo:
 - no `deploy/setup_platform_triggers.sh`
 
 The general rules that do carry over are written out below.
+
+## Where things run
+
+Describe the real stack. Which computer Ben types on is not part of it, so
+docs, comments, and copy never name a particular machine.
+
+- **Vercel:** the web app (static `public/`) and the FastAPI function (`app/`):
+  passcode, retrieval, narration, voice, and the Settings API. Production keys
+  are Vercel environment variables.
+- **Supabase:** the private Storage bucket `twin-content` (slides, clips, the
+  index, audio, the upload inbox) and Postgres (settings, counters, the
+  question log, courses, sessions, sources).
+- **Providers:** Anthropic, OpenAI, or OpenRouter for narration; Voyage AI for
+  embeddings; ElevenLabs and Microsoft edge-tts for the voice; GitHub for code.
+- **The local build machine** (any computer that holds the private archive):
+  the content pipeline (`indexer/`), the Settings upload worker
+  (`indexer/worker.py`), in-process `evals/` runs, and `localvoice/`. These run
+  locally because they need the private archive and rosters, which never leave
+  that machine. Local runs read keys from the git-ignored `.env`.
 
 ## Never commit directly to `main`. Branch, open a pull request, then merge it.
 
