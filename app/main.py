@@ -2,7 +2,7 @@
 
 Every route except /api/health and /api/login needs the student cookie (an
 admin cookie also works, so Ben can preview). Settings routes live in
-app/admin.py and need the admin cookie.
+app/admin/ and need the admin cookie.
 """
 
 from __future__ import annotations

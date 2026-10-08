@@ -51,7 +51,7 @@ One FastAPI app, deployed on Vercel as a single Python function (`app/main.py`, 
 
 | File | What it does |
 | --- | --- |
-| `admin.py` | Model, Voice, Courses and uploads, Limits and access, Activity and Prompts routes (`/api/admin/*`) |
+| `admin/` | The Settings routes (`/api/admin/*`), one module per section: `login.py` (sign in and out), `settings.py` (Model, the saved voice, Limits and access, the model test), `prompt_editor.py` (Prompts), `status_activity.py` (Keys and Activity), `voice_picker.py` (the voice list and free-voice previews), `courses.py` and `uploads.py` (Courses and source material). `price_guard.py` holds the OpenRouter price ceiling and `common.py` the shared checks and request bodies; `__init__.py` joins the section routers into one `router` |
 | `analytics.py`, `usage.py`, `pricing.py` | Settings > Analytics: usage counters for every model call, embedding and voice request, the price table, and the payload the section draws |
 | `admin_evals.py`, `eval_core.py`, `eval_runs.py`, `eval_store.py`, `eval_calibration.jsonl` | Settings > Evals: run evals one step per request, store results in the bucket, the report card. `eval_core.py` is shared with the command-line `evals/` |
 
