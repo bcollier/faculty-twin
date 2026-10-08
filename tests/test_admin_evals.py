@@ -477,6 +477,18 @@ def test_calibration_loops_case_by_case_then_reports(evals):
     assert card["calibration"][0]["judge"] == "openai:gpt-6-luna"
 
 
+def test_calibration_retries_a_malformed_judgement_once(evals):
+    # Oct 8 code review: calibration gave judge_one a budget of 1 call, so its retry always failed with
+    # "This run reached its model-call cap", and one glitchy reply counted as a missed case.
+    replies = iter(["not json at all"])
+    evals.judges.replies["openai:gpt-6-luna"] = lambda user: next(replies, json.dumps(GOOD))
+    body = {"provider": "openai", "model": "gpt-6-luna", "restart": True}
+    out = evals.post("/api/admin/evals/calibration/step", json=body).json()
+    row = out["result"]["rows"][0]
+    assert row["error"] is None, row
+    assert len([c for c in evals.judges.calls if c[1] == "gpt-6-luna"]) == 2
+
+
 # ---------------------------------------------------------------- what the judges are shown
 
 def test_faq_and_referrals_reach_the_judges_in_words(content_dir, monkeypatch):

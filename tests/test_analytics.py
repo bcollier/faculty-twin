@@ -609,6 +609,19 @@ def test_admin_page_has_the_analytics_section():
     assert "—" not in (ROOT / "public" / "admin-analytics.js").read_text()
 
 
+def test_content_gaps_with_equal_counts_show_the_most_recent_first():
+    # Oct 8 code review: ties were sorted oldest first, so with more than TOP_N one-off gaps the
+    # table kept the oldest and dropped the newest, the ones Ben most needs to see.
+    now = datetime(2026, 10, 8, 12, tzinfo=timezone.utc)
+    rows = [{"question": f"unanswered question number {i}", "kind": "not_covered", "covered": False,
+             "at": (now - timedelta(hours=i)).isoformat()} for i in range(analytics.TOP_N + 5)]
+    out = analytics.aggregate(rows, {}, pricing.defaults(), 7, now)
+    gaps = out["topics"]["gaps"]
+    assert len(gaps) == analytics.TOP_N
+    assert gaps[0]["question"] == "unanswered question number 0"
+    assert "unanswered question number 24" not in {g["question"] for g in gaps}
+
+
 def test_schema_has_the_migration_block():
     sql = (ROOT / "supabase" / "schema.sql").read_text()
     for col in limits.ANALYTICS_COLUMNS:

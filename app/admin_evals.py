@@ -878,7 +878,8 @@ def calibration_step(body: CalibrateBody, _: auth.Session = Depends(auth.require
         if nxt is not None:
             if limits.read_counter(limits.eval_calls_key()) + 1 > limits.daily_eval_call_cap():
                 raise HTTPException(429, "Today's admin eval budget is used up (DAILY_EVAL_LLM_CALL_CAP).")
-            out = judge_one(judge, nxt, counted(judge_completer, Budget(1)), time.monotonic() + STEP_BUDGET_SECONDS,
+            # Two calls: judge_one retries a malformed reply once (a budget of 1 made the retry hit the cap).
+            out = judge_one(judge, nxt, counted(judge_completer, Budget(2)), time.monotonic() + STEP_BUDGET_SECONDS,
                             eval_core.judge_system_prompt())
             row = {"cid": nxt["cid"], "misses": eval_core.check(nxt, out), "verdict": out.get("verdict"),
                    "error": out.get("error")}
