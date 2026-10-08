@@ -12,8 +12,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from app import course_info, limits, llm, logistics, retrieval, storage
-from app.main import Retriever, app, get_completer, get_embedder, get_retriever
+from app import course_info, limits, llm, logistics, retrieval, settings_store, storage
+from app.main import Retriever, app, get_completer, get_embedder, get_retriever, get_searcher
 from app.admin import activity_row  # after app.main (admin imports from it)
 
 from test_api import TEST_FAKE_llm, TEST_FAKE_select
@@ -306,6 +306,79 @@ def test_unknown_question_without_slides_or_info_is_not_covered(with_info, stude
     _use(model)
     body = _ask(student, "who won the stanley cup")
     assert body["covered"] is False and model.calls == []
+
+
+# ---------------------------------------------------------------- Oct 8 routing fix (margin, personal requests, web)
+
+FRUIT_SUMMARY = ({"id": "info-70445-class-1-summary-1", "course": "70445", "title": "Class 1 Summary: Fruit",
+                  "kind": "page", "canvas_url": "https://canvas.cmu.edu/courses/55124/pages/class-1-summary",
+                  "due_at": None, "text": "In class one we talked about apples and how to peel a banana."}, FRUIT)
+
+
+def test_canvas_must_beat_the_best_slide_by_the_margin(content_dir, student):
+    # The Canvas summary scores 1.0 and the best fruit slide 0.994: Canvas leads by less than the 0.05
+    # margin, so the slides answer. The Oct 8 eval: Canvas took concept questions it led by 0.003 to 0.011.
+    write_info(content_dir, INFO + [FRUIT_SUMMARY])
+    storage.store.reset()
+    model = FakeModel()
+    _use(model)
+    body = _ask(student, "Tell me about fruit")
+    assert body.get("kind") != "course_info" and len(body["segments"]) == 3
+    assert "course_info" not in model.calls
+    assert limits._mem_log[-1]["kind"] == "course_content"
+
+
+def test_a_margin_of_zero_lets_canvas_win_any_lead(content_dir, student):
+    write_info(content_dir, INFO + [FRUIT_SUMMARY])
+    storage.store.reset()
+    settings_store.put({"info_margin": 0.0})
+    model = FakeModel(info_reply=json.dumps({"answer": "In class one we talked about apples and bananas."}))
+    _use(model)
+    assert _ask(student, "Tell me about fruit")["kind"] == "course_info"
+
+
+def test_personal_request_never_gets_a_canvas_answer(with_info, student):
+    model = FakeModel()
+    _use(model)
+    body = _ask(student, "Can I get a regrade on the syllabus quiz?")  # the syllabus chunk scores 1.0
+    assert body["kind"] == "logistics" and "course_info" not in model.calls
+    assert limits._mem_log[-1]["kind"] == "logistics"
+    assert len(TEST_FAKE_embedder.calls) == 1  # still embedded once, so the log keeps its top score
+    assert limits._mem_log[-1]["top_score"] is not None
+
+
+def test_a_question_that_mentions_canvas_can_still_get_a_canvas_answer(with_info, student):
+    model = FakeModel()
+    _use(model)
+    assert _ask(student, "Where is the syllabus on Canvas?")["kind"] == "course_info"
+
+
+def _web(student, model, question_vec):
+    from test_web_answer import FakeSearch
+
+    search = FakeSearch()
+    _use(model)
+    app.dependency_overrides[get_embedder] = lambda: (lambda question: question_vec.copy())
+    app.dependency_overrides[get_searcher] = lambda: search
+    return search
+
+
+def test_web_path_runs_when_canvas_clears_its_threshold_but_not_the_margin(with_info, student):
+    # Best slide 0.477 (under the 0.5 test threshold), best Canvas chunk 0.500: over a 0.45 info threshold
+    # but only 0.023 ahead. Before Oct 8 the weak Canvas chunk answered; now the web path gets its turn.
+    settings_store.put({"info_threshold": 0.45})
+    model = FakeModel()
+    search = _web(student, model, _unit(0.48 * FRUIT + 0.5 * E[6] + 0.721 * E[7]))
+    body = _ask(student, "How do embeddings work in a RAG pipeline?")
+    assert body["kind"] == "web" and len(search.calls) == 1
+    assert "course_info" not in model.calls
+
+
+def test_web_path_runs_when_the_canvas_chunk_is_under_its_threshold(with_info, student):
+    model = FakeModel()
+    search = _web(student, model, _unit(0.5 * E[6] + 0.866 * E[7]))  # Canvas 0.5 < 0.55, slides 0
+    body = _ask(student, "How do embeddings work in a RAG pipeline?")
+    assert body["kind"] == "web" and len(search.calls) == 1
 
 
 # ---------------------------------------------------------------- validation and fallback (unit)

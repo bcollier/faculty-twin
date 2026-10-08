@@ -240,3 +240,41 @@ def test_frontend_shows_the_logistics_message():
     assert "—" not in copy.group(1) and "–" not in copy.group(1)
     assert "answer.kind === 'logistics'" in js
     assert "showStageError('logistics', question, answer)" in js
+
+
+# ---------------------------------------------------------------- personal requests (Oct 8 routing fix)
+
+@pytest.mark.parametrize("question", [
+    "I think one of my quiz answers was marked wrong by mistake, can I get a regrade?",
+    "Is there any chance I could get an extension on the text mining assignment?",
+    "I'm going to miss class next Tuesday for a conference",
+    "Can we meet with you about my project?",
+    "I got into the course off the waitlist but I still don't see it",
+    "I can't access the course API key anymore",
+    "My teammate isn't answering messages",
+    "Can I reschedule our presentation?",
+    "What is my grade so far?",
+    "Can I submit it late?",
+])
+def test_personal_requests_only_ben_can_act_on(question):
+    assert logistics.personal_request(question)
+
+
+@pytest.mark.parametrize("question", [
+    "Where is the syllabus on Canvas?",
+    "How is the final project graded?",
+    "What is the late penalty for homework?",
+    "When are your office hours?",
+    "What is the attendance policy?",
+    "When is the presentation date for group 3?",
+    "How does team registration work?",
+    "What is overfitting?",
+])
+def test_course_info_questions_are_not_personal_requests(question):
+    # Some of these still match the wider keyword pre-check that runs after the slides (step 7a).
+    assert not logistics.personal_request(question)
+
+
+def test_personal_patterns_are_a_subset_of_the_logistics_keywords():
+    for question in ("can I get a regrade", "an extension please", "I was absent", "drop the class", "my grade"):
+        assert logistics.personal_request(question) and logistics.keyword_hit(question)

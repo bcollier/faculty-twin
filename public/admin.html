@@ -310,6 +310,18 @@
               </div>
               <p class="status-line" id="info-th-status" role="status"></p>
             </form>
+            <form id="info-margin-form" novalidate>
+              <div class="field">
+                <label for="info-margin">Course-info margin</label>
+                <input id="info-margin" type="number" min="0" max="0.30" step="0.01" aria-describedby="info-margin-now">
+                <p class="hint" id="info-margin-now"></p>
+              </div>
+              <div class="actions">
+                <button class="btn btn-primary" type="submit">Save</button>
+                <button class="btn btn-small" type="button" id="info-margin-reset">Reset to default</button>
+              </div>
+              <p class="status-line" id="info-margin-status" role="status"></p>
+            </form>
           </div>
           <h4 class="h-sub">Recent changes</h4>
           <ul class="small" id="th-history"></ul>

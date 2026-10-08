@@ -34,8 +34,14 @@ MAX_FOLLOW_UPS = 3
 
 # Phrases that only show up in logistics messages. Kept narrow on purpose: a
 # miss here costs one small model call, a false hit sends away a real question.
-_PATTERNS = [
-    r"\boffice hours?\b",
+#
+# Two groups (split Oct 8, routing fix). Personal requests ask for something only Ben can
+# grant or fix (a meeting, an extension, a regrade, an absence, access): they never get a
+# Canvas course-info answer (step 6a), because Canvas cannot grant them. The second group
+# names course logistics that Canvas often answers well ("on Canvas", "graded", the late
+# policy): those may still get a Canvas answer, and go to Ben only when the slides would
+# otherwise answer (step 7a).
+_PERSONAL_PATTERNS = [
     r"\b(zoom|phone|video) (call|meeting)\b",
     r"\b(meet|meeting|chat|talk|call) with you\b",
     r"\b(set up|schedule|book|arrange|request) (a |an )?(time|meeting|call|appointment|chat)\b",
@@ -45,30 +51,38 @@ _PATTERNS = [
     r"\b(be|was|am|been|i'?m|will be) (absent|out sick)\b",
     r"\b(excused )?absence (from|in) (class|lecture)\b|\bexcused absence\b",
     r"\b(i am|i'?m|i was|i have been|i'?ve been|i got|feeling) sick\b",
-    r"\battendance (policy|requirement|grade|points?|count|record)\b|\b(take|took|takes|mark|marked) attendance\b",
     r"\bmy attendance\b",
     r"\b(an|another|a short|any|short) extension\b(?! (of|to)\b)|\bextension (on|for|request)\b|\bdeadline extension\b",
     r"\bextension (of|to) (the |my |our )?(deadline|due date)\b",
     r"\bextend (the |my |our )?(deadline|due date)\b",
-    r"\blate (submission|penalty|days?)\b",
     r"\bsubmit (it |this |my \w+ )?late\b",
     r"\bre-?grade\b",
-    r"\b(my|our|final|midterm|participation|letter) grades?\b",
+    r"\b(my|our) grades?\b",
     r"\bgrade (for|on) (my|the|our)\b",
-    r"\bgrad(ing|ed)\b",
     r"\breschedul(e|ing)\b",
     r"\bswap (our |my |the )?(presentation|slot|time)\b",
-    r"\bpresentation (slot|date|time|day)\b",
-    r"\bcanvas (page|site|access|login|submission|shell|quiz|assignment)\b|\b(on|in|from|to|into) canvas\b",
+    r"\bcanvas (access|login)\b",
     r"\b(can'?t|cannot|can not|unable to) (access|log ?in|submit)\b",
     r"\bmy team ?(member|mate)s?\b",
     r"\bteam ?(member|mate)s? (is|are|isn'?t|aren'?t|won'?t|don'?t|doesn'?t|hasn'?t|haven'?t|never|not)\b",
-    r"\bteam (registration|sign ?up|issue|problem|conflict)\b",
+    r"\bteam (issue|problem|conflict)\b",
     r"\bdrop (the |this |your )?(class|course)\b",
     r"\bwaitlist\b",
     r"\brecommendation letter\b|\bletter of recommendation\b",
 ]
+_COURSE_LOGISTICS_PATTERNS = [
+    r"\boffice hours?\b",
+    r"\battendance (policy|requirement|grade|points?|count|record)\b|\b(take|took|takes|mark|marked) attendance\b",
+    r"\blate (submission|penalty|days?)\b",
+    r"\b(final|midterm|participation|letter) grades?\b",
+    r"\bgrad(ing|ed)\b",
+    r"\bpresentation (slot|date|time|day)\b",
+    r"\bcanvas (page|site|submission|shell|quiz|assignment)\b|\b(on|in|from|to|into) canvas\b",
+    r"\bteam (registration|sign ?up)\b",
+]
+_PATTERNS = _PERSONAL_PATTERNS + _COURSE_LOGISTICS_PATTERNS
 _KEYWORDS = re.compile("|".join(f"(?:{p})" for p in _PATTERNS), re.I)
+_PERSONAL = re.compile("|".join(f"(?:{p})" for p in _PERSONAL_PATTERNS), re.I)
 
 PROMPT_NAME = "logistics_classifier"
 SYSTEM_PROMPT = prompts.default(PROMPT_NAME)  # the built-in default; Settings can edit it (app/prompts.py)
@@ -81,10 +95,23 @@ class Classification:
     reason: str = ""
 
 
+def _plain(question: str) -> str:
+    return re.sub(r"\s+", " ", (question or "").replace("\u2019", "'"))
+
+
 def keyword_hit(question: str) -> Optional[str]:
     """The phrase that marks an obvious logistics question, or None."""
-    text = re.sub(r"\s+", " ", (question or "").replace("\u2019", "'"))
-    m = _KEYWORDS.search(text)
+    m = _KEYWORDS.search(_plain(question))
+    return m.group(0) if m else None
+
+
+def personal_request(question: str) -> Optional[str]:
+    """The phrase that marks a request only Ben can act on (regrade, extension, absence, a meeting), or None.
+
+    A subset of the keyword pre-check. Such a question never gets a Canvas course-info answer
+    (docs/SPEC.md step 6a): it goes to Ben. No model call.
+    """
+    m = _PERSONAL.search(_plain(question))
     return m.group(0) if m else None
 
 
