@@ -179,6 +179,7 @@ async function loadSettings() {
   $('#current-model').textContent = liveModelText();
   $('#cap').value = S.settings.daily_voice_char_cap ?? S.status?.today?.voice_char_cap ?? '';
   $('#free-cap').value = S.settings.daily_free_voice_char_cap ?? S.status?.today?.free_voice_char_cap ?? '';
+  renderWebAnswers();
   $('#a-index-version').textContent = S.settings.index_version != null ? `Index version ${S.settings.index_version}` : '';
   updateProviderWarning();
 }
@@ -360,6 +361,7 @@ function renderVoices() {
     $('#voice-custom').closest('.voice').classList.add('selected');
   }
   renderFallback();
+  renderWebAnswers();
   renderCurrentVoice();
 }
 
@@ -726,6 +728,37 @@ $('#cap-form').addEventListener('submit', async (e) => {
   } catch (ex) { if (!(ex instanceof AuthError)) say(st, errText(ex), 'err'); }
 });
 
+/* Web answers (beyond my slides): on/off, the daily cap, and an optional free voice. Never the clone. */
+function renderWebAnswers() {
+  const s = S.settings || {};
+  $('#web-on').checked = s.web_answers_enabled !== false;
+  $('#web-cap').value = s.daily_web_answer_cap ?? '';
+  const today = s.web_answers_today ?? S.status?.today?.web_answers;
+  $('#web-cap-hint').textContent = `Web answers per day across all students (DAILY_WEB_ANSWER_CAP, default 200). Each one costs a few cents in searches and tokens. Past the cap, those questions get the usual "not covered" reply. Zero turns them off.${today != null ? ` Today so far: ${fmtNum(today)}.` : ''}`;
+  const chosen = s.web_answer_voice || 'none';
+  const options = [el('option', { value: 'none', selected: chosen === 'none' }, 'Off (text only)')];
+  for (const v of freeVoices()) options.push(el('option', { value: v.voice_id, selected: v.voice_id === chosen }, `${v.name} (${v.description || 'free'})`));
+  if (chosen !== 'none' && !freeVoices().some(v => v.voice_id === chosen)) options.push(el('option', { value: chosen, selected: true }, chosen.replace(/^edge:/, '')));
+  $('#web-voice').replaceChildren(...options);
+}
+
+$('#web-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const st = $('#web-status');
+  const cap = Number($('#web-cap').value);
+  if (!Number.isInteger(cap) || cap < 0 || cap > 100000) { say(st, 'Use a whole number from 0 to 100,000.', 'err'); return; }
+  const body = { web_answers_enabled: $('#web-on').checked, daily_web_answer_cap: cap, web_answer_voice: $('#web-voice').value || 'none' };
+  try {
+    const r = await api('/api/admin/settings', { method: 'PUT', body });
+    if (!r.ok) { say(st, detail(r), 'err'); return; }
+    S.settings = { ...S.settings, ...(r.data || {}) };
+    renderWebAnswers();
+    const on = body.web_answers_enabled && cap > 0;
+    const spoken = body.web_answer_voice === 'none' ? 'text only' : `read by ${body.web_answer_voice.replace(/^edge:/, '')} (a stock voice)`;
+    say(st, on ? `Saved. Web answers are on, up to ${fmtNum(cap)} a day, ${spoken}.` : 'Saved. Web answers are off.', 'ok');
+  } catch (ex) { if (!(ex instanceof AuthError)) say(st, errText(ex), 'err'); }
+});
+
 $('#pass-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const a = $('#pass-new').value, b = $('#pass-confirm').value;
@@ -810,6 +843,7 @@ const KIND_BADGES = {
   stored_topic: { text: 'Stored answer', cls: 'ok', title: 'A suggested question: its stored answer was replayed. No search, no model.' },
   faq: { text: 'FAQ', cls: 'info', title: 'Answered from my course FAQ, word for word. No search, no model.' },
   course_info: { text: 'From Canvas', cls: 'info', title: 'Answered from my Canvas pages (syllabus, policies, assignments), written by the model from those pages only.' },
+  web: { text: 'From the web', cls: 'info', title: 'No slide covered it, but it was about AI, data or coding tools: answered from a web search, with source links. Never in my voice.' },
   logistics: { text: 'Referred to Ben', cls: 'info', title: 'A logistics question: the student was sent to me.' },
   not_covered: { text: 'Not covered', cls: 'warn', title: 'No slide scored at or above the threshold.' },
   alert: { text: 'Student alert', cls: 'warn', title: 'A student reported a broken quiz, submission or API key. See Student alerts for whether a text went out.' },

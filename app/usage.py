@@ -6,6 +6,7 @@ in the existing `counters` table, bumped through the atomic `ft_increment`
 RPC, so no new table is needed. Keys (docs/SPEC.md, "Usage counters"):
 
     usage:<YYYY-MM-DD>:<purpose>:<provider>:<model>:in|out|calls   model tokens and calls
+    usage:<YYYY-MM-DD>:<purpose>:<provider>:<model>:searches       web searches (priced per search)
     embed:<YYYY-MM-DD>:voyage:<model>:tokens|calls                 Voyage query embeddings
     tts:<YYYY-MM-DD>:<voice tier>:chars|calls                      clone | stock | unverified | free
     event:<YYYY-MM-DD>:<name>                                      allowlisted client events
@@ -44,6 +45,8 @@ PURPOSES = (
     "narration",
     "logistics",
     "course_info",
+    "web_scope",
+    "web_answer",
     "prompt_test",
     "smoke_test",
     "eval_generate",
@@ -322,6 +325,25 @@ def record_llm(provider: str, model: str, data: Any, purpose_name: Optional[str]
         (usage_key(day, p, provider, model, "calls"), 1),
         (usage_key(day, p, provider, model, "in"), tin),
         (usage_key(day, p, provider, model, "out"), tout),
+    ])
+
+
+@_safely
+def record_search_call(provider: str, model: str, tokens_in: int, tokens_out: int, searches: int,
+                       purpose_name: Optional[str] = None) -> None:
+    """One model call that used a web search tool: tokens like record_llm, plus the searches it ran."""
+    tin, tout = _int(tokens_in), _int(tokens_out)
+    t = _tally.get()
+    if t is not None:
+        t.tokens_in += tin
+        t.tokens_out += tout
+        t.calls += 1
+    day, p = _day(), purpose_name or current_purpose()
+    _submit([
+        (usage_key(day, p, provider, model, "calls"), 1),
+        (usage_key(day, p, provider, model, "in"), tin),
+        (usage_key(day, p, provider, model, "out"), tout),
+        (usage_key(day, p, provider, model, "searches"), _int(searches)),
     ])
 
 

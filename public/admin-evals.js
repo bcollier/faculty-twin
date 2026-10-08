@@ -87,7 +87,7 @@ function legend(target, extra = [], { scores = true } = {}) {
 }
 const OUTCOMES = {
   course_content: ['Covered', 'ok'], stored_topic: ['Stored answer', 'ok'], faq: ['FAQ', 'info'],
-  logistics: ['Referred to Ben', 'info'], not_covered: ['Not covered', 'warn'], course_info: ['Course info', 'info'],
+  logistics: ['Referred to Ben', 'info'], not_covered: ['Not covered', 'warn'], course_info: ['Course info', 'info'], web: ['From the web', 'info'],
 };
 const STATUS = {
   running: ['In progress', 'info'], done: ['Done', 'ok'], cancelled: ['Cancelled', 'off'], stopped: ['Stopped', 'warn'],

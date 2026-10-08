@@ -40,6 +40,9 @@ const COPY = {
   sessionExpired: 'Your session ran out. Enter the passcode again to keep going.',
   finished: 'That\'s the end of this answer. Ask a follow-up or a new question.',
   tapToPlay: 'Tap play to start the audio.',
+  webLabel: 'Beyond my slides: from the web',
+  webSources: 'Sources (open in a new tab)',
+  webRelated: 'Closest material in my course',
 };
 
 /* =====================================================================
@@ -144,6 +147,7 @@ const ui = {
   idleCourse: $('#idle-course'), dockCourse: $('#dock-course'),
   stageMsg: $('#stage-message'), stageSpinner: $('#stage-spinner'), stageTitle: $('#stage-message-title'), stageLabel: $('#stage-message-label'),
   stageText: $('#stage-message-text'), stageActions: $('#stage-message-actions'), stageChips: $('#stage-message-chips'),
+  stageExtra: $('#stage-message-extra'),
   player: $('#player'), media: $('#media'), slideImg: $('#slide-img'), slideAlt: $('#slide-alt'), clipVideo: $('#clip-video'),
   clipBtn: $('#clip-btn'), clipBack: $('#clip-back'), clipNote: $('#clip-note'),
   caption: $('#caption'), btnPrev: $('#btn-prev'), btnPlay: $('#btn-play'), btnNext: $('#btn-next'),
@@ -376,10 +380,14 @@ ui.dockToggle.addEventListener('click', () => {
    Stage messages (loading, not covered, errors)
    ===================================================================== */
 
-function showStageMessage({ title, text, spinner = false, actions = [], chips = [], label = '' }) {
+function showStageMessage({ title, text, spinner = false, actions = [], chips = [], label = '', labelClass = '', extra = [] }) {
   ui.player.hidden = true;
+  stopWebAudio();
   ui.stageLabel.textContent = label || '';
   ui.stageLabel.hidden = !label;
+  ui.stageLabel.className = `eyebrow stage-label${labelClass ? ` ${labelClass}` : ''}`;
+  ui.stageExtra.replaceChildren(...extra);
+  ui.stageExtra.hidden = !extra.length;
   ui.stageMsg.hidden = false;
   ui.stageSpinner.hidden = !spinner;
   ui.stageTitle.textContent = title || '';
@@ -433,6 +441,68 @@ function showFaqAnswer(answer, label = '') {
   ui.followups.hidden = true;
   const firstBtn = ui.stageActions.querySelector('button') || ui.stageChips.querySelector('button');
   if (firstBtn && !ui.dockQ.matches(':focus')) firstBtn.focus({ preventScroll: true });
+}
+
+/* Beyond my slides: an answer from a web search when no slide covers a course-adjacent question.
+   Always labeled, with its sources and the closest slides in my course. It is text; when Settings
+   turns it on, a Listen button reads it in a stock voice (never my clone), labeled as such. */
+let webAudio = null;
+function stopWebAudio() {
+  if (webAudio) { webAudio.pause(); webAudio.removeAttribute('src'); webAudio.load(); webAudio = null; }
+}
+
+function webSourceList(links) {
+  const items = [];
+  for (const link of links || []) {
+    const url = String(link.url || '');
+    if (!/^https:\/\//.test(url)) continue;
+    let host = '';
+    try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { continue; }
+    items.push(el('li', {}, el('a', { href: url, target: '_blank', rel: 'noopener noreferrer' },
+      String(link.label || host), el('span', { class: 'host', text: host }))));
+  }
+  return items.length ? el('section', { 'aria-label': COPY.webSources }, el('h3', { text: COPY.webSources }), el('ul', { class: 'web-sources' }, ...items)) : null;
+}
+
+function relatedSlides(related) {
+  const items = (related || []).filter(r => r && r.image).map(r => {
+    const l1 = `${courseCode(r.course)} · Session ${r.session} · Slide ${r.slide_number}`;
+    return el('li', {}, el('button', {
+      type: 'button', class: 'source-btn', 'aria-label': `${l1}${r.title ? `. ${r.title}` : ''}. Open the slide`,
+      onclick: () => openSlideDialog(r),
+    }, el('img', { src: r.image, alt: '', loading: 'lazy' }),
+    el('span', {}, el('span', { class: 'src-l1', text: l1 }), el('span', { class: 'src-l2', text: r.title || fmtDate(r.date) || '' }))));
+  });
+  return items.length ? el('section', { 'aria-label': COPY.webRelated }, el('h3', { text: COPY.webRelated }), el('ul', { class: 'related-slides' }, ...items)) : null;
+}
+
+function webListen(answer) {
+  const url = String(answer.audio || '');
+  if (!url.startsWith('/api/audio?') || !answer.voice || answer.voice.kind === 'clone') return null;
+  const btn = el('button', { type: 'button', class: 'btn btn-small' }, 'Listen');
+  btn.addEventListener('click', () => {
+    if (webAudio && !webAudio.paused) { webAudio.pause(); btn.textContent = 'Listen'; return; }
+    if (!webAudio) {
+      webAudio = new Audio(url);
+      webAudio.addEventListener('ended', () => { btn.textContent = 'Listen'; });
+      webAudio.addEventListener('error', () => { btn.textContent = 'Audio unavailable'; btn.disabled = true; });
+    }
+    webAudio.play().then(() => { btn.textContent = 'Pause'; }).catch(() => { btn.textContent = 'Listen'; });
+  });
+  return el('div', { class: 'web-listen' }, btn, el('span', { class: 'small', text: answer.voice.label || 'AI voice (a stock voice, not mine).' }));
+}
+
+function showWebAnswer(answer) {
+  clearSourcesToggle();
+  const chips = topicsForCourse().slice(0, 6);
+  const extra = [webListen(answer), webSourceList(answer.links), relatedSlides(answer.related)].filter(Boolean);
+  showStageMessage({ title: answer.title || 'Beyond my slides', text: answer.message || '', chips,
+    label: COPY.webLabel, labelClass: 'web-label', extra });
+  addTwinMessage(`${COPY.webLabel}. ${answer.message || ''}`);
+  ui.followups.hidden = true;
+  // A web answer is never in my voice: the dock names the stock voice when there is one, else nothing.
+  ui.voiceLabel.textContent = answer.voice?.label || '';
+  ui.voiceLabel.hidden = !answer.voice;
 }
 
 /* The TA's contact details in a small card. The twin never says a TA's name aloud. */
@@ -578,6 +648,8 @@ async function ask(raw, { resumeAt = 0, quiet = false, source = null } = {}) {
   if (answer.kind === 'course_info') return showFaqAnswer(answer, 'From Canvas');
   // A broken quiz, submission or API key: flagged for me (or "please email"), then stop. No slides.
   if (answer.kind === 'alert') return showFaqAnswer(answer, answer.label || 'Tech problem');
+  // Not on my slides but about AI, data or coding tools: a labeled answer from a web search, with sources.
+  if (answer.kind === 'web') return showWebAnswer(answer);
   // Meetings, absences, grades, deadlines: a referral to me, never narrated slides.
   if (answer.kind === 'logistics') return showStageError('logistics', question, answer);
   if (!answer.covered || !Array.isArray(answer.segments) || answer.segments.length === 0) {

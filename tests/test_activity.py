@@ -121,7 +121,8 @@ def test_every_logged_kind_is_known(student):
         _ask(student, q)
     # course_info needs the optional info index, which this fixture leaves out: tests/test_course_info.py logs it.
     # alert (a student reporting a broken quiz or submission) is logged in tests/test_alerts.py.
-    assert {r["kind"] for r in limits._mem_log} == set(LOG_KINDS) - {"course_info", "alert"}
+    # web needs a course-adjacent question and a search: tests/test_web_answer.py logs it.
+    assert {r["kind"] for r in limits._mem_log} == set(LOG_KINDS) - {"course_info", "alert", "web"}
 
 
 # ---------------------------------------------------------------- the Activity rows

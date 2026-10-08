@@ -50,7 +50,7 @@ const fmtWhen = (iso) => {
   return isNaN(d) ? iso : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 };
 const PURPOSE_NAMES = {
-  narration: 'Narration', logistics: 'Logistics check', course_info: 'Course-info answers', prompt_test: 'Model and prompt tests',
+  narration: 'Narration', logistics: 'Logistics check', course_info: 'Course-info answers', web_scope: 'Web scope check', web_answer: 'Web answers (with searches)', prompt_test: 'Model and prompt tests',
   smoke_test: 'Smoke checks', eval_generate: 'Eval answers', eval_judge: 'Eval judges', topic_label: 'Topic labeling', incident_classifier: 'Student alerts check',
   embed_query: 'Question embeddings', tts: 'Voice', other: 'Other',
 };
@@ -246,10 +246,11 @@ function tiles(d) {
     tile('Walkthroughs', fmtInt(walk), `${fmtInt(by.stored_topic || 0)} stored answers`),
     tile('FAQ answers', fmtInt(by.faq || 0)),
     tile('Course info', fmtInt(by.course_info || 0)),
+    tile('From the web', fmtInt(by.web || 0)),
     tile('Referred to me', fmtInt(by.logistics || 0), 'logistics'),
     tile('Declined', fmtInt(by.not_covered || 0), 'not covered'),
     tile('Avg latency', k.avg_latency_ms == null ? 'n/a' : `${(k.avg_latency_ms / 1000).toFixed(1)} s`, k.median_latency_ms == null ? null : `median ${(k.median_latency_ms / 1000).toFixed(1)} s`),
-    tile('Est. spend', fmtUsd(k.est_spend_usd), `models ${fmtUsd(k.spend_parts?.models)}, voice ${fmtUsd(k.spend_parts?.voice)}, embeddings ${fmtUsd(k.spend_parts?.embeddings)}, texts ${fmtUsd(k.spend_parts?.sms || 0)}`),
+    tile('Est. spend', fmtUsd(k.est_spend_usd), `models ${fmtUsd(k.spend_parts?.models)}, voice ${fmtUsd(k.spend_parts?.voice)}, embeddings ${fmtUsd(k.spend_parts?.embeddings)}, texts ${fmtUsd(k.spend_parts?.sms || 0)}${k.spend_parts?.web_searches ? `; web searches ${fmtUsd(k.spend_parts.web_searches)} (in models)` : ''}`),
   );
 }
 
@@ -525,6 +526,10 @@ function renderPricing(message) {
       el('td', {}, num(sms.carrier_fee_per_segment, v => { sms.carrier_fee_per_segment = v; }, 'Carrier fee per SMS segment')),
       el('td', { class: 'small muted' }, sms.source ? el('a', { href: sms.source, target: '_blank', rel: 'noopener', text: 'source' }) : '', sms.checked ? ` ${sms.checked}` : '', ' base price, then carrier fee', sms.note ? `. ${sms.note}` : '')),
   ];
+  const searchRows = (t.web_search || []).map((r, i) => el('tr', {}, el('td', { text: r.provider }), el('td', { class: 'small', text: 'web search' }),
+    el('td', {}, num(r.per_1k, v => { t.web_search[i].per_1k = v; }, `${r.provider} web search price per 1,000 searches`)), el('td', {}),
+    el('td', { class: 'small muted' }, r.source ? el('a', { href: r.source, target: '_blank', rel: 'noopener', text: 'source' }) : 'edited',
+      r.checked ? ` ${r.checked}` : '', r.note ? ` ${r.note}` : '', r.verify ? el('span', { class: 'pill warn', text: 'verify', style: 'margin-left:.3rem' }) : null)));
   const head = (cols) => el('thead', {}, el('tr', {}, ...cols.map(h => el('th', { scope: 'col', text: h }))));
   const st = el('p', { class: 'status-line', role: 'status', text: message || (t.saved ? 'Saved table (defaults fill any model it lacks).' : 'Showing the researched defaults (not saved).') });
   $('#an-pricing').replaceChildren(
@@ -532,6 +537,10 @@ function renderPricing(message) {
     el('div', { class: 'table-wrap an-price' }, el('table', { class: 'data' }, head(['Provider', 'Model', 'Input', 'Output', 'Source']), el('tbody', {}, ...llmRows, add))),
     el('h4', { class: 'h-sub', text: 'Embeddings (USD per 1M tokens), voice (USD per 1K characters), texts (USD per SMS segment)' }),
     el('div', { class: 'table-wrap an-price' }, el('table', { class: 'data' }, head(['Provider', 'Model or plan', 'Price', 'Carrier fee (texts)', 'Source']), el('tbody', {}, ...embRows, ...ttsRows, ...smsRows))),
+    ...(searchRows.length ? [
+      el('h4', { class: 'h-sub', text: 'Web searches for answers beyond my slides (USD per 1,000 searches, on top of tokens)' }),
+      el('div', { class: 'table-wrap an-price' }, el('table', { class: 'data' }, head(['Provider', 'Tool', 'Price', '', 'Source']), el('tbody', {}, ...searchRows))),
+    ] : []),
     el('div', { class: 'actions', style: 'margin-top:.75rem' },
       el('button', { type: 'button', class: 'btn btn-primary', text: 'Save prices', onclick: () => savePricing(false, st) }),
       el('button', { type: 'button', class: 'btn', text: 'Reset to defaults', onclick: () => savePricing(true, st) })),

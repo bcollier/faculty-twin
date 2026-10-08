@@ -11,6 +11,8 @@ million tokens; ElevenLabs in USD per thousand characters for the chosen plan;
 edge-tts (the free Microsoft voices) costs nothing; Twilio texts (instructor alerts) in USD per
 SMS segment, base price plus an average carrier fee. OpenRouter models missing
 from the table use OpenRouter's own live price list when it has been loaded.
+Web searches (beyond-the-slides answers, app/web_answer.py) cost USD per
+1,000 searches per provider, on top of the tokens.
 """
 
 from __future__ import annotations
@@ -27,6 +29,10 @@ SRC_VOYAGE = "https://docs.voyageai.com/docs/pricing"
 SRC_ELEVENLABS = "https://elevenlabs.io/pricing/api"
 SRC_EDGE = "https://github.com/rany2/edge-tts"
 SRC_TWILIO = "https://www.twilio.com/en-us/sms/pricing/us"
+SRC_ANTHROPIC_SEARCH = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+SRC_OPENAI_SEARCH = "https://developers.openai.com/api/docs/pricing"
+SRC_OPENROUTER_SEARCH = "https://openrouter.ai/docs/guides/features/server-tools/web-search"
+SEARCH_CHECKED = "2026-10-08"
 
 
 def _llm(provider: str, model: str, p_in: float, p_out: float, source: str) -> dict[str, Any]:
@@ -54,6 +60,16 @@ DEFAULT_PRICING: dict[str, Any] = {
          "verify": True, "note": "Older model on Voyage's page: no free-token allowance."},
         {"provider": "voyage", "model": "voyage-4", "per_mtok": 0.06, "source": SRC_VOYAGE, "checked": CHECKED,
          "verify": True, "note": "First 200M tokens free per account."},
+    ],
+    # USD per 1,000 web searches, on top of tokens (search results are billed as input tokens).
+    "web_search": [
+        {"provider": "anthropic", "per_1k": 10.0, "source": SRC_ANTHROPIC_SEARCH, "checked": SEARCH_CHECKED,
+         "verify": True, "note": "$10 per 1,000 searches; failed searches are not billed."},
+        {"provider": "openai", "per_1k": 10.0, "source": SRC_OPENAI_SEARCH, "checked": SEARCH_CHECKED,
+         "verify": True, "note": "Reasoning models (GPT-6.1 Sol); non-reasoning models are $25 per 1,000."},
+        {"provider": "openrouter", "per_1k": 7.0, "source": SRC_OPENROUTER_SEARCH, "checked": SEARCH_CHECKED,
+         "verify": True, "note": "Exa engine (what web answers use): $7 per 1,000 requests; native engines are "
+                                 "passed through from the model's provider."},
     ],
     "tts": {
         "elevenlabs_plan": "creator",
@@ -115,7 +131,7 @@ def validate(raw: Any) -> dict[str, Any]:
     """Check a price table sent by the Settings page and return the clean copy to store."""
     if not isinstance(raw, dict):
         raise BadPricing("The price table must be an object.")
-    out: dict[str, Any] = {"llm": [], "embed": [], "tts": {}, "sms": {}}
+    out: dict[str, Any] = {"llm": [], "embed": [], "tts": {}, "sms": {}, "web_search": []}
     rows = raw.get("llm") or []
     if not isinstance(rows, list) or len(rows) > MAX_ROWS:
         raise BadPricing(f"llm must be a list of at most {MAX_ROWS} rows.")
@@ -149,6 +165,22 @@ def validate(raw: Any) -> dict[str, Any]:
             raise BadPricing("An embedding model id does not look right.")
         out["embed"].append({
             "provider": "voyage", "model": model, "per_mtok": _price(row.get("per_mtok"), f"{model} price"),
+            "source": _text(row.get("source")), "checked": _text(row.get("checked"), 20),
+            "verify": bool(row.get("verify", False)), "note": _text(row.get("note")),
+        })
+    searches = raw.get("web_search") or []
+    if not isinstance(searches, list) or len(searches) > 10:
+        raise BadPricing("web_search must be a list of at most 10 rows.")
+    for row in searches:
+        if not isinstance(row, dict):
+            raise BadPricing("Each web search price must be an object.")
+        provider = str(row.get("provider") or "")
+        if provider not in PROVIDERS:
+            raise BadPricing("A web search price needs provider anthropic, openai, or openrouter.")
+        if any(r["provider"] == provider for r in out["web_search"]):
+            continue
+        out["web_search"].append({
+            "provider": provider, "per_1k": _price(row.get("per_1k"), f"{provider} web search price"),
             "source": _text(row.get("source")), "checked": _text(row.get("checked"), 20),
             "verify": bool(row.get("verify", False)), "note": _text(row.get("note")),
         })
@@ -207,6 +239,8 @@ def current(stored: Any = None) -> dict[str, Any]:
     clean["embed"] += [r for r in table["embed"] if r["model"] not in saved_embed]
     if not (isinstance(stored, dict) and stored.get("sms")):  # a table saved before texts were priced
         clean["sms"] = table["sms"]
+    saved_search = {r["provider"] for r in clean["web_search"]}
+    clean["web_search"] += [r for r in table["web_search"] if r["provider"] not in saved_search]
     clean["saved"] = True
     return clean
 
@@ -240,6 +274,14 @@ def llm_cost(table: dict[str, Any], provider: str, model: str, tokens_in: int, t
     if price is None:
         return None
     return tokens_in / 1_000_000 * price[0] + tokens_out / 1_000_000 * price[1]
+
+
+def search_cost(table: dict[str, Any], provider: str, searches: int) -> Optional[float]:
+    """USD for `searches` web searches on this provider, or None when the table has no price for it."""
+    for row in table.get("web_search", []):
+        if row["provider"] == provider:
+            return searches / 1000 * float(row["per_1k"])
+    return None
 
 
 def embed_cost(table: dict[str, Any], model: str, tokens: int) -> Optional[float]:
