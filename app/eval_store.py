@@ -1,6 +1,8 @@
 """Where Settings > Evals keeps its data: the private bucket, under `evals/` (docs/SPEC.md, "Evals").
 
     evals/questions.jsonl                  de-identified question set (scripts/upload_eval_questions.py)
+    evals/questions/edits/<set>/<UTC>-<n>.json  one question added or edited in Settings, written once;
+                                           <set> is the first 12 hex of the uploaded set's sha256
     evals/index.json                       {"runs": [run summary, ...]}: what the runs list, the report card
                                            and Settings > Analytics read (rebuilt from evals/index/)
     evals/index/<run_id>.json              one run's summary entry (the source evals/index.json is built from)
@@ -24,6 +26,18 @@ list API (a database query, never cached), each row is written once and never
 changed, and the aggregate files are rebuilt as the union of what they held
 and what the listing says exists, so a stale read can never drop a row or a run.
 
+The question set follows the same rule (Oct 8 code review). Adding or editing a
+question in Settings used to read evals/questions.jsonl, change one line and
+write it back, so a stale read lost the previous edit. Now each add or edit is
+its own write-once object under evals/questions/edits/<set>/, and the question
+list is the uploaded set with those edits applied in name order. A new upload
+(a different set hash) starts a fresh, empty edit list.
+
+The runs index is rebuilt incrementally: a step of a running run writes only
+its own evals/index/<run_id>.json; evals/index.json is rebuilt when a run
+leaves the running state (finished, cancelled or excluded), from its own last copy plus any
+listed entry it is missing (one list call, usually no extra reads).
+
 Backends, in the same order `app/storage.py` picks content from:
 - `CONTENT_DIR` set (local dev): files under `<CONTENT_DIR>/evals/`
 - Supabase configured: the private bucket
@@ -32,9 +46,12 @@ Backends, in the same order `app/storage.py` picks content from:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import secrets
 import threading
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Protocol
@@ -43,6 +60,8 @@ from . import config, supa
 
 PREFIX = "evals/"
 QUESTIONS = "evals/questions.jsonl"
+QUESTION_EDITS = "evals/questions/edits/"
+EDIT_RE = re.compile(r"^[0-9]{8}T[0-9]{6}\.[0-9]{6}Z-[0-9a-f]{8}\.json$")
 INDEX = "evals/index.json"
 INDEX_DIR = "evals/index/"
 RUN_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z(?:-[a-z0-9]{1,12})?$|^baseline-[0-9]{8}$")
@@ -214,12 +233,66 @@ def _fetch_many(bucket: Bucket, paths: list[str]) -> list[Any]:
 
 # ---------------------------------------------------------------- questions
 
-def read_questions_text(bucket: Bucket) -> str | None:
+def _set_folder(base: str) -> str:
+    return f"{QUESTION_EDITS}{hashlib.sha256(base.encode('utf-8')).hexdigest()[:12]}/"
+
+
+def _apply_edit(lines: list[str], edit: Any) -> None:
+    if not isinstance(edit, dict) or not isinstance(edit.get("record"), dict):
+        return
+    line = json.dumps(edit["record"], ensure_ascii=False)
+    n = edit.get("line")
+    if edit.get("op") == "edit" and isinstance(n, int) and 1 <= n <= len(lines):
+        lines[n - 1] = line
+    elif edit.get("op") == "add":
+        lines.append(line)
+
+
+def read_question_lines(bucket: Bucket, pending: tuple[str, dict[str, Any]] | None = None) -> list[str] | None:
+    """The uploaded set with every Settings add or edit applied, oldest first. None when there is nothing.
+
+    Which edits exist comes from the list API (never cached); each edit object is written once, so a
+    stale read cannot return an old version of it. `pending` is an edit this request just wrote: kept even
+    when the listing has not caught up yet.
+    """
     raw = bucket.get(QUESTIONS)
-    return None if raw is None else raw.decode("utf-8")
+    base = "" if raw is None else raw.decode("utf-8")
+    folder = _set_folder(base)
+    names = sorted(n for n in bucket.list(folder) if EDIT_RE.match(n))
+    if pending is not None and pending[0] not in names:
+        names.append(pending[0])
+    if raw is None and not names:
+        return None
+    to_fetch = [n for n in names if pending is None or n != pending[0]]
+    by_name = dict(zip(to_fetch, _fetch_many(bucket, [folder + n for n in to_fetch])))
+    if pending is not None:
+        by_name[pending[0]] = pending[1]
+    lines = base.splitlines()
+    for name in sorted(by_name):
+        _apply_edit(lines, by_name[name])
+    return lines
+
+
+def read_questions_text(bucket: Bucket) -> str | None:
+    lines = read_question_lines(bucket)
+    return None if lines is None else "\n".join(lines) + ("\n" if lines else "")
+
+
+def write_question_edit(bucket: Bucket, op: str, record: dict[str, Any],
+                        line: int | None = None) -> tuple[str, dict[str, Any]]:
+    """Record one Settings add (`op` "add") or edit (`op` "edit", 1-based `line`) as a new object. Returns it."""
+    if op not in ("add", "edit"):
+        raise StoreError("op must be add or edit")
+    raw = bucket.get(QUESTIONS)
+    folder = _set_folder("" if raw is None else raw.decode("utf-8"))
+    name = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ") + f"-{secrets.token_hex(4)}.json"
+    edit = {"op": op, "line": line, "record": record, "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    write_json(bucket, folder + name, edit)
+    return name, edit
 
 
 def write_questions_text(bucket: Bucket, text: str) -> None:
+    """Upload a whole question set (scripts/upload_eval_questions.py). Its edit list starts empty."""
     bucket.put(QUESTIONS, text.encode("utf-8"), "application/x-ndjson")
 
 
@@ -244,14 +317,33 @@ def read_index(bucket: Bucket) -> list[dict[str, Any]]:
     return _sort_runs(runs)
 
 
-def upsert_index(bucket: Bucket, entry: dict[str, Any]) -> list[dict[str, Any]]:
-    """Save this run's entry, then rebuild evals/index.json with it. Never drops another run."""
+RUNNING = "running"
+
+
+def upsert_index(bucket: Bucket, entry: dict[str, Any], rebuild: bool | None = None) -> None:
+    """Save this run's entry; then, unless the run is still running, refresh evals/index.json with it.
+
+    Changed Oct 8 (code review): every step used to read every run's entry to rebuild evals/index.json.
+    Readers use the per-run entries (`read_index`), so the aggregate only needs refreshing when a run
+    changes state. The refresh is incremental: its own last copy, this entry, and only the listed entries
+    it does not have yet. It never drops a run (the listing is never cached).
+    """
     check_run_id(entry["id"])
     write_json(bucket, f"{INDEX_DIR}{entry['id']}.json", entry)
-    runs = [r for r in read_index(bucket) if r.get("id") != entry["id"]] + [entry]
-    runs = _sort_runs(runs)
-    write_json(bucket, INDEX, {"runs": runs})
-    return runs
+    if rebuild is None:
+        rebuild = entry.get("status") != RUNNING
+    if not rebuild:
+        return
+    data = read_json(bucket, INDEX, {"runs": []})
+    old = (data.get("runs") if isinstance(data, dict) else data) or []
+    by_id = {r["id"]: r for r in old if isinstance(r, dict) and r.get("id")}
+    by_id[entry["id"]] = entry
+    listed = [n[:-5] for n in bucket.list(INDEX_DIR) if n.endswith(".json") and RUN_ID_RE.match(n[:-5])]
+    missing = [rid for rid in listed if rid not in by_id]
+    for found in _fetch_many(bucket, [f"{INDEX_DIR}{rid}.json" for rid in missing]):
+        if isinstance(found, dict) and found.get("id"):
+            by_id[found["id"]] = found
+    write_json(bucket, INDEX, {"runs": _sort_runs(list(by_id.values()))})
 
 
 # ---------------------------------------------------------------- one run
