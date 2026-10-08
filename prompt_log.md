@@ -1390,3 +1390,47 @@ Two tests were added in `tests/test_retrieval.py`:
   - Removed stale "Ben writes this by hand" stubs in `app/retrieval.py`, `public/app.js` and `indexer/pregenerate.py`, and the "fail until Ben writes" note in `tests/test_retrieval.py`.
 - **Left as is:** branch, PR and squash merge, secrets, privacy, the voice safety rules (those change in V2 Stage 3), the prompt log itself, the rule that I write the README, and the demo script (a record of the submission).
 - **Checked:** full test suite, 1604 passed and 5 skipped. `ruff check .` and `node --check public/app.js` pass.
+
+### Prompt (Oct 8, later)
+
+> create a cartoon version of my face for use on the faculty twin page, show me options
+
+**Response summary.** Made six cartoon styles from the headshot on collier.phd with OpenAI `gpt-image-2.5-sunburst` image edits:
+- notebook ink with highlighter
+- flat vector
+- 3D animated
+- clean-line comic
+- waving sticker
+- watercolor
+
+The Figma image tool could not take a reference photo, because the Figma account is not linked to Weave. Showed them on one contact sheet.
+
+### Prompt (Oct 8, later)
+
+> my face is much skinner now,  Ilost like 50 poiunds since that picture what can you do wit hthe attached.
+
+(Sent with four selfies.)
+
+**Response summary.** Redid the six styles from two of the new selfies (the smiling whiteboard one and the front-facing one). It left out the sunset selfie, because another person is in it, and the cap selfie, because it hides my hair. "3D animated" was replaced with "at the whiteboard".
+
+### Prompt (Oct 8, later)
+
+> I like this. i actually want the main photo on collier.phd changed to this photo set as well. save both of these photo panels as me for future use on the tiste
+>
+>
+> do this 
+> I’d go with #5 as the greeting on the start screen and #2 as the small avatar in the chat panel. If you’d rather have one image for everything, #1 matches the site best.
+
+(The second part is the AI's previous suggestion, pasted back.)
+
+**Response summary.**
+- **collier.phd** (ben.collier.phd PR #151):
+  - The notebook-ink cartoon is now the home and CV portrait.
+  - The stippled header badge is redrawn from the flat-vector cartoon.
+  - The social preview image is rebuilt.
+  - Both avatar sets (current look, and the older portrait) are saved under `assets/avatars/`.
+- **Faculty Twin** (this repo):
+  - The waving sticker, with its background cut out, greets on the passcode and idle screens.
+  - The flat-vector avatar sits at the head of the chat dock.
+  - Files are in `public/avatars/`, with no JavaScript changes.
+  - The other twin session is splitting `public/app.js` and owns deploys, so it was told about the change.
