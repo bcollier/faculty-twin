@@ -21,7 +21,7 @@ Plain HTML, CSS and JavaScript, with no framework and no build step. Vercel serv
 
 ## How the player works
 
-The player is a small state machine (`player` in `app.js`): the current segment, playing or paused, muted, captions only, finished. Every "segment done" signal, the audio `ended` event or the captions-only timer, calls `onClipEnded()`, so there is one advance path. Watching a class clip pauses the walkthrough, and the clip ending never advances it. When a signed link expires, the page asks the same question again for fresh links instead of showing a broken image.
+The player is a small state machine (`player` in `app.js`): the current segment, playing or paused, muted, captions only, finished. Every "segment done" signal, the audio `ended` event or the captions-only timer, calls `onClipEnded()` with the segment it belongs to, so there is one advance path. A late signal is ignored: one from a segment no longer on screen, one after Finish, and one while a class clip plays. Watching a class clip pauses the walkthrough, and the clip ending never advances it. When a signed link expires, the page asks the same question again for fresh links instead of showing a broken image.
 
 ## How it connects
 

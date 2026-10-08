@@ -5,7 +5,7 @@
 //
 // Sections, in order: constants and copy, small helpers, elements and state, screens, boot and login,
 // voice label, course filter and chips, stage messages (FAQ, web and error cards), chat log, asking,
-// player, read-along, onClipEnded (Ben's), controls, clips, keyboard.
+// player, read-along, onClipEnded (the one advance path), controls, clips, keyboard.
 //
 // Why one file: the page has no bundler, and the node tests (tests/js/fakedom.mjs) run this file's
 // source as one function body, where a static `import` is not allowed. Code that can stand alone
@@ -849,7 +849,7 @@ const player = {
   finished: false,
   audio: new Map(),     // index -> HTMLAudioElement (current and preloaded)
   current: null,        // HTMLAudioElement playing now
-  timer: null,          // captions-only: { id, startedAt, remainingMs, totalMs, raf }
+  timer: null,          // captions-only: { id, startedAt, remainingMs, totalMs, raf, index }
   inClip: false,
   clipFailed: new Set(), // segment indexes whose class clip would not load: the button stays hidden
 };
@@ -949,7 +949,7 @@ function audioFor(i) {
   const a = new Audio();
   a.preload = 'auto';
   a.muted = player.muted;
-  a.addEventListener('ended', () => { if (a === player.current) onClipEnded(); });
+  a.addEventListener('ended', () => { if (a === player.current) onClipEnded(i); });
   a.addEventListener('timeupdate', () => { if (a === player.current) followNarration(); });
   a.addEventListener('playing', () => { if (a === player.current) followLoop(); });
   a.addEventListener('seeked', () => { if (a === player.current) followNarration(); });
@@ -1122,7 +1122,7 @@ function captionDurationMs(seg) {
 function startCaptionTimer() {
   clearCaptionTimer();
   const total = captionDurationMs(player.segments[player.index]);
-  player.timer = { id: null, raf: null, startedAt: 0, remainingMs: total, totalMs: total };
+  player.timer = { id: null, raf: null, startedAt: 0, remainingMs: total, totalMs: total, index: player.index };
   resumeCaptionTimer();
 }
 /** Run the timer for what is left of the segment, and follow the narration on every frame meanwhile. */
@@ -1133,7 +1133,7 @@ function resumeCaptionTimer() {
   t.id = setTimeout(() => {
     cancelAnimationFrame(t.raf);
     player.timer = null;
-    onClipEnded();
+    onClipEnded(t.index);
   }, t.remainingMs);
   const tick = () => {
     const elapsed = t.totalMs - t.remainingMs + (performance.now() - t.startedAt);
@@ -1419,19 +1419,21 @@ function clearSlideMarks() {
 }
 
 /**
- * Runs when the current segment's narration finishes: the audio element's
- * `ended` event, or the captions-only timer running out. This is the only
- * place the walkthrough advances on its own.
+ * Runs when a segment's narration finishes: the audio element's `ended`
+ * event, or the captions-only timer running out. This is the only place
+ * the walkthrough advances on its own: to the next segment, or after the
+ * last one to finishAnswer().
  *
- * First written by hand by Ben.
+ * `endedIndex` is the segment whose narration ended. A late signal is
+ * ignored: one for a segment that is no longer on screen, one after the
+ * answer finished, and one while the class clip plays (the walkthrough
+ * stays paused until the student presses play).
  *
- * State it can read: player.index, player.segments, player.playing,
- * player.captionsOnly, player.finished.
- * Helpers it can call: showSegment(i), playCurrent(), preloadAudio(i),
- * finishAnswer().
+ * First written by hand by Ben for the course assignment.
  */
-function onClipEnded() {
-  if (!player.playing) return;
+function onClipEnded(endedIndex = player.index) {
+  if (!player.playing || player.finished || player.inClip) return;
+  if (endedIndex !== player.index) return;
 
   const next = player.index + 1;
 
