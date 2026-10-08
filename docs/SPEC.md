@@ -159,6 +159,25 @@ Added Oct 5, for me only. `/admin.html`, behind a separate admin passcode and it
 4. **Limits and access.** The daily voice character cap (editable), the per-visitor limits (shown, not editable), and a field to rotate the student passcode. *Added Oct 5 (voice tiers):* a second, higher daily cap for the free voices.
 5. **Activity.** Today's counters, and the last 50 questions: question text, covered or not, top score, provider and model, latency.
    *Changed Oct 7 (activity explainer).* The section header links to [docs/TESTING_AND_SCORES.md](TESTING_AND_SCORES.md) ("How these numbers work", new tab) with the hint "Run a new test: see Testing and scores." Each row shows what kind of answer it was, as a badge in the Covered column: **Covered** (narrated slides), **Stored answer** (a suggested question's stored playlist), **FAQ** (Ben's written course FAQ answer), **From Canvas** (a course-info answer from the Canvas index, added Oct 7), **Referred to Ben** (the logistics referral), or **Not covered**. Model shows **none** when no model was called for that question (FAQ, not covered, stored answer, or a logistics question caught by the keyword pre-check). Top score is blank, with the tooltip "No search ran", when no retrieval ran. Rows logged before `kind` was recorded (or while the column is missing) get a kind inferred from `covered` and `top_score`, marked as inferred.
+6. **Prompts.** *Added Oct 7 (prompt editor, team brief UPDATE 9).* Ben: "in the admin section I should be able to change any of the prompts for facultytwin". Every prompt a model sees is listed in one registry, `app/prompts.py`, with a name, a title, a description, its default text, and the placeholders it takes. The section shows each prompt with a **Default** or **Edited** badge and when it was last saved. Selecting one opens a monospace editor (12,000 characters at most) with:
+   - **Compare with default**: a word-by-word diff of the editor text against the built-in default.
+   - **Save**: first shows a diff of the draft against the version saved now, with a required note ("why I changed it"); Save happens only after **Confirm save**.
+   - **Test**: runs one question through the real path once with the draft text, without saving it, and shows the output and latency. Counted against the same per-visitor limits as "Test this model". The eval judge and baseline prompts are tested by an eval run instead.
+   - **Reset to default**: shows the diff from the saved version back to the default, then confirms.
+   - **History**: every saved version, newest first, with its note and time. Each has **Compare** (diff against the saved version) and **Restore**, which shows the same diff and asks for confirmation. Restoring saves that text again as a new version, so history only grows.
+   - After a save, a hint with a **Run an eval with this prompt** button: it goes to the Evals section of this page when that section exists, and otherwise to [Testing and scores](TESTING_AND_SCORES.md#prompt-changes).
+   - A standing warning: prompts change what students hear, and the safety checks in code still run on every answer whatever the prompt says.
+
+   Placeholders are written `{name}` and are filled by the code at call time (for example `{max_words}`, the narration word cap). Saving checks that every required placeholder is present and that no unknown `{name}` is used; other braces (such as the JSON shape) are left alone. The registry holds:
+
+   | Name | What it is | Placeholders (required in bold) |
+   | --- | --- | --- |
+   | `narration_system` | The grounding prompt for narration (step 8 of `/api/ask`) | **`{max_words}`**, `{target_words}` |
+   | `logistics_classifier` | Sorts course content from logistics (step 7a) | none; must keep the words `course_content` and `logistics` |
+   | `eval_judge` | The rubric each LLM judge scores answers with (`evals/rubric.py`) | **`{dimensions}`** |
+   | `eval_baseline` | The generic chatbot the twin is compared with (`evals/targets.py`) | none; must keep the word `answer` |
+
+   The course-info answer prompt (team brief UPDATE 8) joins the registry when its answer path is merged, under the name `course_info_answer`. The registry has a comment marking the place.
 
 The page shows only whether each key is configured, never the key itself.
 
@@ -487,7 +506,7 @@ The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded 
 
 | Table | Columns | Notes |
 | --- | --- | --- |
-| `settings` | `key`, `value` (jsonb), `updated_at` | Keys: `provider`, `model`, `voice_id`, `daily_voice_char_cap`, `student_passcode_hash`, `index_version`. Env vars are the defaults when a key is missing. *Added Oct 5 (voice tiers):* `voice_kind` (`{voice_id, kind}`, written by Settings after checking the voice's category on the ElevenLabs account), `voice_fallback` (`captions` or `free`), `voice_fallback_voice` (`edge:<ShortName>`), `daily_free_voice_char_cap` |
+| `settings` | `key`, `value` (jsonb), `updated_at` | Keys: `provider`, `model`, `voice_id`, `daily_voice_char_cap`, `student_passcode_hash`, `index_version`. Env vars are the defaults when a key is missing. *Added Oct 5 (voice tiers):* `voice_kind` (`{voice_id, kind}`, written by Settings after checking the voice's category on the ElevenLabs account), `voice_fallback` (`captions` or `free`), `voice_fallback_voice` (`edge:<ShortName>`), `daily_free_voice_char_cap`. *Added Oct 7 (prompt editor):* `prompt:<name>` = `{text, updated_at, note}` for each edited prompt (null or missing means the built-in default). The code reads it through the same 30 second cache as every other setting, so a saved prompt reaches every warm function within 30 seconds. Every saved version is also written to the private bucket at `prompts/history/<name>/<UTC>.json` = `{text, note, saved_at, hash, previous_hash, reset}` (`hash` and `previous_hash` are sha256 of this text and of the text it replaced), so any answer can be traced to the prompt that wrote it |
 | `counters` | `key`, `day`, `count`, `expires_at` | Rate limits per visitor id, login attempts, daily voice characters, daily question counts. Bumped only through the `ft_increment` function, which adds atomically and refuses an add that would pass a cap |
 | `question_log` | `id`, `at`, `question`, `course`, `covered`, `top_score`, `provider`, `model`, `latency_ms`, `kind` | Question text and scores only: no names, accounts, cookies, or IP addresses. *Added Oct 7:* `kind` is `course_content`, `logistics`, or null (not covered). Until the column is added, rows are written without it. *Changed Oct 7 (activity explainer):* `kind` is one of `course_content` (narrated slides), `stored_topic` (a suggested question's stored playlist), `faq`, `course_info` (answered from the Canvas index, added Oct 7, covered, with the provider and model and the best info chunk's score as `top_score`), `logistics`, or `not_covered`; null only on older rows. `provider` and `model` are null when no model was called (stored topic, FAQ, not covered, keyword-routed logistics). Until the column is added, `GET /api/admin/log` reads rows without it and infers the kind |
 | `courses` | `code`, `title`, `term` | Seeded with 70445 and 45884 |
@@ -627,6 +646,12 @@ Four routes. The frontend never talks to a model or voice provider directly.
 | `POST /api/admin/sources/{id}/complete` | none | the row, status `uploaded` | 409 if the file is not in the bucket yet |
 | `POST /api/admin/sources/{id}/rerun` | none | the row, status `uploaded` | The worker picks it up again |
 | `GET /api/admin/log` | none | `{rows: [...]}`, the last 50 question-log rows | *Changed Oct 7:* each row also has `kind` (recorded, or inferred for older rows) and `kind_inferred`; rows whose kind never calls a model show `provider` and `model` as null. Works before and after the `kind` column exists |
+| `GET /api/admin/prompts` | none | `{prompts: [{name, title, description, used_by, testable, variables, required, current, default, is_overridden, updated_at, note}], max_chars}` | Added Oct 7 (prompt editor). `current` is what the code uses now |
+| `GET /api/admin/prompts/{name}/history` | none | `{versions: [{version, saved_at, note, text, hash, previous_hash, reset}]}` | Newest first, the latest 30 |
+| `PUT /api/admin/prompts/{name}` | `{text, note}` | the prompt, as in the list | 400 when the text is empty, over 12,000 characters, misses a required placeholder or required word, or uses an unknown placeholder. Saves `settings.prompt:<name>` and writes a history file |
+| `POST /api/admin/prompts/{name}/reset` | `{note?}` | the prompt | Back to the built-in default (the settings row becomes null); also recorded in history |
+| `POST /api/admin/prompts/{name}/restore` | `{version, note?}` | the prompt | Saves that version's text again as a new version |
+| `POST /api/admin/prompts/{name}/test` | `{text, question, course?}` | `{ok, latency_ms, output, errors}` | Runs the real path once with the draft text, unsaved, for this request only. App prompts only (400 for the eval prompts). Counts against the per-visitor limits and the daily model-call cap; not logged |
 
 **Inside `/api/ask`, step by step**
 
@@ -677,6 +702,7 @@ A public page that speaks in a real professor's voice needs firm limits. These a
 - Added Oct 5 (voice tiers). Free voices follow every rule above: the audio route speaks only signed text, the signature covers the voice tag, and the same length caps and grounding checks apply. Voice previews speak a fixed sentence set on the server.
 - Added Oct 5. Switching providers in Settings does not loosen any of this: every provider gets the same grounding prompt and the same validation, and a model that ignores JSON falls back to the speaker notes. "Test this model" exists so I check a model before students get it.
 - Added Oct 5. Class clips are labeled as real class recordings, so no one confuses them with the AI voice.
+- Added Oct 7 (prompt editor). The prompts can be edited in Settings, so the rules that keep the voice safe live in code, never only in prompt text. Every narration is checked by `narration.validate` whatever the prompt says: the slide id must be one that was sent; at most 110 words and 900 characters; no web address; grounded in the slides sent and not repeating a long run of the question (the injection check); PG (no listed crude word); no quiz, survey, or attendance access code; and no `[student]` or `[person]` mask or other bracketed name token. Follow-ups that fail the PG, access-code, or name check are dropped. A failing reply is retried once and then falls back to the speaker notes, which the pipeline already de-identified and smoothed. The question log, rate limits, spend caps, and signed audio do not read any prompt. A saved prompt is at most 12,000 characters, and each save is versioned (see Data).
 
 **Access**
 

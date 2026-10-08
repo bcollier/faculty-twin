@@ -9,6 +9,8 @@ REST shapes used (Supabase Storage API, mirrored from storage-js):
 - POST /storage/v1/object/sign/{bucket}          {expiresIn, paths} -> [{path, signedURL, error}]
 - POST /storage/v1/object/upload/sign/{bucket}/{path}               -> {url: "/object/upload/sign/...?token=..."}
 - GET  /storage/v1/object/{bucket}/{path}        (authenticated download; HEAD for existence)
+- POST /storage/v1/object/{bucket}/{path}        body = the bytes, x-upsert        (upload a small object)
+- POST /storage/v1/object/list/{bucket}          {prefix, limit, offset, sortBy} -> [{name, ...}]
 """
 
 from __future__ import annotations
@@ -120,6 +122,29 @@ def download(path: str) -> bytes:
     with _client() as c:
         r = c.get(f"{_base()}/storage/v1/object/{config.bucket()}/{_obj_path(path)}", headers=_headers())
     return _check(r, f"download {path}").content
+
+
+def upload(path: str, data: bytes, content_type: str, upsert: bool = False) -> None:
+    """Write one small object from the server (prompt history). Large files go browser-direct instead."""
+    with _client() as c:
+        r = c.post(
+            f"{_base()}/storage/v1/object/{config.bucket()}/{_obj_path(path)}",
+            content=data,
+            headers=_headers({"Content-Type": content_type, "x-upsert": "true" if upsert else "false"}),
+        )
+    _check(r, f"upload {path}")
+
+
+def list_objects(prefix: str, limit: int = 100) -> list[str]:
+    """Names (not full paths) of the objects directly under `prefix`, a folder ending in "/"."""
+    folder = prefix.strip("/")
+    with _client() as c:
+        r = c.post(
+            f"{_base()}/storage/v1/object/list/{config.bucket()}",
+            json={"prefix": folder, "limit": limit, "offset": 0, "sortBy": {"column": "name", "order": "desc"}},
+            headers=_headers({"Content-Type": "application/json"}),
+        )
+    return [item["name"] for item in _check(r, f"list {folder}").json() if item.get("name")]
 
 
 def object_exists(path: str) -> bool:

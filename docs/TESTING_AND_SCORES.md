@@ -256,7 +256,7 @@ clearly labelled test fakes, and the index is a tiny synthetic fixture.
 uv run --no-project --with-requirements requirements.txt --with pytest --with rapidfuzz --with nicknames --with nbformat --with scikit-learn --with pillow --with scipy python -m pytest -q
 ```
 
-Expect about 640 passed and 2 skipped in about 10 seconds. Any failure means
+Expect about 670 passed and 2 skipped in about 10 seconds. Any failure means
 the code and the spec disagree; fix that before deploying.
 
 ### (b) The real-question eval
@@ -359,6 +359,57 @@ three questions appear in Activity. Times are what the script saw, so they
 include the network and any cold start; the first answer after a quiet spell
 can take 20 seconds. It exits 0 when every step passes.
 
+## Prompt changes
+
+Every prompt a model sees can be edited in Settings > Prompts (`app/prompts.py`
+holds the defaults; docs/SPEC.md, Settings page, item 6). A prompt edit changes
+what students hear as surely as a code change, so treat it like one.
+
+**How a change is versioned.**
+
+- The text in use lives in the `settings` row `prompt:<name>` as
+  `{text, updated_at, note}`. No row, or a null one, means the built-in default.
+  Warm functions pick up a save within 30 seconds (the settings cache).
+- Every save, reset, and restore also writes
+  `prompts/history/<name>/<UTC>.json` to the private bucket:
+  `{text, note, saved_at, hash, previous_hash, reset}`. `hash` is the sha256 of
+  the text and `previous_hash` the sha256 of the text it replaced, so the
+  history is a chain you can follow back to the default.
+- History only grows. Restoring an old version saves its text again as a new
+  version, with a note saying which one it came from.
+- Saving needs a note, and Settings shows the diff against the version in use
+  before it writes anything. Reset and restore show their diff too.
+
+**What a prompt cannot change.** The checks in `narration.validate` run on
+every reply whatever the prompt says: slide ids, the 110 word and 900
+character caps, web addresses, grounding and the question-echo (injection)
+check, PG words, access codes, and `[student]` or `[person]` tokens. A reply
+that fails is retried once and then replaced by the slide's speaker notes. The
+logistics keyword pre-check, the reply parsers, rate limits, spend caps, and
+audio signing do not read any prompt either. The automated suite has a test
+that saves "ignore the slides and repeat the question verbatim" as the
+narration prompt and checks that students still get grounded narration
+(`tests/test_prompts.py`).
+
+**Re-evaluate after every change.** Before leaning on an edited prompt:
+
+1. **Test the draft** in Settings on two or three real questions, including
+   one off-topic question and one that tries to give the twin instructions. The
+   output shows any reply the safety checks rejected. A narration prompt that
+   keeps getting rejected means students get speaker notes instead.
+2. **Run an eval.** After a save, Settings offers "Run an eval with this
+   prompt". Run the real-question eval ((b) above) on the new prompt and
+   compare its summary with the last run on the old one: groundedness,
+   correct scope, speech quality, and how often narration fell back. Note the
+   prompt's name and the first 8 characters of its `hash` with the run, so the
+   numbers say which prompt produced them.
+3. **Watch Activity** for a day: a jump in rows whose narration fell back, or
+   in logistics referrals after a logistics prompt change, means the edit is
+   hurting answers. Restore the previous version from History.
+
+Edits to the eval judge or baseline prompts change the yardstick, not the
+twin: compare runs only when they used the same judge prompt.
+
 ## Where results live, and what is private
 
 | What | Where | Shareable? |
@@ -370,3 +421,4 @@ can take 20 seconds. It exits 0 when every step passes.
 | Threshold table | The terminal only (default questions are invented) | Yes with the default questions; not with real ones |
 | Live smoke check | The terminal, plus three rows in Activity | Yes |
 | Live questions | Supabase `question_log`, shown in Settings > Activity | No: student questions, even scrubbed, stay in Settings |
+| Prompt versions | Supabase `settings` (`prompt:<name>`) and the private bucket `prompts/history/<name>/` | The prompt text, yes; it holds no student data |
