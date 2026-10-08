@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import Iterable
 from typing import Any, Callable
 
-from . import config, llm, prompts
+from . import config, llm, prompts, usage
 
 MAX_TOKENS = 4000
 TARGET_WORDS = "60 to 90"
@@ -346,7 +346,8 @@ def narrate(
     errors: list[str] = []
     for _attempt in range(2):
         try:
-            raw = complete(system, user, MAX_TOKENS, provider=provider, model=model)
+            with usage.purpose("narration"):
+                raw = complete(system, user, MAX_TOKENS, provider=provider, model=model)
             narrations, follow_ups = validate(raw, sent_ids, grounding)
         except (llm.LLMError, ValidationError) as exc:
             errors.append(str(exc)[:200])

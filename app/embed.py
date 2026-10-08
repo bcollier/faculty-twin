@@ -16,7 +16,7 @@ from __future__ import annotations
 import httpx
 import numpy as np
 
-from . import config
+from . import config, usage
 
 VOYAGE_URL = "https://api.voyageai.com/v1/embeddings"
 
@@ -67,4 +67,6 @@ def embed_question(text: str, client: httpx.Client | None = None) -> np.ndarray:
             client.close()
     if resp.status_code >= 400:
         raise EmbeddingError(f"Voyage returned {resp.status_code}: {resp.text[:200]}")
-    return parse_response(resp.json())
+    data = resp.json()
+    usage.record_embed(body["model"], usage.parse_embed_usage(data, [text]))  # never raises
+    return parse_response(data)

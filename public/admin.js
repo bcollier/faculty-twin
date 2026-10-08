@@ -817,6 +817,14 @@ function kindBadge(x) {
   const title = x.kind_inferred ? `${b.title} (Inferred from the score: logged before kinds were recorded.)` : b.title;
   return el('span', { class: `pill ${b.cls}`, text: b.text, title });
 }
+/* Smoke checks, evals and model tests (question_log.source); "likely" when only the question text matched. */
+function testBadge(x) {
+  if (!x.test) return null;
+  const title = x.test_inferred
+    ? 'Likely test traffic: the question is one of the smoke-check questions (logged before sources were recorded).'
+    : `Test traffic (${x.source}): left out of student analytics.`;
+  return el('span', { class: 'pill off', text: x.test_inferred ? 'Test?' : 'Test', title, style: 'margin-left:.3rem' });
+}
 function modelText(x) {
   return [x.provider, x.model].filter(Boolean).join(' / ') || 'none';
 }
@@ -828,7 +836,7 @@ async function loadActivity() {
     const rows = lg.ok ? asList(lg.data, 'rows', 'log', 'items').slice(0, 50) : [];
     $('#log-body').replaceChildren(...(rows.length ? rows.map(x => el('tr', {},
       el('td', { class: 'small muted', text: fmtWhen(x.created_at || x.at || x.time) }),
-      el('td', {}, kindBadge(x)),
+      el('td', {}, kindBadge(x), testBadge(x)),
       el('td', { class: 'full', text: x.question || '' }),
       el('td', { class: 'num', 'data-label': 'Top score', title: x.top_score != null ? null : 'No search ran', text: x.top_score != null ? Number(x.top_score).toFixed(3) : '' }),
       el('td', { class: 'num', 'data-label': 'Latency', text: x.latency_ms != null ? `${fmtNum(x.latency_ms)} ms` : '' }),

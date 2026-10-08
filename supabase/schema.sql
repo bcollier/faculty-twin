@@ -77,11 +77,29 @@ create table if not exists question_log (
 alter table question_log add column if not exists kind text;
 create index if not exists question_log_at on question_log (at desc);
 
+-- Migration, added Oct 7 (Settings > Analytics). Safe to re-run. The app keeps logging
+-- without these columns until this block has run, so it can be pasted at any time.
+--   top_slide_id   best-scoring slide (e.g. 70445-s06-014), for topics per course and session
+--   session, session_title   that slide's session, copied so topics survive index changes
+--   tokens_in, tokens_out    model tokens this question used (all calls added up)
+--   voice_chars    characters of narration signed for the live voice
+--   source         chip | typed | follow_up (students), smoke | eval | prompt_test (test traffic)
+alter table question_log add column if not exists top_slide_id  text;
+alter table question_log add column if not exists session       integer;
+alter table question_log add column if not exists session_title text;
+alter table question_log add column if not exists tokens_in     integer;
+alter table question_log add column if not exists tokens_out    integer;
+alter table question_log add column if not exists voice_chars   integer;
+alter table question_log add column if not exists source        text;
+create index if not exists question_log_source on question_log (source);
+notify pgrst, 'reload schema';
+
 -- ------------------------------------------------------------------ settings
 -- Key/value rows written by the Settings page. Keys in use:
 --   provider, model, voice_id (null = ELEVENLABS_VOICE_ID, "none" = captions only),
 --   daily_voice_char_cap, student_passcode_hash (PBKDF2, never the passcode),
---   index_version (bumped by the local worker after it rebuilds the index).
+--   index_version (bumped by the local worker after it rebuilds the index),
+--   pricing (Settings > Analytics price table; app/pricing.py defaults until saved).
 create table if not exists settings (
   key         text primary key,
   value       jsonb,

@@ -42,6 +42,7 @@ from . import (
     storage,
     supa,
     thresholds,
+    usage,
     voices,
 )
 from .main import (
@@ -390,7 +391,8 @@ def test_model(
     started = time.monotonic()
     note = None
     try:
-        result, info = answer(question, course, content, retriever, embedder, completer, provider, model)
+        with usage.purpose("prompt_test", sticky=True):  # Analytics counts test spend apart from students
+            result, info = answer(question, course, content, retriever, embedder, completer, provider, model)
     except (RetrievalNotReady, HTTPException) as exc:
         # Retrieval or embeddings are not ready: test the model on the first slides instead.
         if isinstance(exc, HTTPException) and exc.status_code != 503:
@@ -400,7 +402,8 @@ def test_model(
 
         sample = [r for r in content.records if r.get("kind", "slide") == "slide"][:3]
         codes = {r["id"]: (playlist.related_code(content, r) or {}).get("source") for r in sample}
-        res = narration.narrate(question, sample, codes, provider=provider, model=model, complete=completer)
+        with usage.purpose("prompt_test", sticky=True):
+            res = narration.narrate(question, sample, codes, provider=provider, model=model, complete=completer)
         result = playlist.build_playlist(content, question, sample, res.narrations, res.follow_ups, None)
         info = {"narration": res.source, "errors": res.errors}
     return {
@@ -523,7 +526,7 @@ def test_prompt(
         raise HTTPException(400, f"{llm.KEY_VARS[provider]} is not set, so the prompt cannot be tested.")
     limits.check_ask_rate(auth.visitor_key(session), limits.client_hash(request))  # counts against limits; not logged
     started = time.monotonic()
-    with prompts.draft(name, text):
+    with prompts.draft(name, text), usage.purpose("prompt_test", sticky=True):  # test spend, not student spend
         if name == logistics.PROMPT_NAME:
             kind = logistics.classify(question, completer, provider=provider, model=model)
             output: dict[str, Any] = {"kind": kind.kind, "source": kind.source, "reason": kind.reason}
@@ -642,6 +645,10 @@ def activity_row(row: dict[str, Any]) -> dict[str, Any]:
         kind, inferred = STORED_TOPIC, True
     out["kind"] = kind
     out["kind_inferred"] = inferred
+    # Smoke checks, evals and prompt tests: a "Test" badge, and left out of student analytics.
+    out["test"], out["test_inferred"] = usage.is_test_traffic(out)
+    if not out["test"]:
+        out["test_inferred"] = False
     if kind in NO_MODEL_KINDS:
         out["provider"] = out["model"] = None
     return out

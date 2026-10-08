@@ -402,6 +402,27 @@ three questions appear in Activity. Times are what the script saw, so they
 include the network and any cold start; the first answer after a quiet spell
 can take 20 seconds. It exits 0 when every step passes.
 
+The script sends the header `X-FT-Source: smoke`, so its rows are logged with
+`source = smoke`: Activity shows them with a **Test** badge and Settings >
+Analytics leaves them out of the student numbers (tick "Show test traffic" to
+include them). The header is only a tag; it changes nothing else. Rows logged
+before the `source` column existed are marked **Test?** when the question is
+word for word one of the three smoke-check questions.
+
+## Test traffic in Analytics
+
+Settings > Analytics counts students only by default. These are test traffic:
+
+| Source | Sent by | How it is tagged |
+| --- | --- | --- |
+| `smoke` | `scripts/live_smoke.py` | the `X-FT-Source: smoke` header |
+| `eval` | `evals/` runs over HTTP | the `X-FT-Source: eval` header |
+| `prompt_test` | "Test this model" in Settings (and prompt tests) | server side; these are not logged as questions |
+
+Their spend is always counted (it costs the same), under its own purpose:
+`smoke_test`, `eval_generate`, `eval_judge`, or `prompt_test`. In-process eval
+runs tag their model calls as `eval_generate` the same way.
+
 ## Prompt changes
 
 Every prompt a model sees can be edited in Settings > Prompts (`app/prompts.py`
@@ -465,6 +486,6 @@ twin: compare runs only when they used the same judge prompt.
 | Eval answers and judgements, question by question | `evals/private/runs/<UTC>/results.jsonl` and `report.md` (git-ignored) | No |
 | Eval summary: counts and scores, no question text | `evals/private/runs/<UTC>/summary.md` and `summary.json` | Yes: copy the numbers into `evals/README.md` |
 | Threshold table | The terminal only (default questions are invented) | Yes with the default questions; not with real ones |
-| Live smoke check | The terminal, plus three rows in Activity | Yes |
+| Live smoke check | The terminal, plus three rows in Activity (marked Test) | Yes |
 | Live questions | Supabase `question_log`, shown in Settings > Activity | No: student questions, even scrubbed, stay in Settings |
 | Prompt versions | Supabase `settings` (`prompt:<name>`) and the private bucket `prompts/history/<name>/` | The prompt text, yes; it holds no student data |

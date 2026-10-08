@@ -7,7 +7,9 @@
   <meta name="color-scheme" content="light dark">
   <title>Faculty Twin Settings</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="analytics.css">
   <script type="module" src="admin.js"></script>
+  <script type="module" src="admin-analytics.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#admin-main">Skip to content</a>
@@ -53,6 +55,7 @@
         <li><a href="#sec-limits">Limits and access</a></li>
         <li><a href="#sec-activity">Activity</a></li>
         <li><a href="#sec-prompts">Prompts</a></li>
+        <li><a href="#sec-analytics">Analytics</a></li>
       </ul>
     </nav>
 
@@ -371,6 +374,38 @@
             <ul class="history-list" id="pe-history" aria-label="Saved versions, newest first"></ul>
           </div>
         </div>
+      </section>
+
+      <!-- 7. Analytics (public/admin-analytics.js) -->
+      <section class="panel an-root" id="sec-analytics" aria-labelledby="analytics-h">
+        <h2 id="analytics-h">Analytics</h2>
+        <p class="panel-intro">How students use the twin, what they ask about, and what it costs. Spend is an estimate: tokens and characters times the price table at the bottom, not a bill. Smoke checks, evals and model tests are left out of the student numbers unless you show them; their spend is always counted.</p>
+        <div class="an-controls">
+          <div class="an-range" role="group" aria-label="Date range" id="an-range">
+            <button type="button" data-days="7" aria-pressed="false">7 days</button>
+            <button type="button" data-days="30" aria-pressed="true">30 days</button>
+            <button type="button" data-days="90" aria-pressed="false">90 days</button>
+          </div>
+          <label class="an-check"><input type="checkbox" id="an-tests"> Show test traffic</label>
+          <button type="button" class="btn btn-small" id="an-refresh">Refresh</button>
+          <a class="btn btn-small" id="an-export" href="/api/admin/analytics/export.csv?days=30" download>Export CSV</a>
+          <span class="status-line" id="an-status" aria-live="polite"></span>
+        </div>
+        <div id="an-body"><p class="an-empty">Scroll here or press Refresh to load analytics.</p></div>
+
+        <h3 class="an-h" id="an-labels-h">Label topics</h3>
+        <p class="an-note muted small">One call to a small model on the active provider groups the newest student questions (scrubbed text only, test traffic left out) into themes. At most 300 questions and 10 runs a day. Each run is kept in private storage.</p>
+        <div class="actions">
+          <label class="field-label" for="an-label-n" style="margin:0">Questions</label>
+          <input id="an-label-n" type="number" min="10" max="300" step="10" value="200" style="width:6rem">
+          <button type="button" class="btn btn-primary" id="an-label-run">Label topics</button>
+          <span class="status-line" id="an-label-status" role="status"></span>
+        </div>
+        <div id="an-labels"></div>
+
+        <h3 class="an-h" id="an-pricing-h">Price table</h3>
+        <p class="an-note muted small">Defaults were read from each provider's public price page on the date shown and are marked "verify". Edit a price and save; models you add here are used for the estimate. OpenRouter models not listed use OpenRouter's live price.</p>
+        <div id="an-pricing"></div>
       </section>
     </main>
   </div>

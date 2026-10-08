@@ -2,7 +2,7 @@
 
 Keys used (docs/SPEC.md): provider, model, voice_id, voice_kind, voice_fallback,
 voice_fallback_voice, daily_voice_char_cap, daily_free_voice_char_cap,
-student_passcode_hash, index_version. Rows are cached in memory for 30 seconds
+student_passcode_hash, index_version, pricing (Analytics price table). Rows are cached in memory for 30 seconds
 so a busy function does not hit Postgres on every request. When Supabase is not
 configured (local dev, tests) the env-var defaults apply and writes go to an
 in-memory dict.

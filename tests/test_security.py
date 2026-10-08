@@ -386,7 +386,9 @@ def test_question_log_is_scrubbed(student):
     student.post("/api/ask", json={"question": "My name is Maria Lopez (maria@example.com): what is an apple?"})
     row = limits.recent_questions(1)[0]
     assert "Maria" not in row["question"] and "example.com" not in row["question"]
-    assert set(row) <= {"question", "top_score", "covered", "provider", "model", "latency_ms", "course", "kind", "at"}
+    # Analytics columns (Oct 7) are about the answer, never the visitor: no id, cookie, or address.
+    assert set(row) <= {"question", "top_score", "covered", "provider", "model", "latency_ms", "course", "kind", "at",
+                        "top_slide_id", "session", "session_title", "tokens_in", "tokens_out", "voice_chars", "source"}
 
 
 # ---------------------------------------------------------------- M: expensive models

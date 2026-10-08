@@ -29,7 +29,7 @@ from typing import Any, Callable
 
 import httpx
 
-from . import config
+from . import config, usage
 
 TIMEOUT = httpx.Timeout(45.0, connect=5.0)
 PROVIDERS = ("anthropic", "openai", "openrouter")
@@ -214,7 +214,9 @@ def complete_json(
     if resp.status_code >= 400:
         raise LLMError(f"{provider} returned {resp.status_code}: {resp.text[:300]}")
     config.log.info("llm %s/%s answered in %.1fs", provider, model, time.monotonic() - started)
-    return PARSERS[provider](resp.json())
+    data = resp.json()
+    usage.record_llm(provider, model, data)  # tokens in/out for Settings > Analytics; never raises
+    return PARSERS[provider](data)
 
 
 # ---------------------------------------------------------------- model lists

@@ -19,7 +19,7 @@ from typing import Any, Callable
 
 import httpx
 
-from app import llm
+from app import llm, usage
 
 from . import rubric
 
@@ -77,7 +77,9 @@ class Judge:
         if resp.status_code >= 400:
             # 400s other than 429 (bad key, unknown model, bad request) will not fix themselves.
             raise JudgeError(f"{self.name} returned {resp.status_code}: {resp.text[:200]}", retryable=False)
-        return llm.PARSERS[self.provider](resp.json())
+        data = resp.json()
+        usage.record_llm(self.provider, self.model, data, "eval_judge")  # Settings > Analytics spend; never raises
+        return llm.PARSERS[self.provider](data)
 
     def judge(self, item: dict[str, Any], sleep: Callable[[float], None] = time.sleep) -> dict[str, Any]:
         """Score one item. Retries transport errors and unparseable replies; never raises."""
