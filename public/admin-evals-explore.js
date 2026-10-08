@@ -26,6 +26,12 @@ const DIM_SHORT = {
   accurate: 'Accurate', engaging_voice: 'Voice', appropriate_depth: 'Depth',
 };
 const dimName = (d) => DIM_SHORT[d] || humanCat(d);
+/** How an answer was routed, in the words Settings > Evals uses elsewhere (admin-evals.js OUTCOMES). */
+const OUTCOME_NAMES = {
+  course_content: 'Covered', stored_topic: 'Stored answer', faq: 'FAQ', logistics: 'Referred to Ben',
+  not_covered: 'Not covered', course_info: 'Course info', web: 'From the web', cross_course: 'Other course',
+};
+const outcomeName = (o) => OUTCOME_NAMES[o] || humanCat(o);
 
 async function api(path) {
   const res = await fetch(path, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
@@ -208,7 +214,7 @@ async function loadDetail(qid) {
       el('p', { text: q.question }),
       q.reference_answer ? el('p', { class: 'hint' }, el('strong', { text: 'Real reply (paraphrased): ' }), q.reference_answer) : null,
       ...d.answers.map(a => el('div', { class: 'evx-answer' },
-        el('p', {}, el('strong', { text: a.generator }), el('span', { class: 'muted', text: ` · ${a.run_name || a.run_id} · ${humanCat(a.outcome)}` })),
+        el('p', {}, el('strong', { text: a.generator }), el('span', { class: 'muted', text: ` · ${a.run_name || a.run_id} · ${outcomeName(a.outcome)}` })),
         el('p', { class: 'evx-answer-text', text: a.answer || '(no text)' }),
         el('p', { class: 'small' }, a.agreement.judges > 1
           ? `Judges agree: ${pct(a.agreement.verdict)} gave the majority verdict (${a.agreement.majority}) of ${a.agreement.judges}; mean score spread ${num(a.agreement.mean_spread)} points.`
