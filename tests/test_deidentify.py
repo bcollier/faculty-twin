@@ -193,6 +193,41 @@ def test_keep_term_override(scrubber):
     assert out == text
 
 
+# --- institution terms (Oct 8): "Andrew ID" is CMU's account system, not a student --------------
+@pytest.fixture(scope="module")
+def andrew_scrubber(tmp_path_factory, words):
+    english, given = words
+    roster_dir = tmp_path_factory.mktemp("andrew_rosters")
+    with open(roster_dir / "CourseRoster_TEST.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["Semester", "Course", "Last Name", "Preferred/First Name", "MI", "Andrew ID", "Email"])
+        w.writerow(["F26", "00000", "Quillbanks", "Andrew", "", "aquillba", "aquillba@andrew.cmu.edu"])
+    scrub = d.build_scrub_list(d.read_rosters(roster_dir), english)
+    return d.Scrubber(scrub, english, given)
+
+
+def test_andrew_id_and_the_andrew_domain_are_kept(andrew_scrubber):
+    text = "Sign in with your Andrew ID and password as usual. Enter your full CMU email, including the @andrew.cmu.edu part."
+    out, c = masked(andrew_scrubber, text)
+    assert out == text and not c
+
+
+def test_a_student_named_andrew_is_still_masked(andrew_scrubber):
+    out, _ = masked(andrew_scrubber, "Thanks, Andrew. Andrew Quillbanks had a good point about the Andrew ID login.")
+    assert out == "Thanks, [student]. [student] had a good point about the Andrew ID login."
+
+
+def test_a_student_id_before_the_andrew_domain_is_still_masked(andrew_scrubber):
+    out, _ = masked(andrew_scrubber, "Email aquillba@andrew.cmu.edu with questions.")
+    assert out == "Email [student]@andrew.cmu.edu with questions."
+
+
+def test_sweep_does_not_report_andrew_id(andrew_scrubber, words):
+    english, given = words
+    hits = d.sweep_texts(["Sign in with your Andrew ID."], andrew_scrubber.s, english, given)
+    assert hits == []
+
+
 # --- VTT parsing, merging, labels -------------------------------------------
 SYNTHETIC_VTT = """WEBVTT
 

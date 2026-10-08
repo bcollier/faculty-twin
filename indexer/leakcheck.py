@@ -37,7 +37,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from indexer.roster import lowercase_dictionary_words, names_pattern, person, read_people, roster_files
+from indexer.roster import (
+    blank_institution_terms,
+    lowercase_dictionary_words,
+    names_pattern,
+    person,
+    read_people,
+    roster_files,
+)
 
 BEN = {"ben", "benjamin", "collier"}
 WORD_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*[A-Za-z]|[A-Za-z]")
@@ -173,7 +180,9 @@ class RosterChecker:
         Strong hits (full names, Andrew IDs, emails) are never allowed.
         """
         n, ok = self.strong(text), 0
-        for tok in WORD_RE.findall(text or ""):
+        # "Andrew ID" and "andrew.cmu.edu" are CMU's account system, not a student named Andrew
+        # (indexer/roster.py). Full names, Andrew IDs and emails were counted above on the whole text.
+        for tok in WORD_RE.findall(blank_institution_terms(text or "")):
             low = re.sub(r"'s$", "", tok.lower()).strip("'")  # possessive: "Name's" is a hit too
             if tok[0].isupper() and low in self._singles:
                 if low in allow:

@@ -81,7 +81,7 @@ if __package__ in (None, ""):  # run as a script (python indexer/deidentify.py):
 
 from indexer.layout import DEFAULT_ARCHIVE, TERM  # noqa: E402
 from indexer.pg_filter import smooth as pg_smooth  # noqa: E402
-from indexer.roster import read_people  # noqa: E402
+from indexer.roster import blank_institution_terms, institution_spans, read_people  # noqa: E402
 
 STUDENT = "[student]"
 PERSON = "[person]"
@@ -680,13 +680,15 @@ class Scrubber:
     def scrub(self, text: str, counts: Counter | None = None) -> str:
         """Mask every person named in `text`: students as [student], everyone else as [person].
 
-        Phrases first (roster full names, known public figures, self-introductions), then
-        each remaining word on its own (`_token_rule`), then neighbouring name parts are
-        folded into one mask. `counts` gets one tick per mask, by rule name (never the text).
+        Institution terms ("Andrew ID", "andrew.cmu.edu"; indexer/roster.py) are never names.
+        Then phrases (roster full names, known public figures, self-introductions), then each
+        remaining word on its own (`_token_rule`), then neighbouring name parts are folded into
+        one mask. `counts` gets one tick per mask, by rule name (never the text).
         """
         counts = counts if counts is not None else Counter()
-        hits = self._phrase_hits(text)  # start -> (end, rule)
-        covered = [(a, b) for a, (b, _) in hits.items()]
+        kept = institution_spans(text)
+        hits = self._phrase_hits(text, kept)  # start -> (end, rule)
+        covered = kept + [(a, b) for a, (b, _) in hits.items()]
         ctx_starts: set[int] = set()
         for rx in self.strong_ctx + self.weak_ctx:
             for m in rx.finditer(text):
@@ -704,18 +706,25 @@ class Scrubber:
             return text
         return self._join_neighbouring_masks(self._apply_masks(text, hits, counts), counts)
 
-    def _phrase_hits(self, text: str) -> dict[int, tuple[int, str]]:
-        """Multi-word matches, which win over the word-by-word rules: {start: (end, rule)}."""
+    def _phrase_hits(self, text: str, kept: list[tuple[int, int]]) -> dict[int, tuple[int, str]]:
+        """Multi-word matches, which win over the word-by-word rules: {start: (end, rule)}.
+
+        Nothing overlapping a `kept` span (an institution term) is a hit.
+        """
+        def free(a: int, b: int) -> bool:
+            return not any(x < b and a < y for x, y in kept)
+
         hits: dict[int, tuple[int, str]] = {}
         # 1) roster "first last" phrases -> [student]
         for ph in self.s.phrases:
             for m in re.finditer(r"\b" + re.escape(ph) + r"(?:['’]s)?\b", text, re.IGNORECASE):
-                hits[m.start()] = (m.end(), "roster_exact")
+                if free(m.start(), m.end()):
+                    hits[m.start()] = (m.end(), "roster_exact")
         # 2) known public figures by full name -> [person] (beats the product word in "Claude Shannon")
         for m in self.person_phrase_re.finditer(text):
-            if m.start() not in hits and not is_eponym(text, m.start(), m.end()):
+            if m.start() not in hits and not is_eponym(text, m.start(), m.end()) and free(m.start(), m.end()):
                 hits[m.start()] = (m.end(), "known_person")
-        covered = [(a, b) for a, (b, _) in hits.items()]
+        covered = kept + [(a, b) for a, (b, _) in hits.items()]
         # 3) self-introductions, hand-offs and roll calls -> [student]
         for a, b in self.intro_names(text):
             if a not in hits and not any(x <= a < y for x, y in covered):
@@ -1254,6 +1263,7 @@ def sweep_texts(texts: Iterable[str], scrub: ScrubList, english: set[str], given
     given = given - INSTRUCTOR_FORMS
     hits = []
     for text in texts:
+        text = blank_institution_terms(text)  # "Andrew ID", "andrew.cmu.edu" are not names (indexer/roster.py)
         for m in phrase_re.finditer(text):
             if not is_eponym(text, m.start(), m.end()):
                 context = text[max(0, m.start() - 40):m.start()] + "<P>" + text[m.end():m.end() + 40]
