@@ -37,6 +37,8 @@ from pathlib import Path
 from typing import Any
 
 from app import eval_runs, eval_store
+from app.eval_core import read_jsonl
+from app.eval_runs import model_ref
 from evals.run import PRIVATE, ROOT, load_dotenv
 
 VALID_RUN = "20261007T222857Z"
@@ -67,21 +69,10 @@ def _stamp(run_id: str) -> datetime:
     return datetime.strptime(run_id, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
 
 
-def _judge_ref(name: str) -> dict[str, str]:
-    """{"provider", "model"} from a "provider:model" key (judges and answering models alike)."""
-    provider, _, model = name.partition(":")
-    return {"provider": provider, "model": model}
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    """One JSON object per non-empty line."""
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
 def convert_run(run_dir: Path, run_id: str, generator: dict[str, str],
                 excluded: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """A CLI run folder -> (run.json, result rows) in the Settings format."""
-    results = _read_jsonl(run_dir / "results.jsonl")
+    results = read_jsonl(run_dir / "results.jsonl")
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     meta = summary.get("meta") or {}
     judges = [j.strip() for j in str(meta.get("judges") or "").split(",") if j.strip() and j.strip() != "none"]
@@ -113,7 +104,7 @@ def convert_run(run_dir: Path, run_id: str, generator: dict[str, str],
         "excluded": excluded,
         "generators": [generator],
         "generator_labels": {key: TWIN_LABEL},
-        "judges": [_judge_ref(j) for j in judges],
+        "judges": [model_ref(j) for j in judges],
         "top": len(results),
         "categories": None,
         "questions": [{k: r[k] for k in ("qid", "category", "course", "answerable", "question", "reference_answer")}
@@ -122,7 +113,7 @@ def convert_run(run_dir: Path, run_id: str, generator: dict[str, str],
         "pairs_done": len(results),
         "calls_used": None,
         "call_cap": None,
-        "self_grading": eval_runs.self_grading([generator], [_judge_ref(j) for j in judges]),
+        "self_grading": eval_runs.self_grading([generator], [model_ref(j) for j in judges]),
         "notes": [eval_runs.IMPORTED_NOTE],
         "lease": None,
     }
@@ -155,7 +146,7 @@ def baseline_entry() -> dict[str, Any]:
         "median_latency_ms": None,
         "per_judge": {name: {"pass_rate": j["pass_rate"], "judged": 22} for name, j in BASELINE_PER_JUDGE.items()},
     }
-    judges = [_judge_ref(j) for j in BASELINE_PER_JUDGE]
+    judges = [model_ref(j) for j in BASELINE_PER_JUDGE]
     return {
         "id": BASELINE_ID,
         "name": "October 5 baseline: generic chatbot (command line)",
@@ -262,14 +253,14 @@ def _compare_notes(run_dir: Path, meta: dict[str, Any]) -> list[str]:
 
 def convert_compare(run_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """A comparison run folder (evals/compare.py) -> (run.json, rows) in the Settings format. Run 1 only."""
-    rows_in = _read_jsonl(run_dir / "results.jsonl")
+    rows_in = read_jsonl(run_dir / "results.jsonl")
     meta = _read_json_or(run_dir / "meta.json", {})
     run_id = eval_store.check_run_id(run_dir.name)
     rep1 = [r for r in rows_in if r.get("rep", 1) == 1]
     gens_keys = meta.get("generators") or sorted({r["generator"] for r in rep1})
-    generators = [_judge_ref(g) for g in gens_keys]
+    generators = [model_ref(g) for g in gens_keys]
     judge_keys = meta.get("judges") or sorted({j["judge"] for r in rep1 for j in r["judgements"]})
-    judges = [_judge_ref(j) for j in judge_keys]
+    judges = [model_ref(j) for j in judge_keys]
     qids = sorted({r["qid"] for r in rep1})
     by = {(r["qid"], r["generator"]): r for r in rep1}
     questions, rows = [], []

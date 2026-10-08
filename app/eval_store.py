@@ -51,8 +51,8 @@ import json
 import re
 import secrets
 import threading
-from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -75,6 +75,8 @@ class StoreError(RuntimeError):
 
 
 class Bucket(Protocol):
+    """Where eval files live: the private Supabase bucket, a local folder, or memory (tests)."""
+
     def get(self, path: str) -> bytes | None: ...
 
     def put(self, path: str, data: bytes, content_type: str = "application/json") -> None: ...
@@ -167,6 +169,7 @@ _memory = MemoryBucket()
 
 
 def default_bucket() -> Bucket:
+    """CONTENT_DIR as a local folder when set, else the private Supabase bucket, else memory (tests)."""
     root = config.content_dir()
     if root is not None:
         return LocalBucket(root)
@@ -178,6 +181,7 @@ def default_bucket() -> Bucket:
 # ---------------------------------------------------------------- JSON helpers
 
 def read_json(bucket: Bucket, path: str, default: Any = None) -> Any:
+    """Parsed JSON at a bucket path, or `default` when it is missing. Malformed JSON is a StoreError."""
     raw = bucket.get(path)
     if raw is None:
         return default
@@ -192,6 +196,7 @@ def write_json(bucket: Bucket, path: str, value: Any) -> None:
 
 
 def read_jsonl(bucket: Bucket, path: str) -> list[dict[str, Any]]:
+    """Rows of a JSON Lines object ([] when missing). A malformed line is a StoreError."""
     raw = bucket.get(path)
     if raw is None:
         return []
@@ -211,6 +216,7 @@ def write_jsonl(bucket: Bucket, path: str, rows: list[dict[str, Any]]) -> None:
 
 
 def check_run_id(run_id: str) -> str:
+    """The run id when it is safe as a path segment, else a StoreError."""
     if not RUN_ID_RE.match(run_id or ""):
         raise StoreError("Run ids look like 20261007T222857Z.")
     return run_id
@@ -285,8 +291,8 @@ def write_question_edit(bucket: Bucket, op: str, record: dict[str, Any],
         raise StoreError("op must be add or edit")
     raw = bucket.get(QUESTIONS)
     folder = _set_folder("" if raw is None else raw.decode("utf-8"))
-    name = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ") + f"-{secrets.token_hex(4)}.json"
-    edit = {"op": op, "line": line, "record": record, "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    name = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ") + f"-{secrets.token_hex(4)}.json"
+    edit = {"op": op, "line": line, "record": record, "at": datetime.now(UTC).isoformat(timespec="seconds")}
     write_json(bucket, folder + name, edit)
     return name, edit
 
@@ -428,6 +434,7 @@ def judge_slug(judge: str) -> str:
 
 
 def write_calibration_row(bucket: Bucket, judge: str, attempt: str, row: dict[str, Any]) -> None:
+    """Store one calibration case's result for one judge's attempt."""
     if not ATTEMPT_RE.match(attempt) or not CASE_RE.match(str(row["cid"])):
         raise StoreError("bad calibration attempt or case id")
     write_json(bucket, f"{CALIBRATION_DIR}{judge_slug(judge)}/{attempt}/{row['cid']}.json", row)

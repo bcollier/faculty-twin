@@ -22,7 +22,14 @@ IMPORTED_NOTE = (
 
 
 def model_key(m: dict[str, str]) -> str:
+    """{"provider": "openai", "model": "gpt-6.1-sol"} -> "openai:gpt-6.1-sol"."""
     return f"{m['provider']}:{m['model']}"
+
+
+def model_ref(key: str) -> dict[str, str]:
+    """The inverse of model_key: "openai:gpt-6.1-sol" -> {"provider": "openai", "model": "gpt-6.1-sol"}."""
+    provider, _, model = key.partition(":")
+    return {"provider": provider, "model": model}
 
 
 def _base_model(model: str) -> str:
@@ -73,6 +80,7 @@ def index_entry(run: dict[str, Any]) -> dict[str, Any]:
 
 
 def progress(run: dict[str, Any]) -> dict[str, Any]:
+    """Pairs done out of pairs planned, and the call budget, for the progress bar."""
     total = int(run.get("pairs_total") or 0)
     done = int(run.get("pairs_done") or 0)
     return {
@@ -100,6 +108,7 @@ def pairs_of(run: dict[str, Any]) -> list[tuple[int, dict[str, Any], dict[str, s
 
 
 def summarize(run: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Per answering model metrics for one run's rows."""
     by_gen = {}
     for g in run.get("generators", []):
         key = model_key(g)

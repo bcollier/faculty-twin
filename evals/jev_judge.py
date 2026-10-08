@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from . import rubric
 
@@ -32,7 +33,8 @@ SCALES = {
     "answers_question": "How well does the actual output address what the student in the input actually asked? "
     "If it declined, how right and how helpful is the decline?",
     "correct_scope": "How right was the call between answering and declining? The input says what was expected: "
-    "answer questions the course material covers, decline logistics, grades, extensions, meetings and personal requests.",
+    "answer questions the course material covers, decline logistics, grades, extensions, meetings and "
+    "personal requests.",
     "matches_reference": "How closely does the actual output agree with the expected output, which is how the "
     "professor or TA actually answered the real email?",
     "speech_quality": "How well does the actual output work when spoken aloud by a teacher in the first person: "
@@ -74,7 +76,8 @@ def build_test_case_fields(item: dict[str, Any]) -> dict[str, Any]:
     resp = item["response"]
     expected = "answer from course material" if item["answerable"] else "decline, it is not course content"
     fields: dict[str, Any] = {
-        "input": f"Student question: {item['question']}\nQuestion type: {item['category']} (expected behavior: {expected})",
+        "input": f"Student question: {item['question']}\n"
+                 f"Question type: {item['category']} (expected behavior: {expected})",
     }
     if resp["status"] != "ok":
         fields["actual_output"] = f"(The twin declined: {resp.get('message') or 'not covered by the course material'}.)"
@@ -104,6 +107,7 @@ class JevJudge:
         return f"jev:{self.model}"
 
     def ready(self) -> str | None:
+        """Why this judge cannot run (missing packages or key), or None."""
         try:
             import deepeval  # noqa: F401
             import typesafe_sdk  # noqa: F401

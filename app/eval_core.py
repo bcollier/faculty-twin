@@ -23,11 +23,12 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter, defaultdict
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
 from statistics import mean
-from typing import Any, Iterable
+from typing import Any
 
 from . import prompts
 from .privacy import scrub_question
@@ -82,6 +83,8 @@ SLIDE_ID_RE = re.compile(r"^\d{5}-s\d{2}-\d{3}$")
 
 @dataclass(frozen=True)
 class Question:
+    """One checked eval question, with its optional Block 8c expectations."""
+
     qid: str
     month: str
     course: str
@@ -117,6 +120,7 @@ class Question:
         return out
 
     def as_dict(self) -> dict[str, Any]:
+        """The question's fields as stored in result rows (no internal names)."""
         return {
             "qid": self.qid,
             "month": self.month,
@@ -178,6 +182,25 @@ def parse_record(raw: dict[str, Any], n: int) -> Question:
         reasons = leak_reasons(text)
         if reasons:
             raise DatasetError(f"line {n}: {field_name} still has: {', '.join(reasons)}")
+    qtype, kinds, slides, lists = _parse_expectations(raw, n)
+    return Question(
+        qid=f"q{n:03d}",
+        month=month,
+        course=str(raw.get("course") or "Unknown"),
+        category=category,
+        question=question,
+        reference_answer=ref,
+        answerable=bool(raw.get("answerable_from_course_materials")),
+        qtype=qtype,
+        expected_kind=tuple(kinds),
+        expected_slides=tuple(slides),
+        must_include=lists["must_include"],
+        must_not=lists["must_not"],
+    )
+
+
+def _parse_expectations(raw: dict[str, Any], n: int) -> tuple[Any, list[str], list[str], dict[str, tuple[str, ...]]]:
+    """The optional Block 8c fields: type, expected_kind, expected_slides, must_include, must_not."""
     qtype = raw.get("type")
     if qtype is not None and qtype not in QUESTION_TYPES:
         raise DatasetError(f"line {n}: type must be one of {', '.join(QUESTION_TYPES)}")
@@ -195,23 +218,11 @@ def parse_record(raw: dict[str, Any], n: int) -> Question:
         if not isinstance(items, list) or any(not isinstance(i, str) for i in items):
             raise DatasetError(f"line {n}: {field_name} must be a list of strings")
         for item in items:
+            # The same privacy check as the question: these lines are sent to the judges too.
             if leak_reasons(item):
                 raise DatasetError(f"line {n}: {field_name} still has: {', '.join(leak_reasons(item))}")
         lists[field_name] = tuple(i.strip() for i in items if i.strip())
-    return Question(
-        qid=f"q{n:03d}",
-        month=month,
-        course=str(raw.get("course") or "Unknown"),
-        category=category,
-        question=question,
-        reference_answer=ref,
-        answerable=bool(raw.get("answerable_from_course_materials")),
-        qtype=qtype,
-        expected_kind=tuple(kinds),
-        expected_slides=tuple(slides),
-        must_include=lists["must_include"],
-        must_not=lists["must_not"],
-    )
+    return qtype, kinds, slides, lists
 
 
 # Old private name, kept for anything that imported it from evals.dataset.
@@ -347,6 +358,11 @@ def fmt_pct(rate: float | None) -> str:
     return "n/a" if rate is None else f"{round(rate * 100)}%"
 
 
+def fmt_num(x: float | None, nd: int = 2) -> str:
+    """3.14159 -> "3.14"; None -> "n/a"."""
+    return "n/a" if x is None else f"{x:.{nd}f}"
+
+
 def fmt_score(dim: str, mean: float | None, n: int | None = None) -> str:
     """A score cell: "4.14 (n=22)", or "n/a (no slides)" for grounded with nothing to ground."""
     if mean is None:
@@ -431,8 +447,9 @@ def build_user_prompt(item: dict[str, Any]) -> str:
         for seg in resp.get("segments") or []:
             lines.append("  Answer shown: " + _clip(seg.get("narration"), 1500))
         links = resp.get("links") or []
-        lines.append("  Sources listed: " + ("; ".join(_clip(f"{l.get('title') or ''} {l.get('url') or ''}", 200)
-                                                  for l in links if isinstance(l, dict)) or "none"))
+        sources = "; ".join(_clip(f"{link.get('title') or ''} {link.get('url') or ''}", 200)
+                            for link in links if isinstance(link, dict))
+        lines.append("  Sources listed: " + (sources or "none"))
         if resp.get("label"):
             lines.append("  Label shown: " + _clip(resp["label"], 200))
         return "\n".join(lines)
@@ -458,6 +475,7 @@ def build_user_prompt(item: dict[str, Any]) -> str:
 
 
 def extract_json(raw: str) -> Any:
+    """The JSON object in a model reply, tolerating code fences and text around it."""
     raw = (raw or "").strip()
     raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw)
     try:
@@ -513,11 +531,16 @@ def _avg(values: list[float]) -> float | None:
     return round(mean(values), 2) if values else None
 
 
-def _ok_judgements(results: list[dict[str, Any]]):
+def _ok_judgements(results: list[dict[str, Any]]) -> Iterator[tuple[dict[str, Any], dict[str, Any]]]:
+    """(row, judgement) for every judgement that did not error."""
     for r in results:
         for j in r.get("judgements", []):
             if "error" not in j:
                 yield r, j
+
+
+def _pass_values(judgements: Iterable[dict[str, Any]]) -> list[float]:
+    return [1.0 if j["verdict"] == "pass" else 0.0 for j in judgements]
 
 
 def summary(results: list[dict[str, Any]], meta: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -525,33 +548,7 @@ def summary(results: list[dict[str, Any]], meta: dict[str, Any] | None = None) -
     statuses: dict[str, int] = defaultdict(int)
     for r in results:
         statuses[r["response"]["status"]] += 1
-
     judges = sorted({j["judge"] for r in results for j in r.get("judgements", [])})
-    per_judge: dict[str, Any] = {}
-    for name in judges:
-        js = [j for _, j in _ok_judgements(results) if j["judge"] == name]
-        mine_err = [j for r in results for j in r.get("judgements", []) if j["judge"] == name and "error" in j]
-        errors = sum(1 for j in mine_err if not j.get(PROVIDER_ERROR))  # a refused call is not a judge error
-        per_judge[name] = {
-            "judged": len(js),
-            "errors": errors,
-            "provider_errors": len(mine_err) - errors,
-            "pass_rate": _avg([1.0 if j["verdict"] == "pass" else 0.0 for j in js]),
-            "scores": {d: _avg([j["scores"][d] for j in js if j["scores"].get(d) is not None]) for d in DIMENSIONS},
-            "score_n": {d: sum(1 for j in js if j["scores"].get(d) is not None) for d in DIMENSIONS},
-        }
-
-    by_cat: dict[str, dict[str, Any]] = {}
-    cats = sorted({r["category"] for r in results})
-    for cat in cats:
-        rows = [r for r in results if r["category"] == cat]
-        js = [j for r, j in _ok_judgements(rows)]
-        by_cat[cat] = {
-            "questions": len(rows),
-            "answered": sum(1 for r in rows if r["response"]["status"] == "ok"),
-            "pass_rate": _avg([1.0 if j["verdict"] == "pass" else 0.0 for j in js]),
-            "correct_scope": _avg([j["scores"]["correct_scope"] for j in js if j["scores"].get("correct_scope")]),
-        }
 
     # Scope behavior without any judge: did the twin answer what it should and decline the rest?
     expected = [r for r in results if r["response"]["status"] in ("ok", "not_covered")]
@@ -563,6 +560,53 @@ def summary(results: list[dict[str, Any]], meta: dict[str, Any] | None = None) -
     ok = [r for r in results if r["response"]["status"] == "ok"]
     fallback = [r for r in ok if r["response"].get("narration_source") == "fallback"]
 
+    return {
+        "meta": meta or {},
+        "probabilistic_judges": probabilistic(results),
+        "questions": len(results),
+        "status_counts": dict(sorted(statuses.items())),
+        "scope_right_call_rate": _avg([1.0] * len(right_call) + [0.0] * (len(expected) - len(right_call))),
+        "answerable_declined": len(declined_answerable),
+        "narration_fallback_rate": _avg([1.0] * len(fallback) + [0.0] * (len(ok) - len(fallback))),
+        "median_latency_ms": (sorted(r["response"].get("latency_ms", 0) for r in results)[len(results) // 2]
+                              if results else None),
+        "judges": {name: _judge_summary(results, name) for name in judges},
+        "judge_agreement": _judge_agreement(results, judges),
+        "by_category": _by_category(results),
+    }
+
+
+def _judge_summary(results: list[dict[str, Any]], name: str) -> dict[str, Any]:
+    """One judge's pass rate and mean score per dimension, with how many answers each covers."""
+    js = [j for _, j in _ok_judgements(results) if j["judge"] == name]
+    mine_err = [j for r in results for j in r.get("judgements", []) if j["judge"] == name and "error" in j]
+    errors = sum(1 for j in mine_err if not j.get(PROVIDER_ERROR))  # a refused call is not a judge error
+    return {
+        "judged": len(js),
+        "errors": errors,
+        "provider_errors": len(mine_err) - errors,
+        "pass_rate": _avg(_pass_values(js)),
+        "scores": {d: _avg([j["scores"][d] for j in js if j["scores"].get(d) is not None]) for d in DIMENSIONS},
+        "score_n": {d: sum(1 for j in js if j["scores"].get(d) is not None) for d in DIMENSIONS},
+    }
+
+
+def _by_category(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    by_cat: dict[str, dict[str, Any]] = {}
+    for cat in sorted({r["category"] for r in results}):
+        rows = [r for r in results if r["category"] == cat]
+        js = [j for r, j in _ok_judgements(rows)]
+        by_cat[cat] = {
+            "questions": len(rows),
+            "answered": sum(1 for r in rows if r["response"]["status"] == "ok"),
+            "pass_rate": _avg(_pass_values(js)),
+            "correct_scope": _avg([j["scores"]["correct_scope"] for j in js if j["scores"].get("correct_scope")]),
+        }
+    return by_cat
+
+
+def _judge_agreement(results: list[dict[str, Any]], judges: list[str]) -> dict[str, Any]:
+    """For each pair of judges: how often their verdicts match, and their mean score gap."""
     agreement: dict[str, Any] = {}
     for a, b in combinations(judges, 2):
         diffs, same = [], []
@@ -576,20 +620,7 @@ def summary(results: list[dict[str, Any]], meta: dict[str, Any] | None = None) -
                 if ja["scores"].get(d) is not None and jb["scores"].get(d) is not None:
                     diffs.append(abs(ja["scores"][d] - jb["scores"][d]))
         agreement[f"{a} vs {b}"] = {"verdict_agreement": _avg(same), "mean_abs_score_gap": _avg(diffs)}
-
-    return {
-        "meta": meta or {},
-        "probabilistic_judges": probabilistic(results),
-        "questions": len(results),
-        "status_counts": dict(sorted(statuses.items())),
-        "scope_right_call_rate": _avg([1.0] * len(right_call) + [0.0] * (len(expected) - len(right_call))),
-        "answerable_declined": len(declined_answerable),
-        "narration_fallback_rate": _avg([1.0] * len(fallback) + [0.0] * (len(ok) - len(fallback))),
-        "median_latency_ms": sorted(r["response"].get("latency_ms", 0) for r in results)[len(results) // 2] if results else None,
-        "judges": per_judge,
-        "judge_agreement": agreement,
-        "by_category": by_cat,
-    }
+    return agreement
 
 
 def probabilistic(results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -647,6 +678,7 @@ def is_billing_error(text: Any) -> bool:
 
 
 def is_provider_error(row_or_judgement: dict[str, Any]) -> bool:
+    """True for an answer or judgement a provider outage spoiled (left out of every score)."""
     if row_or_judgement.get(PROVIDER_ERROR):
         return True
     resp = row_or_judgement.get("response")
@@ -816,8 +848,14 @@ def generator_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
 CALIBRATION_FILE = Path(__file__).with_name("eval_calibration.jsonl")
 
 
-def load_calibration_cases(path: Path = CALIBRATION_FILE) -> list[dict[str, Any]]:
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    """One JSON object per non-empty line of a local file (run results, calibration cases)."""
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def load_calibration_cases(path: Path = CALIBRATION_FILE) -> list[dict[str, Any]]:
+    """The invented calibration cases every judge must pass before its scores are trusted."""
+    return read_jsonl(path)
 
 
 def check(case: dict[str, Any], judgement: dict[str, Any]) -> list[str]:

@@ -17,11 +17,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.eval_core import check  # noqa: F401  (shared with Settings > Evals)
+from app.eval_core import check, read_jsonl  # noqa: F401  (check: shared with Settings > Evals)
 
 from .judges import Judge, JudgeError, make_judge
 from .run import PRIVATE, load_dotenv
@@ -30,10 +30,12 @@ CASES = Path(__file__).resolve().parent / "calibration.jsonl"
 
 
 def load_cases(path: Path = CASES) -> list[dict[str, Any]]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    """The invented calibration cases (calibration.jsonl)."""
+    return read_jsonl(path)
 
 
 def calibrate(cases: list[dict[str, Any]], judges: list[Judge]) -> dict[str, Any]:
+    """Every judge scores every invented case; returns which expectations each judge met or missed."""
     rows = []
     for case in cases:
         for judge in judges:
@@ -72,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     for r in result["rows"]:
         if r["misses"]:
             print(f"  {r['judge']} {r['cid']}: " + "; ".join(r["misses"]))
-    out = args.out or PRIVATE / "calibration" / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ".json")
+    out = args.out or PRIVATE / "calibration" / (datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + ".json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(f"Wrote {out}")

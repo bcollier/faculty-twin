@@ -17,8 +17,9 @@ Pure functions over plain lists (numpy only), so they are easy to test by hand:
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Sequence
 from itertools import combinations
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -29,7 +30,8 @@ PLAIN = {
     "kappa": "Cohen's kappa on pass/fail: 1 = always the same verdict; 0 = no better than chance; "
              "0.6 or more is usually read as substantial agreement.",
     "alpha": "Krippendorff's alpha (ordinal): agreement among the judges beyond chance; 1 = perfect, 0 = chance, "
-             "0.8 or more is reliable, 0.67 to 0.8 tentative, below 0.67 the judges disagree too much to trust one alone.",
+             "0.8 or more is reliable, 0.67 to 0.8 tentative, below 0.67 the judges disagree too much to trust "
+             "one alone.",
     "exact": "Exact agreement: share of judge pairs that gave the same score on the same answer.",
     "within_one": "Within one: share of judge pairs whose scores differ by at most one point.",
     "ci": "95% confidence interval: the range the mean would likely fall in with a fresh set of similar questions.",
@@ -91,6 +93,7 @@ def icc_2_1(matrix: Sequence[Sequence[float]]) -> float | None:
 
 
 def pearson(a: Sequence[float], b: Sequence[float]) -> float | None:
+    """Pearson correlation of paired values (pairs with a missing value dropped); None if undefined."""
     pairs = [(float(x), float(y)) for x, y in zip(a, b) if x is not None and y is not None]
     if len(pairs) < 3:
         return None
@@ -111,6 +114,7 @@ def _ranks(v: np.ndarray) -> np.ndarray:
 
 
 def spearman(a: Sequence[float], b: Sequence[float]) -> float | None:
+    """Spearman rank correlation, ties given average ranks; None if undefined."""
     pairs = [(float(x), float(y)) for x, y in zip(a, b) if x is not None and y is not None]
     if len(pairs) < 3:
         return None

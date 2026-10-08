@@ -17,8 +17,9 @@ import os
 import re
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 
@@ -40,6 +41,8 @@ def route_of(provider: str, model: str) -> tuple[str, str]:
 
 
 class JudgeError(RuntimeError):
+    """A judge or answering call failed. `retryable` False means asking again cannot help."""
+
     def __init__(self, message: str, retryable: bool = True):
         super().__init__(message)
         self.retryable = retryable
@@ -75,6 +78,8 @@ OUTAGES = ProviderOutages()
 
 @dataclass
 class Judge:
+    """One judge model. Its calls go straight to the provider (not through the site's daily cap)."""
+
     provider: str
     model: str
     # Injectable for tests: (system, user) -> raw reply text.
@@ -86,10 +91,12 @@ class Judge:
         return f"{self.provider}:{self.model}"
 
     @classmethod
-    def parse_spec(cls, spec: str) -> "Judge":
+    def parse_spec(cls, spec: str) -> Judge:
+        """A judge from "provider:model". Raises JudgeError for an unknown provider or a missing model."""
         provider, sep, model = spec.partition(":")
         if not sep or provider not in llm.PROVIDERS or not model:
-            raise JudgeError(f"judge {spec!r} must look like provider:model, provider one of {', '.join(llm.PROVIDERS)}")
+            raise JudgeError(
+                f"judge {spec!r} must look like provider:model, provider one of {', '.join(llm.PROVIDERS)}")
         return cls(provider, model)
 
     def ready(self) -> str | None:
@@ -100,7 +107,9 @@ class Judge:
             return f"{llm.KEY_VARS[self.provider]} is not set"
         return None
 
-    def _send(self, system: str, user: str, max_tokens: int = MAX_TOKENS, purpose: str | None = "eval_judge") -> str:
+    def _send(self, system: str, user: str, max_tokens: int = MAX_TOKENS,
+              purpose: str | None = "eval_judge") -> str:
+        """One provider call, metered for Settings > Analytics. Billing refusals mark the provider down."""
         if self.call is not None:
             return self.call(system, user)
         provider, model = route_of(self.provider, self.model)
@@ -135,29 +144,47 @@ class Judge:
         """Score one item. Retries transport errors and unparseable replies; never raises."""
         user = rubric.build_user_prompt(item)
         system = rubric.system_prompt()  # read once per item
-        last = ""
         started = time.monotonic()
-        for attempt in range(RETRIES):
-            try:
-                with usage.tally() as spent:
-                    raw = self._send(system, user)
-                out = rubric.parse(raw)
-                out["judge"] = self.name
-                if route_of(self.provider, self.model)[0] != self.provider:
-                    out["via"] = route_of(self.provider, self.model)[0]
-                out["usage"] = {"tokens_in": spent.tokens_in, "tokens_out": spent.tokens_out,
-                                "seconds": round(time.monotonic() - started, 1)}
-                return out
-            except (JudgeError, llm.LLMError, rubric.JudgementError, KeyError, ValueError) as exc:
-                last = str(exc)
-                if not getattr(exc, "retryable", True):
-                    break
-                if attempt + 1 < RETRIES:
-                    sleep(2.0 * (attempt + 1))
+
+        def attempt() -> dict[str, Any]:
+            with usage.tally() as spent:
+                raw = self._send(system, user)
+            out = rubric.parse(raw)
+            out["judge"] = self.name
+            if route_of(self.provider, self.model)[0] != self.provider:
+                out["via"] = route_of(self.provider, self.model)[0]
+            out["usage"] = {"tokens_in": spent.tokens_in, "tokens_out": spent.tokens_out,
+                            "seconds": round(time.monotonic() - started, 1)}
+            return out
+
+        result, last = _with_retries(attempt, (JudgeError, llm.LLMError, rubric.JudgementError, KeyError, ValueError),
+                                     sleep, backoff=2.0)
+        if result is not None:
+            return result
         out = {"judge": self.name, "error": last}
         if last.startswith(eval_core.PROVIDER_ERROR):
             out[eval_core.PROVIDER_ERROR] = True  # says nothing about the answer: left out of scores, asked again later
         return out
+
+
+def _with_retries(call: Callable[[], Any], errors: tuple[type[BaseException], ...], sleep: Callable[[float], None],
+                  backoff: float) -> tuple[Any, str]:
+    """(result, "") from the first attempt that succeeds, else (None, the last error message).
+
+    Up to RETRIES attempts with a growing wait (backoff, 2 x backoff, ...). An error marked
+    `retryable = False` (a billing refusal, a bad request) stops at once: asking again cannot help.
+    """
+    last = ""
+    for attempt in range(RETRIES):
+        try:
+            return call(), ""
+        except errors as exc:
+            last = str(exc)
+            if not getattr(exc, "retryable", True):
+                break
+            if attempt + 1 < RETRIES:
+                sleep(backoff * (attempt + 1))
+    return None, last
 
 
 def direct_complete(system: str, user: str, max_tokens: int, provider: str | None = None,
@@ -175,20 +202,14 @@ def direct_complete(system: str, user: str, max_tokens: int, provider: str | Non
 
         provider, model = settings_store.llm_choice()
     judge = Judge(provider, model, client=client)
-    last = ""
-    for attempt in range(RETRIES):
-        try:
-            return judge._send(system, user, max_tokens, purpose=None)
-        except (JudgeError, llm.LLMError, KeyError, ValueError) as exc:
-            last = str(exc)
-            if not getattr(exc, "retryable", True):
-                break
-            if attempt + 1 < RETRIES:
-                time.sleep(3.0 * (attempt + 1))
-    raise llm.LLMError(last or f"{provider} call failed")
+    result, last = _with_retries(lambda: judge._send(system, user, max_tokens, purpose=None),
+                                 (JudgeError, llm.LLMError, KeyError, ValueError), time.sleep, backoff=3.0)
+    if result is None:
+        raise llm.LLMError(last or f"{provider} call failed")
+    return result
 
 
-def make_judge(spec: str):
+def make_judge(spec: str) -> Any:
     """A judge from a CLI spec: `provider:model` for an LLM, or `jev` / `jev:<model>` for Jev."""
     if spec == "jev" or spec.startswith("jev:"):
         from .jev_judge import JevJudge

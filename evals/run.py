@@ -23,36 +23,26 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from indexer.common import load_env
+
 from . import dataset, report
 from .judges import Judge, JudgeError, make_judge
-from .targets import BaselineTarget, HttpTarget, InProcessTarget, _result
+from .targets import BaselineTarget, HttpTarget, InProcessTarget, Target, _result
 
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = ROOT / "evals" / "private"
 
 
 def load_dotenv(path: Path | None = None) -> None:
-    """Read KEY=VALUE lines from the git-ignored .env without overriding the environment.
-
-    `FT_ENV_FILE` points at another checkout's .env (for example from a git worktree, which has none).
-    """
-    path = path or Path(os.environ.get("FT_ENV_FILE") or ROOT / ".env")
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.removeprefix("export ").strip()
-        os.environ.setdefault(key, value.strip().strip("'\""))
+    """Read keys from the git-ignored .env without overriding the environment (indexer/common.load_env)."""
+    load_env(path)
 
 
 class NoTarget:
@@ -64,8 +54,9 @@ class NoTarget:
         return _result("retrieval_not_ready", "no target (dry run)")
 
 
-def evaluate(questions: list[dataset.Question], target, judges: list[Judge],
-             log=lambda msg: None) -> list[dict[str, Any]]:
+def evaluate(questions: list[dataset.Question], target: Target, judges: list[Judge],
+             log: Callable[[str], None] = lambda msg: None) -> list[dict[str, Any]]:
+    """Ask the target every question; judges score answers and declines (not errors). One result row each."""
     results = []
     for i, q in enumerate(questions, start=1):
         response = target.ask(q.question)
@@ -88,6 +79,7 @@ def evaluate(questions: list[dataset.Question], target, judges: list[Judge],
 
 
 def write_run(results: list[dict[str, Any]], meta: dict[str, Any], out_dir: Path) -> Path:
+    """Write results.jsonl and report.md (private) and summary.json and summary.md (shareable)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     with (out_dir / "results.jsonl").open("w", encoding="utf-8") as f:
         for r in results:
@@ -97,6 +89,38 @@ def write_run(results: list[dict[str, Any]], meta: dict[str, Any], out_dir: Path
     (out_dir / "summary.json").write_text(json.dumps(s, indent=2), encoding="utf-8")
     (out_dir / "summary.md").write_text(report.summary_markdown(s), encoding="utf-8")
     return out_dir
+
+
+def _make_target(args: argparse.Namespace) -> tuple[Target | None, int]:
+    """The target the arguments ask for, or (None, exit code) after printing why it cannot run."""
+    if args.target == "http":
+        if not args.base_url:
+            print("--target http needs --base-url", file=sys.stderr)
+            return None, 2
+        return HttpTarget(args.base_url), 0
+    if args.target == "baseline":
+        target = BaselineTarget(args.baseline_model)
+        if why := target.ready():
+            print(f"Baseline model not ready: {why}", file=sys.stderr)
+            return None, 3
+        return target, 0
+    if args.target == "none":
+        return NoTarget(), 0
+    return InProcessTarget(), 0
+
+
+def _load_judges(specs: list[str]) -> tuple[list[Judge], int]:
+    """Judges for the specs, or ([], exit code) after printing why one cannot run."""
+    try:
+        judges = [make_judge(s) for s in specs]
+    except JudgeError as exc:
+        print(exc, file=sys.stderr)
+        return [], 2
+    missing = [f"{j.name}: {why}" for j in judges if (why := j.ready())]
+    if missing:
+        print("Judges not ready:\n  " + "\n  ".join(missing), file=sys.stderr)
+        return [], 3
+    return judges, 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -122,32 +146,14 @@ def main(argv: list[str] | None = None) -> int:
     for cat, n in dataset.category_counts(questions):
         print(f"  {cat}: {n}")
 
-    try:
-        judges = [make_judge(s) for s in args.judge]
-    except JudgeError as exc:
-        print(exc, file=sys.stderr)
-        return 2
-    missing = [f"{j.name}: {why}" for j in judges if (why := j.ready())]
-    if missing:
-        print("Judges not ready:\n  " + "\n  ".join(missing), file=sys.stderr)
-        return 3
+    judges, code = _load_judges(args.judge)
+    if code:
+        return code
+    target, code = _make_target(args)
+    if target is None:
+        return code
 
-    if args.target == "http":
-        if not args.base_url:
-            print("--target http needs --base-url", file=sys.stderr)
-            return 2
-        target = HttpTarget(args.base_url)
-    elif args.target == "baseline":
-        target = BaselineTarget(args.baseline_model)
-        if why := target.ready():
-            print(f"Baseline model not ready: {why}", file=sys.stderr)
-            return 3
-    elif args.target == "none":
-        target = NoTarget()
-    else:
-        target = InProcessTarget()
-
-    out = Path(args.out) if args.out else PRIVATE / "runs" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out = Path(args.out) if args.out else PRIVATE / "runs" / datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     started = time.monotonic()
     results = evaluate(chosen, target, judges, log=print)
     meta = {

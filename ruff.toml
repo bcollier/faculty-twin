@@ -11,8 +11,9 @@ line-length = 120
 # Areas not yet brought in line with these rules. Each clean-code pull request removes its
 # area from this list, so the list shrinks to the permanent entries below.
 extend-exclude = [
-    "app/",
-    "evals/",
+    "app/[!e]*",  # app/ except the eval_* modules
+    "app/edge_voice.py",
+    "app/embed.py",
     "localvoice/",
     "tests/",
 ]
