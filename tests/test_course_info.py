@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from app import course_info, limits, logistics, retrieval, storage
+from app import course_info, limits, llm, logistics, retrieval, storage
 from app.main import Retriever, app, get_completer, get_embedder, get_retriever
 from app.admin import activity_row  # after app.main (admin imports from it)
 
@@ -431,3 +431,79 @@ def test_answer_a_few_words_over_the_cap_is_trimmed_not_thrown_away():
     assert result.source == "llm", result.errors
     text = result.reply["answers"][0]["text"]
     assert len(text.split()) <= course_info.MAX_WORDS and text.endswith(".")
+
+
+# ---------------------------------------------------------------- fallback text and reason (Oct 8, live O'Reilly bug)
+# The real chunk shape from indexer/canvas_import.py: the item title on the first line, then header lines
+# (Module, Class, Due, Points, Closes, Posted), then the page text, one paragraph or heading per line.
+OREILLY_CHUNK = {
+    "id": "45884-canvas-page-how-to-read-oreilly-books-free-from-cmu-library-c01", "course": "45884",
+    "title": "How to Read O'Reilly Books Free from CMU Library", "kind": "page", "due_at": None,
+    "canvas_url": "https://canvas.cmu.edu/courses/54496/pages/how-to-read-oreilly-books-free-from-cmu-library",
+    "text": ("How to Read O'Reilly Books Free from CMU Library\n"
+             "Module: Course Overview\n"
+             "Several of the recommended readings in this course are chapters from O'Reilly books. As a CMU student "
+             "you have free, unlimited access to the full O'Reilly online library. You only need to sign in once per "
+             "device.\n"
+             "Step 1: Open the reading link and click \"Sign In\"\n"
+             "Click any O'Reilly link from the module reading list.\n"
+             "https://learning.oreilly.com/library/view/prompt-engineering-for/9781098153427/ch01.html\n"
+             "Step 2: Enter your CMU email and click \"Continue\""),
+}
+
+
+def test_fallback_starts_at_the_first_real_sentence_not_the_chunk_header():
+    text = course_info.fallback_text(OREILLY_CHUNK)
+    assert text.startswith("Several of the recommended readings in this course are chapters from O'Reilly books.")
+    assert "Module:" not in text and "Course Overview" not in text
+    assert "learning.oreilly.com" not in text
+    assert "Step 1: Open the reading link and click \"Sign In\". Click any" in text  # a heading is its own sentence
+
+
+def test_fallback_for_an_assignment_keeps_the_due_date_as_a_sentence():
+    rec = {"title": "Homework 2", "due_at": "2026-10-10T03:59:00Z",
+           "text": "Homework 2\nModule: Module 3\nClass: Live Class\nDue: Friday, October 9, 2026 at 11:59 PM Eastern\n"
+                   "Points: 10\nCluster the reviews and write one page about the clusters."}
+    text = course_info.fallback_text(rec)
+    assert text == ("It is due Friday, October 9, 2026 at 11:59 PM ET. "
+                    "Cluster the reviews and write one page about the clusters.")
+
+
+@pytest.mark.parametrize("error, reason", [
+    (llm.LLMError('anthropic returned 400: {"type":"error","error":{"type":"invalid_request_error","message":'
+                  '"Your credit balance is too low to access the Anthropic API."}}'), "provider_credits"),
+    (llm.LLMError("openai returned 429: insufficient_quota"), "provider_credits"),
+    (llm.LLMError("anthropic returned 401: invalid x-api-key"), "provider_auth"),
+    (llm.LLMError("anthropic returned 429: rate_limit_error"), "provider_rate_limit"),
+    (llm.LLMError("anthropic returned 529: overloaded"), "provider_error"),
+    (llm.LLMError("anthropic request failed: ReadTimeout"), "provider_unreachable"),
+    (llm.LLMError("The daily model-call cap is reached (DAILY_LLM_CALL_CAP)"), "daily_cap"),
+    (course_info.ValidationError("reply was not JSON"), "not_json"),
+    (course_info.ValidationError("answer is 300 words"), "too_long"),
+    (course_info.ValidationError("answer is not grounded: 9 of 12 content words are not in the slides"), "not_grounded"),
+    (course_info.ValidationError("it contains a web address"), "unsafe_text"),
+    (RuntimeError("boom"), "error"),
+])
+def test_fallback_reason_codes(error, reason):
+    assert course_info.fallback_reason(error) == reason
+
+
+def test_out_of_credits_falls_back_with_a_reason_in_the_admin_log(with_info, student):
+    err = llm.LLMError('anthropic returned 400: {"error":{"message":"Your credit balance is too low to access the '
+                       'Anthropic API."}}')
+    _use(FakeModel(info_error=err))
+    body = _ask(student, "What does the syllabus say about AI tools?")
+    assert body["kind"] == "course_info" and body["message"] == SYLLABUS_TEXT
+    assert limits._mem_log[-1]["fallback_reason"] == "provider_credits"
+    assert activity_row(limits._mem_log[-1])["fallback_reason"] == "provider_credits"
+
+
+def test_a_model_answer_logs_no_fallback_reason(with_info, student):
+    _use(FakeModel())
+    _ask(student, "What does the syllabus say about AI tools?")
+    assert limits._mem_log[-1].get("fallback_reason") is None
+
+
+def test_admin_activity_shows_the_fallback_reason():
+    admin_js = (ROOT / "public" / "admin.js").read_text()
+    assert "x.fallback_reason" in admin_js and "provider_credits" in admin_js

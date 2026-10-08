@@ -31,7 +31,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
-from . import config, faq, narration, prompts, thresholds
+from . import config, faq, llm, narration, prompts, thresholds
 
 KIND = "course_info"
 DEFAULT_THRESHOLD = thresholds.DEFAULT_INFO  # 0.55
@@ -74,6 +74,7 @@ class Result:
     reply: dict[str, Any]
     source: str  # "llm" or "fallback"
     errors: list[str] = field(default_factory=list)
+    reason: Optional[str] = None  # why it fell back (FALLBACK_REASONS), for the Activity log
 
 
 def threshold() -> float:
@@ -209,10 +210,37 @@ def validate(raw: str, ground: narration.Grounding) -> str:
     return text
 
 
+# Lines indexer/canvas_import.py puts above an item's text (and the plain-text stand-ins for files and links).
+_HEADER_LINE = re.compile(r"^(?:Module|Class|Due|Points|Closes|Posted|Link|File posted on Canvas)\s*:", re.I)
+
+
+def _body_lines(rec: dict[str, Any]) -> list[str]:
+    """The chunk's own text: without the item title line and the Module/Class/Due/... header lines above it."""
+    lines = [line.strip() for line in str(rec.get("text") or "").splitlines()]
+    title = narration.clean_speech(str(rec.get("title") or ""))
+    i = 1 if lines and title and narration.clean_speech(lines[0]) == title else 0
+    while i < len(lines) and (not lines[i] or _HEADER_LINE.match(lines[i])):
+        i += 1
+    return [line for line in lines[i:] if line]
+
+
 def fallback_text(rec: dict[str, Any]) -> str:
-    """The top chunk's first sentences that are safe to show, up to FALLBACK_WORDS words."""
-    text = narration.clean_speech(str(rec.get("text") or ""))
-    sentences = re.split(r"(?<=[.!?])\s+", text)
+    """The top chunk's first sentences that are safe to show, up to FALLBACK_WORDS words.
+
+    Changed Oct 8 (live O'Reilly bug): it starts at the first real sentence, not the title and
+    "Module: Course Overview" header, says the due date as a sentence, and ends each heading or
+    paragraph line with a period so "Step 1: ..." does not run into the next sentence.
+    """
+    parts = []
+    due = due_text(rec.get("due_at"))
+    if due:
+        parts.append(f"It is due {due}.")
+    for line in _body_lines(rec):
+        line = narration.clean_speech(line)
+        if line and line[-1] not in ".!?:;":
+            line += "."
+        parts.append(line)
+    sentences = re.split(r"(?<=[.!?])\s+", " ".join(parts))
     out: list[str] = []
     words = 0
     for sentence in sentences:
@@ -228,6 +256,53 @@ def fallback_text(rec: dict[str, Any]) -> str:
         out.append(sentence)
         words += n
     return " ".join(out) or NOT_ANSWERED
+
+
+FALLBACK_REASONS = {
+    "provider_credits": "The model provider account is out of credits or quota",
+    "provider_auth": "The model provider rejected the API key",
+    "provider_rate_limit": "The model provider rate-limited the call",
+    "provider_unreachable": "The model provider could not be reached (network or timeout)",
+    "provider_refused": "The model declined the request",
+    "provider_error": "The model provider returned an error",
+    "daily_cap": "Today's model-call cap (DAILY_LLM_CALL_CAP) is used up",
+    "not_json": "The model's reply was not the JSON asked for",
+    "no_answer": "The model's reply had no answer",
+    "too_long": "The answer was over the word cap with no sentence to cut at",
+    "not_grounded": "The answer used words that are not in the Canvas pages",
+    "unsafe_text": "The answer failed a safety check (web address, access code, name, PG)",
+    "error": "Unexpected error",
+}
+
+
+def fallback_reason(exc: Exception) -> str:
+    """A short code for why a course-info answer fell back (Added Oct 8, for Settings > Activity)."""
+    text = str(exc).lower()
+    if isinstance(exc, (ValidationError, narration.ValidationError)):
+        if "not json" in text:
+            return "not_json"
+        if "no answer" in text or "empty answer" in text:
+            return "no_answer"
+        if re.search(r"answer is \d+ words", text):
+            return "too_long"
+        if "not grounded" in text:
+            return "not_grounded"
+        return "unsafe_text"
+    if isinstance(exc, llm.LLMError):
+        if "model-call cap" in text:
+            return "daily_cap"
+        if "credit balance" in text or "quota" in text or "billing" in text:
+            return "provider_credits"
+        status = re.search(r"returned (\d{3})", text)
+        if status:
+            code = int(status.group(1))
+            return {401: "provider_auth", 403: "provider_auth", 429: "provider_rate_limit"}.get(code, "provider_error")
+        if "request failed" in text:
+            return "provider_unreachable"
+        if "declined" in text:
+            return "provider_refused"
+        return "provider_error"
+    return "error"
 
 
 # ---------------------------------------------------------------- the reply
@@ -257,13 +332,14 @@ def answer(
     hits = one_course(hits, course)
     top = hits[0].record
     errors: list[str] = []
-    source = "llm"
+    source, reason = "llm", None
     try:
         raw = complete(system_prompt(), build_user_prompt(question, hits), MAX_TOKENS, provider=provider, model=model)
         text = validate(raw, grounding(question, hits))
     except Exception as exc:  # model trouble or a reply that fails the checks: never put it on screen
         errors.append(str(exc)[:200])
-        config.log.warning("course-info answer fell back: %s", str(exc)[:200])
+        reason = fallback_reason(exc)
+        config.log.warning("course-info answer fell back (%s): %s", reason, str(exc)[:200])
         text, source = fallback_text(top), "fallback"
     code = str(top.get("course") or "")
     if code not in faq.COURSE_LABELS:
@@ -281,4 +357,4 @@ def answer(
         "sources": [],
         "follow_ups": follow_ups[:3],
     }
-    return Result(reply, source, errors)
+    return Result(reply, source, errors, reason)

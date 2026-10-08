@@ -342,6 +342,27 @@ def test_log_falls_back_before_the_migration(monkeypatch):
     assert not set(limits.ANALYTICS_COLUMNS) & set(attempts[-1])
 
 
+def test_fallback_reason_is_dropped_alone_before_its_migration(monkeypatch):
+    _supabase_on(monkeypatch)
+    monkeypatch.setattr(limits, "increment", lambda *a, **k: (True, 1))
+    attempts: list[dict] = []
+
+    def fake_insert(table, row, upsert_on=None):
+        attempts.append(row)
+        if "fallback_reason" in row:
+            raise supa.SupabaseError("insert question_log failed (400): {\"code\":\"PGRST204\"}")
+        return [row]
+
+    monkeypatch.setattr(supa, "insert", fake_insert)
+    limits.log_question("q", 0.7, True, "anthropic", "m", 10, None, kind="course_info", source="typed",
+                        fallback_reason="provider_credits")
+    assert len(attempts) == 2 and attempts[0]["fallback_reason"] == "provider_credits"
+    assert "fallback_reason" not in attempts[1] and attempts[1]["source"] == "typed"  # analytics kept
+    attempts.clear()
+    limits.log_question("q", 0.7, True, "anthropic", "m", 10, None, kind="course_info", fallback_reason=None)
+    assert len(attempts) == 1 and "fallback_reason" not in attempts[0]  # rows that did not fall back never need it
+
+
 def test_log_rows_falls_back_before_the_migration(monkeypatch):
     _supabase_on(monkeypatch)
     seen: list[str] = []
@@ -624,5 +645,5 @@ def test_content_gaps_with_equal_counts_show_the_most_recent_first():
 
 def test_schema_has_the_migration_block():
     sql = (ROOT / "supabase" / "schema.sql").read_text()
-    for col in limits.ANALYTICS_COLUMNS:
+    for col in limits.ANALYTICS_COLUMNS + limits.REASON_COLUMNS:
         assert re.search(rf"alter table question_log add column if not exists {col}\s", sql), col
