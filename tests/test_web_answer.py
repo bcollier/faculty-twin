@@ -14,7 +14,7 @@ import httpx
 import numpy as np
 import pytest
 
-from app import analytics, edge_voice, limits, llm, logistics, pricing, prompts, settings_store, speech, usage, web_answer
+from app import analytics, edge_voice, limits, llm, logistics, narration, pricing, prompts, settings_store, speech, usage, web_answer
 from app.main import LOG_KINDS, Retriever, app, get_completer, get_embedder, get_retriever, get_searcher
 from app.admin import activity_row  # after app.main (admin imports from it)
 
@@ -309,6 +309,18 @@ def test_validator_rejections(text, why):
     with pytest.raises(web_answer.ValidationError) as err:
         web_answer.validate(text, "how do i set up n8n")
     assert why in str(err.value)
+
+
+def test_an_answer_over_the_character_cap_keeps_its_whole_sentences():
+    # Oct 8 code review: web_answer.trim_to_cap duplicated narration.trim_to_sentences (both written the
+    # same night) and only trimmed by words, so a reply under 150 words but over 1,200 characters fell back.
+    sentence = ("Containerization frameworks orchestrate interdependent microservices across heterogeneous "
+                "infrastructure automatically.")  # 10 long words, 114 characters
+    text = " ".join([sentence] * 12)  # 120 words, about 1,400 characters
+    assert narration.word_count(text) <= web_answer.MAX_WORDS and len(text) > web_answer.MAX_CHARS
+    out = web_answer.trim_to_cap(text)
+    assert len(out) <= web_answer.MAX_CHARS and text.startswith(out) and out.endswith(".")
+    assert web_answer.trim_to_cap(GOOD) == GOOD
 
 
 def test_validator_rejects_a_long_echo_of_the_question():
