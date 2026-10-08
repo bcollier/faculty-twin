@@ -111,8 +111,9 @@ create table if not exists sessions (
 -- Storage (bucket twin-content, under inbox/<course>/s<NN>/<kind>/<file>).
 -- Status: pending_upload (upload link minted, file not confirmed yet)
 --   -> uploaded (file is in the bucket) -> processing -> ready | error.
--- The local worker on Ben's Mac polls for status = 'uploaded' only, so it never
--- sees a half-uploaded file.
+-- The local processing worker (indexer/worker.py, on the machine that holds the
+-- private archive) polls for status = 'uploaded' only, so it never sees a
+-- half-uploaded file.
 create table if not exists sources (
   id          bigint generated always as identity primary key,
   course      text not null references courses (code) on delete cascade,

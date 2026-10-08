@@ -1,5 +1,5 @@
 # Never upload these with `vercel deploy` (the CLI deploys from a working folder,
-# which on the Mac mini can hold private data that git ignores).
+# which on the local build machine can hold private data that git ignores).
 .env
 .env.*
 !.env.example

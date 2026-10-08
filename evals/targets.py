@@ -13,8 +13,8 @@ payload `app/narration.py` sends the model). Only the in-process target can
 fill it, because it reads the index; over HTTP it is None and judges score
 groundedness as null.
 
-In-process is the main mode: run it on the Mac mini, where the index and keys
-live. It calls `app.main.answer`, the same function `/api/ask` calls, with the
+In-process is the main mode: run it on the local build machine, which holds the
+built index, with keys from the git-ignored `.env`. It calls `app.main.answer`, the same function `/api/ask` calls, with the
 real retriever, so it reports `retrieval_not_ready` until Ben's hand-written
 retrieval lands.
 """

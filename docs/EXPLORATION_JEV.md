@@ -51,7 +51,7 @@ uv run --no-project --python 3.12 --with-requirements evals/requirements.txt \
 uv run --no-project --python 3.12 --with-requirements evals/requirements.txt \
   python -m evals.run --target baseline --judge jev --judge openai:gpt-6.1-sol --judge openai:gpt-6-luna
 
-# The twin itself, once retrieval is written (on the Mac mini)
+# The twin itself, once retrieval is written (on the local build machine, which holds the built index)
 uv run --no-project --python 3.12 --with-requirements evals/requirements.txt \
   python -m evals.run --top 25 --judge jev --judge openai:gpt-6.1-sol --judge anthropic:claude-opus-5-5
 ```
@@ -63,7 +63,7 @@ uv run --no-project --python 3.12 --with-requirements evals/requirements.txt \
 | Step | State |
 | --- | --- |
 | Jev judge built, tested with a fake Jev (8 tests) | Done |
-| Calibration with real Jev | Waiting for `TYPESAFE_API_KEY` on the laptop or the Mac mini |
+| Calibration with real Jev | Waiting for `TYPESAFE_API_KEY` in the local `.env` |
 | Baseline with Jev as a third judge | Waiting for the key |
 | Twin run with Jev | Waiting for the key and for retrieval |
 

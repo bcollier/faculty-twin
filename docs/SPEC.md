@@ -36,7 +36,7 @@ Build in this order and stop wherever the clock says to. Each tier is a finished
 | 1. Must work | Two full courses (70-445 sessions 01 to 11, 45-884 sessions 01 to 11). Passcode gate. Private content served through signed links. Multi-course retrieval with a course filter. Every segment cites course, session, date, and slide number on a source card. Narration shown as captions. Deployed at a public URL. | A student on a phone enters the passcode, asks a question from either course, steps through the answer, and can tell from each card exactly which session and slide to open |
 | 2. Voice | Narration spoken in the cloned voice, slides advance automatically, pause and back controls | The same question plays start to finish with no clicks after "ask" |
 | 3. Polish | Suggested-question chips, pre-generated answers for 8 to 10 common questions, a corner clip of Ben while the answer loads, the question log, class video clips ("Watch me explain this in class"), and the Settings page: model switch first, then voice, limits, activity, and course and source uploads processed by the local worker | First audio starts in under 2 seconds for a suggested question; a clip plays in place of its slide; switching the model in Settings changes the next answer |
-| 4. Later, not for Wednesday | Live avatar video, memory between visits, voice input, embedding in collier.phd, clips from the Tesla vs Waymo case sessions if I release that case, a worker that runs in the cloud instead of on my Mac | After submission |
+| 4. Later, not for Wednesday | Live avatar video, memory between visits, voice input, embedding in collier.phd, clips from the Tesla vs Waymo case sessions if I release that case, a worker that runs in the cloud instead of on the local build machine | After submission |
 
 **The cut line for the check-in question.** If time runs short, tier 3 goes first, then the voice. Tier 1 alone still meets the assignment: frontend-backend communication, a keyed third-party API, and a retrieval component built on embeddings.
 
@@ -174,11 +174,11 @@ flowchart LR
     A["Backend (FastAPI on Vercel)<br/>1. Check cookie and limits<br/>2. Find matching slides<br/>3. Order them, attach code and clips<br/>4. Write narration as JSON<br/>5. Sign audio, image and clip links<br/>holds all keys"]
     E["Voyage AI<br/>embeddings"]
     L["LLM provider<br/>Claude, OpenAI or OpenRouter"]
-    V["ElevenLabs<br/>voice"]
+    V["ElevenLabs or Microsoft edge-tts<br/>voice"]
     S["Supabase Storage<br/>private bucket twin-content<br/>index, slide images, clips, inbox"]
     P["Supabase Postgres<br/>settings, counters, question log,<br/>courses, sessions, sources"]
-    W["Local worker on Ben's Mac<br/>render, de-identify, align,<br/>cut clips, embed, upload"]
-    R["Lecture Archive on Ben's Mac<br/>video, VTT, slides, rosters<br/>never leaves the laptop"]
+    W["Local build machine: pipeline and worker<br/>render, de-identify, align,<br/>cut clips, embed, upload"]
+    R["Private Lecture Archive<br/>video, VTT, slides, rosters<br/>never leaves the local build machine"]
 
     B -- "question, cookie" --> A
     A -- "playlist with signed links" --> B
@@ -197,11 +197,11 @@ flowchart LR
     W -- "build outputs" --> S
 ```
 
-The browser only ever talks to the backend, except to fetch a file through a link the backend signed (or, on the Settings page, to upload one). The pipeline runs on my Mac, ahead of time or whenever a new upload arrives, and it also calls the embeddings API, so the deployed service starts with everything it needs already in the bucket.
+The browser only ever talks to the backend, except to fetch a file through a link the backend signed (or, on the Settings page, to upload one). The pipeline runs on the local build machine (the computer that holds the private archive), ahead of time or whenever a new upload arrives, and it also calls the embeddings API, so the deployed service starts with everything it needs already in the bucket.
 
 | Part | What it does | Built with |
 | --- | --- | --- |
-| Indexer (`indexer/`) | Runs on Ben's laptop, once per content change. Turns a deck and a notebook into slide images plus `index.json`. | Python, python-pptx, nbformat, LibreOffice and pdftoppm for slide images, an embeddings API |
+| Indexer (`indexer/`) | Runs on the local build machine, once per content change. Turns a deck and a notebook into slide images plus `index.json`. | Python, python-pptx, nbformat, LibreOffice and pdftoppm for slide images, an embeddings API |
 | Backend (`app/`) | Answers questions: retrieval, narration script, speech. Holds every key. Enforces limits. | Python, FastAPI as one Vercel Function, numpy, an LLM API, ElevenLabs for the voice |
 | Frontend (`public/`) | The idle and presenting screens, the playlist player. | Plain HTML, CSS, JavaScript. No framework, no bundler, same as the portfolio site |
 | Static content (`public/slides/`, `public/audio/`) | Slide PNGs and pre-generated audio for suggested questions. | Files committed to the repo, served from the CDN |
@@ -212,8 +212,8 @@ The browser only ever talks to the backend, except to fetch a file through a lin
 
 | Part | What it does | Built with |
 | --- | --- | --- |
-| Pipeline (`indexer/`) | Runs on my Mac. Renders slides, de-identifies transcripts, aligns transcript to slides, cuts clips, builds and embeds the index, uploads to the bucket. Each stage is its own script and can be re-run alone. | Python via `uv`, pdftoppm, LibreOffice, python-pptx, nbformat, ffmpeg, numpy, Voyage AI |
-| Local worker (`indexer/worker.py`) | Picks up files uploaded through Settings and runs the same stages for that session. Runs on my Mac because the rosters and ffmpeg are there. | Python, Supabase REST |
+| Pipeline (`indexer/`) | Runs on the local build machine. Renders slides, de-identifies transcripts, aligns transcript to slides, cuts clips, builds and embeds the index, uploads to the bucket. Each stage is its own script and can be re-run alone. | Python via `uv`, pdftoppm, LibreOffice, python-pptx, nbformat, ffmpeg, numpy, Voyage AI |
+| Local worker (`indexer/worker.py`) | Picks up files uploaded through Settings and runs the same stages for that session. Runs on the local build machine because the rosters and ffmpeg are there. | Python, Supabase REST |
 | Backend (`app/`) | Passcode check, retrieval, narration, speech, signed links, Settings API. Holds every key. Enforces limits. | Python, FastAPI as one Vercel Function, numpy, httpx, Claude or OpenAI or OpenRouter, Voyage AI, ElevenLabs |
 | Frontend (`public/`) | Passcode, idle and presenting screens, playlist player, Settings page. | Plain HTML, CSS, JavaScript. No framework, no bundler |
 | Private content (bucket `twin-content`) | Slide images, clips, the index, pre-generated audio, and the upload inbox. | Supabase Storage, private, served only through signed URLs |
@@ -228,7 +228,7 @@ The browser only ever talks to the backend, except to fetch a file through a lin
 - Speech is generated per segment, not per answer. The first clip can start while later ones are still being made, and one failed clip does not sink the whole answer.
 - Added Oct 5. **Private bucket, not the repo.** The repo is public and graded. Class transcripts and video are class records, so they stay behind the passcode even after de-identification.
 - Added Oct 5. **Signed links, not proxying.** Images and clips go straight from Supabase to the browser through links that expire in an hour. The function never streams large files, which matters because Vercel caps request and response bodies and bills function time. The same reason makes Settings uploads go straight from the browser to the bucket with a signed upload URL: Vercel caps request bodies at 4.5 MB, and a class video is far larger.
-- Added Oct 5. **The pipeline runs on my Mac.** Video work (ffmpeg, frame matching) is too heavy and too slow for a function, and de-identification needs the rosters, which never leave the laptop. The worker is a small loop around the same stage scripts I run by hand.
+- Added Oct 5. **The pipeline runs on the local build machine.** Video work (ffmpeg, frame matching) is too heavy and too slow for a function, and de-identification needs the rosters, which never leave that machine. The worker is a small loop around the same stage scripts I run by hand.
 - Added Oct 5. **A small provider interface, not SDKs.** `app/llm.py` has one function per provider, `complete_json(system, user, max_tokens) -> str`, each a plain `httpx` call. Switching providers changes one row in `settings`, not the code. The grounding prompt and the JSON validation are the same for every provider. Embeddings stay on Voyage whatever the narration provider is, because the index was built with Voyage and the question must be embedded the same way.
 - Added Oct 5. **Index reload.** The backend caches the index in memory for the life of a warm function. At most every 60 seconds it reads `settings.index_version`; if the pipeline uploaded a new index, it reloads.
 
@@ -387,7 +387,7 @@ Code records use the same shape with `"kind": "code"`, a `source` field holding 
 | `audio/<voice_id>/<hash>.mp3` | Pre-generated narration for suggested questions, named by voice id and a hash of the narration text. *Changed Oct 5 (voice tiers): new files go under `audio/<voice tag>/`, the same 10-character tag the audio links carry, because free voice ids contain a colon. Older `audio/<ElevenLabs id>/` folders are still read for that voice.* | yes |
 | `review/<course>-s<NN>.txt` | De-identification review notes | no, never |
 
-The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded through Settings. Transcripts and alignment stay on the laptop: the backend only needs what is already folded into the index.
+The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded through Settings. Transcripts and alignment stay on the local build machine: the backend only needs what is already folded into the index.
 
 **What the backend returns for a question.** A playlist:
 
@@ -482,7 +482,7 @@ The bucket also has `inbox/<course>/s<NN>/<kind>/<filename>` for files uploaded 
 
 ## Preprocessing pipeline
 
-Added Oct 5. This is the part that did not exist when the app was one deck. Every stage runs on my Mac with `uv run python -m indexer.<stage>`, takes `--course` and `--session` (or `--all`), reads from the private archive, writes to `~/Lecture Archive/_build/`, and skips work whose inputs have not changed. A stage that needs a key (only `build_index.py` for Voyage, and `upload.py` for Supabase) caches what it has done, so it can be started before the keys exist and finished the moment they arrive.
+Added Oct 5. This is the part that did not exist when the app was one deck. Every stage runs on the local build machine (the computer that holds the private archive) with `uv run python -m indexer.<stage>`, takes `--course` and `--session` (or `--all`), reads from the private archive, writes to `~/Lecture Archive/_build/`, and skips work whose inputs have not changed. A stage that needs a key (only `build_index.py` for Voyage, and `upload.py` for Supabase) caches what it has done, so it can be started before the keys exist and finished the moment they arrive.
 
 | Stage | Script | Reads | Writes | Needs a key |
 | --- | --- | --- | --- | --- |
@@ -562,8 +562,8 @@ Added Oct 5. This is the part that did not exist when the app was one deck. Ever
 
 **When a new class happens.** Two ways in.
 
-- **On my Mac:** create the session folder in the archive (`<NN> <date> <title>`), drop in `slides.pdf`, `transcript_raw.vtt`, `video.mp4`, and any notebooks, add the session in Settings (or in the `sessions` table), then run `uv run python -m indexer.run --course 70445 --session 12`, which runs stages 1 to 6 for that session and rebuilds the index. If the Zoom VTT is not in Drive, I download it from the Zoom cloud recording in Chrome.
-- **From Settings:** add the session and upload the files. Each lands in `inbox/` with a `sources` row marked `uploaded`. `indexer/worker.py`, running on my Mac, polls `sources` every 30 seconds, marks a row `processing`, copies the file into the archive folder for that session, runs the stages it affects (a new VTT re-runs de-identify, align, clips, index, upload; a new deck re-runs everything), and marks the row `ready` or `error` with a message. If the worker is not running, rows stay `uploaded` and Settings says "Waiting for the worker on Ben's Mac." "Re-run" sets a row back to `uploaded`.
+- **On the local build machine:** create the session folder in the archive (`<NN> <date> <title>`), drop in `slides.pdf`, `transcript_raw.vtt`, `video.mp4`, and any notebooks, add the session in Settings (or in the `sessions` table), then run `uv run python -m indexer.run --course 70445 --session 12`, which runs stages 1 to 6 for that session and rebuilds the index. If the Zoom VTT is not in Drive, I download it from the Zoom cloud recording in Chrome.
+- **From Settings:** add the session and upload the files. Each lands in `inbox/` with a `sources` row marked `uploaded`. `indexer/worker.py`, running on the local build machine, polls `sources` every 30 seconds, marks a row `processing`, copies the file into the archive folder for that session, runs the stages it affects (a new VTT re-runs de-identify, align, clips, index, upload; a new deck re-runs everything), and marks the row `ready` or `error` with a message. If the worker is not running, rows stay `uploaded` and Settings says "Waiting for the worker." "Re-run" sets a row back to `uploaded`.
 
 A revised deck for an existing session works the same way: replace `slides.pdf` and re-run that session.
 
@@ -703,7 +703,7 @@ Added Oct 5.
 - Added Oct 5. Student turns are marked and never used as narration material or clip audio. Unsure turns are treated as student turns.
 - Added Oct 5. Clips follow the clip rules above: instructor only, no names in the audio, text, or on screen, no student presentations, and nothing from the Tesla vs Waymo case sessions.
 - Added Oct 5. Everything stays PG: cursing in transcripts and slide text is swapped for a mild word at import, a clip may not contain a smoothed cue, and the narration prompt says never to curse.
-- Added Oct 5. Only de-identified text leaves my Mac: the narration provider (including models reached through OpenRouter) and Voyage see slide text, notes, and de-identified instructor speech, never a roster or a raw transcript.
+- Added Oct 5. Only de-identified text leaves the local build machine: the narration provider (including models reached through OpenRouter) and Voyage see slide text, notes, and de-identified instructor speech, never a roster or a raw transcript.
 - Added Oct 5. Never committed: `.env`, rosters, raw or de-identified transcripts, video, clips, slide images, the index, embeddings, review files.
 
 ## Build guide
@@ -771,7 +771,7 @@ New Oct 5 (replaces the slide half of the original Block 1).
 New Oct 5 (replaces the index half of the original Block 1).
 
 1. `indexer/align.py`: frame matching where the recording is a screen share, text similarity with the in-order constraint as fallback (stage 3).
-2. Write `indexer/code_map.json` by hand for the sessions with notebooks. *(Added Oct 5, late: `indexer/suggest_code_map.py` writes a draft, TF-IDF cosine between cells and slides of the same course with a same-session preference, at most two cells per slide, and a review table for me to strike rows from. The table holds slide titles and code, so it is written to `_build/code_map_review.md` on my Mac, not the public repo. Keys starting with `_` (source note, method, scores) are ignored by the index stage.)*
+2. Write `indexer/code_map.json` by hand for the sessions with notebooks. *(Added Oct 5, late: `indexer/suggest_code_map.py` writes a draft, TF-IDF cosine between cells and slides of the same course with a same-session preference, at most two cells per slide, and a review table for me to strike rows from. The table holds slide titles and code, so it is written to `_build/code_map_review.md` on the local build machine, not the public repo. Keys starting with `_` (source note, method, scores) are ignored by the index stage.)*
 3. `indexer/build_index.py`: records, code cells, Voyage embeddings with the cache, `index.json` and `embeddings.npy`, leak check (stage 5). If the Voyage key is not in yet, it writes everything else and embeds when the key arrives.
 
 **Check:** open `index.json` and read three records from different sessions. For each, open the class video at the start of its first window and see that slide on screen. Record count equals slides plus code cells, and `embeddings.npy` has the same number of rows.
@@ -799,7 +799,7 @@ Replaces the original Block 3, with the passcode screen, course filter, and sour
 3. Build the player as a small state machine: current segment number, playing or paused, next and previous. In this block, "playing" advances on a timer based on word count.
 4. Add the progress dots, the sources list, and the follow-up chips.
 
-**Check:** enter the passcode and ask a question on the deployed site, then click through the whole answer on laptop and phone. Each card's course, session, date, and slide number match the slide PDF on Canvas.
+**Check:** enter the passcode and ask a question on the deployed site, then click through the whole answer on a computer and a phone. Each card's course, session, date, and slide number match the slide PDF on Canvas.
 
 ### Block 5. Voice (was Block 4)
 
@@ -815,7 +815,7 @@ Changed Oct 5: `/api/audio` also needs the student cookie, and it uses the voice
 ### Block 6. Limits and pre-generated answers (was Block 5)
 
 1. Create the Supabase table for counters. Add the rate limit and the daily character cap, both reading and writing that table.
-2. Write eight to ten suggested questions. Run each once, review the narration by ear, fix anything wrong, and commit the playlists and the mp3 files in `public/audio/`. A small script on your laptop does the generating.
+2. Write eight to ten suggested questions. Run each once, review the narration by ear, fix anything wrong, and commit the playlists and the mp3 files in `public/audio/`. A small script on your computer does the generating.
 3. If time allows: record the 5-second corner clip, and add the question log to the same Supabase project.
 
 Changed Oct 5: `app/limits.py` holds the counters, the login rate limit, and the question log, which is no longer optional. The suggested questions cover both courses (four or five each). Their playlists and mp3 files go to `topics/` and `audio/<voice_id>/` in the bucket, not the repo.
@@ -891,7 +891,7 @@ Kept for the record. They describe the one-deck build.
 3. Build the player as a small state machine: current segment number, playing or paused, next and previous. In this block, "playing" advances on a timer based on word count.
 4. Add the progress dots and the follow-up chips.
 
-**Check:** ask a question on the deployed site and click through the whole answer on laptop and phone.
+**Check:** ask a question on the deployed site and click through the whole answer on a computer and a phone.
 
 ## Code Ben writes by hand
 
@@ -964,7 +964,7 @@ The spec above assumes a default for each of these. Changing one changes the bui
 | --- | --- | --- |
 | How students and graders get the passcode | A Canvas announcement in each course, and the submission form for graders | One passcode for both courses is simplest; separate ones would need the cookie to carry a course |
 | ElevenLabs plan | The lowest plan that allows an instant voice clone and enough characters for testing and grading | A bigger plan raises the daily cap I can afford; no plan means captions only |
-| Supabase project | A new project for Faculty Twin, so its keys and storage are separate from everything else | Plan limits decide whether clips and video uploads fit: the free plan's storage and per-file upload limits may be smaller than a semester of clips or one class video. If so, keep clips small and upload video on the Mac instead of through Settings |
+| Supabase project | A new project for Faculty Twin, so its keys and storage are separate from everything else | Plan limits decide whether clips and video uploads fit: the free plan's storage and per-file upload limits may be smaller than a semester of clips or one class video. If so, keep clips small and upload video from the local build machine instead of through Settings |
 | Vercel account | My personal account, one project | A team account changes who can see environment variables and the function duration limit |
 
 **Not verified.** ElevenLabs plan requirements and pricing for voice cloning, how long a cold start feels on Vercel's free plan with numpy loaded, and current model names for embeddings. Check each during the block that uses it. Vercel's FastAPI guide: https://vercel.com/docs/frameworks/backend/fastapi

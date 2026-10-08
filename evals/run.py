@@ -1,6 +1,6 @@
 """Run an eval: pick the top questions, ask the twin, have several LLMs judge each answer.
 
-    # On the Mac mini (index and keys there), in-process:
+    # On the local build machine (built index in the archive, keys in the git-ignored .env), in-process:
     uv run --no-project --with-requirements requirements.txt python -m evals.run \\
         --questions evals/private/questions.jsonl --top 25 \\
         --judge anthropic:claude-opus-5-5 --judge openai:gpt-6.1-sol

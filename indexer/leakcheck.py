@@ -1,4 +1,4 @@
-"""Roster leak check: the gate before anything leaves Ben's Mac.
+"""Roster leak check: the gate before anything leaves the local build machine.
 
 Rosters are read from `~/Lecture Archive/_private/rosters/*.csv` into memory
 only. This module never prints, logs, returns, or writes a name: callers get

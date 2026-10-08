@@ -5,10 +5,10 @@ Sections it serves: Model, Voice, Courses and source material, Limits and access
 Uploads never pass through this function (Vercel caps request bodies at
 4.5 MB). `POST /api/admin/uploads` records a `sources` row and returns a signed
 Supabase upload URL; the browser PUTs the file straight to the private bucket
-under `inbox/<course>/s<NN>/<kind>/<filename>`. The local worker on Ben's Mac
-(indexer/worker.py, owned by the pipeline) picks up rows with status
-`uploaded`, processes them, and bumps `settings.index_version` when the index
-is rebuilt.
+under `inbox/<course>/s<NN>/<kind>/<filename>`. The local processing worker
+(indexer/worker.py, owned by the pipeline, running on the machine that holds
+the private archive) picks up rows with status `uploaded`, processes them, and
+bumps `settings.index_version` when the index is rebuilt.
 
 Source status: pending (upload URL minted, file not seen yet) -> uploaded ->
 processing -> ready | error. A pending row becomes uploaded when the browser

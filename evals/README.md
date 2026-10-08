@@ -28,7 +28,7 @@ Categories: `API_KEY_NOT_WORKING`, `CODE_HELP`, `CONCEPT_QUESTION`, `ASSIGNMENT_
 
 1. **Pick the top questions** (`--top 25` by default). Categories are taken round-robin, most common category first, so the set looks like what students really ask. Within a category, the most recent question goes first.
 2. **Ask the twin.**
-   - `--target in-process` calls `app.main.answer`, the same function behind `/api/ask`. It runs with the real index and the real retriever, and it also records the slide material each narration came from. Run it on the Mac mini, where the index and keys are.
+   - `--target in-process` calls `app.main.answer`, the same function behind `/api/ask`. It runs with the real index and the real retriever, and it also records the slide material each narration came from. Run it on the local build machine, which holds the built index; it reads keys from the git-ignored `.env`.
    - `--target http --base-url <site>` asks a running site instead. Judges can't see slide material that way, so groundedness is scored as N/A.
    - `--target baseline --baseline-model openai:gpt-6.1-sol` has a generic chatbot with no course material answer instead, as a comparison.
    - `--target none` is a dry run that checks the wiring only.
@@ -73,10 +73,10 @@ Synthetic cases only; no student data. Run twice for `gpt-6.1-sol`, once for `gp
 | --- | --- | --- |
 | `openai:gpt-6.1-sol` | 8 of 8 (both runs) | Strictest. Use it as the primary judge. |
 | `openai:gpt-6-luna` | 8 of 8 | Scores match, but it is lenient on verdicts: it passed markdown narration while scoring its speech 2 of 5. |
-| `openrouter:*` | not run | The OpenRouter key on the laptop returns 401 "User not found". |
-| `anthropic:*` | not run | No Anthropic key on the laptop. It is on the Mac mini. |
+| `openrouter:*` | not run | The OpenRouter key in the local `.env` used for this run returns 401 "User not found". |
+| `anthropic:*` | not run | The local `.env` used for this run had no Anthropic key. (Production reads its keys from Vercel environment variables.) |
 
-Every bad case scored 1 or 2 on the dimension it targets, and the good cases scored 5. A judge from a second provider (Anthropic on the Mac mini, or OpenRouter once its key is replaced) would guard against one model family grading its own style.
+Every bad case scored 1 or 2 on the dimension it targets, and the good cases scored 5. A judge from a second provider (Anthropic, once its key is in the local `.env`, or OpenRouter once its key is replaced) would guard against one model family grading its own style.
 
 ### Baseline results, October 5, 2026
 
@@ -100,7 +100,7 @@ What the twin should beat:
 
 ### Twin results, October 7, 2026 (first real run)
 
-The twin itself, in-process on the Mac mini, answered the same 22 de-identified email questions. It ran with Ben's hand-written retrieval and `NOT_COVERED_THRESHOLD = 0.52`, and was judged by `claude-opus-5-5` and `gpt-6.1-sol`. **This run predates PR #35**, which keeps in-class quiz access codes out of slides, transcripts and clips. Aggregates only:
+The twin itself, in-process on the local build machine, answered the same 22 de-identified email questions. It ran with Ben's hand-written retrieval and `NOT_COVERED_THRESHOLD = 0.52`, and was judged by `claude-opus-5-5` and `gpt-6.1-sol`. **This run predates PR #35**, which keeps in-class quiz access codes out of slides, transcripts and clips. Aggregates only:
 
 | | Generic chatbot baseline | Twin (Opus judge) | Twin (GPT-6.1 Sol judge) |
 | --- | --- | --- | --- |
@@ -140,7 +140,7 @@ uv run --no-project --with-requirements requirements.txt python -m evals.calibra
 uv run --no-project --with-requirements requirements.txt python -m evals.run \
   --questions evals/questions.example.jsonl --target none
 
-# Real run on the Mac mini, once retrieval is written and content is uploaded
+# Real run on the local build machine, once retrieval is written and content is uploaded
 uv run --no-project --with-requirements requirements.txt python -m evals.run \
   --questions evals/private/questions.jsonl --top 25 \
   --judge openai:gpt-6.1-sol --judge anthropic:claude-opus-5-5

@@ -1,7 +1,7 @@
 """Free, local text-to-speech engines for pre-generated audio (docs/ROADMAP.md, "Voice").
 
-Each engine turns narration text into mono float32 samples. They run on Ben's
-Mac mini only: Vercel cannot load torch, so these never serve live answers.
+Each engine turns narration text into mono float32 samples. They run only on the
+local build machine: Vercel cannot load torch, so these never serve live answers.
 
 Checked Oct 5, 2026 against PyPI and each project's README:
 
@@ -55,7 +55,7 @@ def _label(is_clone: bool) -> str:
 
 
 def pick_device() -> str:
-    """Apple GPU on the Mac mini when torch has it, else CPU."""
+    """Apple GPU (MPS) when torch has it, else CPU."""
     try:
         import torch
     except ImportError:

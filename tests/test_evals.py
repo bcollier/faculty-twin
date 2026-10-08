@@ -280,7 +280,7 @@ def test_cli_dry_run_writes_only_to_out(tmp_path, capsys):
 
 
 def test_cli_stops_when_judge_keys_are_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr("evals.run.load_dotenv", lambda *a, **k: None)  # a real .env on the Mac mini has keys
+    monkeypatch.setattr("evals.run.load_dotenv", lambda *a, **k: None)  # a real local .env may have keys
     assert main(["--questions", str(EXAMPLES), "--target", "none", "--judge", "openai:gpt-6-astra",
                  "--out", str(tmp_path / "r")]) == 3
 

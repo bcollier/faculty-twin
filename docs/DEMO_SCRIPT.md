@@ -36,7 +36,7 @@ Type the passcode before you start recording, or blur that part.
 | 5 | 2:10 to 2:35 | Ask something the course doesn't cover. Good choices: "Can I get an extension on lab 2?" (a real kind of email you get) or "Who won the Stanley Cup?" | The twin declines instead of making something up. Mention the evals: real student emails are mostly logistics, and the twin has to decline those, not promise anything for you. |
 | 6 | 2:35 to 3:45 | Editor: `app/retrieval.py`, then `tests/test_retrieval.py`, then a terminal running `pytest tests/test_retrieval.py -q` | **Your hand-written code, in your words.** Cover: what `rank` computes, and why cosine similarity rather than a dot product; how `select_segments` picks slides, including filling a gap between neighboring slides and keeping deck order; how you chose `NOT_COVERED_THRESHOLD` from your ten test questions; and the three tests passing. |
 | 7 | 3:45 to 4:15 | Editor: `public/app.js` at `onClipEnded` | **Your hand-written player logic, in your words:** what happens when a narration clip ends, preloading the next one, the last segment, the paused state. Keep it separate from the class-clip button. |
-| 8 | 4:15 to 4:45 | The architecture diagram from `docs/SPEC.md` (rendered on GitHub), or a slide of it | Browser to FastAPI on Vercel. Embeddings, LLM and voice called only from the backend, so keys never reach the browser. Private content through signed links. Supabase for counters and the question log. The index built on your Mac. |
+| 8 | 4:15 to 4:45 | The architecture diagram from `docs/SPEC.md` (rendered on GitHub), or a slide of it | Browser to FastAPI on Vercel. Embeddings, LLM and voice called only from the backend, so keys never reach the browser. Private content through signed links. Supabase for counters and the question log. The index built on your own computer from the private archive, then uploaded to Supabase. |
 | 9 | 4:45 to 5:00 | Settings page, **Model** section only: switch the provider or model, then ask one quick question | The model switch. Don't scroll to Activity. |
 | 10 | 5:00 to 5:10 | The same site on a phone | Stacked layout: stage on top, input at the bottom. |
 
@@ -47,7 +47,7 @@ These describe the system, not your hand-written code:
 - "Every sentence it speaks has to come from my slides, my speaker notes, or what I said in class over that slide. If the model's narration drifts, the backend throws it out and falls back to my own notes."
 - "The voice route only speaks text the backend signed, so nobody can make it say arbitrary words in my voice."
 - "There are spend caps on questions per visitor, on model calls per day, and on voice characters per day. Past the voice cap it keeps going with captions."
-- "Students' names never reach the index. Transcripts are de-identified on my Mac before anything is uploaded."
+- "Students' names never reach the index. Transcripts are de-identified on my own computer before anything is uploaded."
 
 ## After recording
 

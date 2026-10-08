@@ -107,7 +107,7 @@ def make_archive(root: Path) -> Path:
     (build / "clips" / "70445-s01-001.meta.json").write_text("{}")
     (build / "align" / "70445" / "s01.meta.json").write_text("{}")
 
-    # Private and never-upload files that must stay on the laptop.
+    # Private and never-upload files that must stay on the local build machine.
     (build / "transcripts" / "70445").mkdir(parents=True)
     (build / "transcripts" / "70445" / "s01.json").write_text(json.dumps({"cues": [{"text": "private"}]}))
     (build / "review").mkdir()

@@ -12,8 +12,8 @@ and the gaps between its cues are short (no long pauses or cuts). These are the
 same rules indexer/clips.py uses for class clips, because audio cannot be
 de-identified after the fact.
 
-Runs on the Mac mini, where the de-identified transcripts and the class videos
-live. Reads and writes nothing in the repo; never prints transcript text.
+Runs on the local build machine, where the de-identified transcripts and the
+class videos live. Reads and writes nothing in the repo; never prints transcript text.
 
     uv run --no-project --with numpy python -m localvoice.sample \\
         --transcript "~/Lecture Archive/_build/transcripts/70445/s06.json" \\
