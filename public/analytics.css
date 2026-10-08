@@ -90,3 +90,10 @@
 .evx-v-pass { color: #1f6b33; font-weight: 600; }
 .evx-v-fail { color: #9b1c1c; font-weight: 600; }
 .evx-v-err { color: #7a5b00; }
+.evx-judges th[scope=row] { font-weight: 600; white-space: nowrap; }
+.evx-judges td.num { white-space: nowrap; }
+.evx-reason-row td { padding-top: 0; color: var(--ink-2, inherit); font-size: .92rem; border-top: 0; }
+.evx-judge-row td, .evx-judge-row th { border-bottom: 0; }
+.evx-reason-label { font-weight: 600; }
+.evx-issues { margin: .25rem 0 0 1.1rem; padding: 0; }
+.evx-reason { max-width: min(72ch, 82vw); position: sticky; left: .75rem; }

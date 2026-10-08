@@ -168,14 +168,28 @@ async function loadQuestions() {
 }
 
 function judgeTable(a, dims) {
-  return el('div', { class: 'table-wrap' }, el('table', { class: 'data stack evx-judges' },
-    el('thead', {}, el('tr', {}, el('th', { scope: 'col', text: 'Judge' }), el('th', { scope: 'col', text: 'Verdict' }),
-      ...dims.map(d => el('th', { scope: 'col', text: `${dimName(d)} (1–5)` })), el('th', { scope: 'col', text: 'Reason' }))),
-    el('tbody', {}, ...a.judgements.map(j => el('tr', {},
-      el('td', { 'data-label': 'Judge', text: j.judge }),
+  // Scores on one row per judge; the judge's reason on its own full-width row underneath, so a long
+  // reason never squeezes the score columns (there are up to 11 of them).
+  const span = 2 + dims.length;
+  const rows = [];
+  for (const j of a.judgements) {
+    rows.push(el('tr', { class: 'evx-judge-row' },
+      el('th', { scope: 'row', 'data-label': 'Judge', text: j.judge }),
       el('td', { 'data-label': 'Verdict', class: `evx-v-${j.error ? 'err' : j.verdict}`, text: j.error ? 'error' : `${j.verdict}${j.p_pass != null ? ` (P=${num(j.p_pass)})` : ''}` }),
-      ...dims.map(d => el('td', { 'data-label': dimName(d), class: 'num', text: j.scores?.[d] == null ? '' : String(j.scores[d]) })),
-      el('td', { 'data-label': 'Reason', class: 'small', text: j.error ? String(j.error).slice(0, 160) : (j.rationale || '') }))))));
+      ...dims.map(d => el('td', { 'data-label': dimName(d), class: 'num', text: j.scores?.[d] == null ? '' : String(j.scores[d]) }))));
+    const reason = j.error ? `Error: ${String(j.error).slice(0, 200)}` : (j.rationale || '');
+    const issues = (j.issues || []).filter(Boolean);
+    if (reason || issues.length) {
+      rows.push(el('tr', { class: 'evx-reason-row' }, el('td', { colspan: String(span) }, el('div', { class: 'evx-reason' },
+        el('span', { class: 'evx-reason-label', text: 'Reason: ' }), reason,
+        issues.length ? el('ul', { class: 'evx-issues' }, ...issues.map(i => el('li', { text: i }))) : null))));
+    }
+  }
+  return el('div', { class: 'table-wrap' }, el('table', { class: 'data evx-judges' },
+    el('thead', {}, el('tr', {}, el('th', { scope: 'col', text: 'Judge' }), el('th', { scope: 'col', text: 'Verdict' }),
+      ...dims.map(d => el('th', { scope: 'col', title: `${dimName(d)}, 1 to 5, 5 best`, text: dimName(d) })))),
+    el('tbody', {}, ...rows)),
+    el('p', { class: 'hint small', text: 'Scores are 1 to 5, 5 best. A blank score means the judge left that dimension out (for example, grounded on a declined question).' }));
 }
 
 async function loadDetail(qid) {
