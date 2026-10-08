@@ -162,6 +162,12 @@ class RetrievalNotReady(Exception):
     pass
 
 
+# What answered a question, as written to question_log.kind (docs/SPEC.md, Data formats).
+STORED_TOPIC = "stored_topic"
+NOT_COVERED = "not_covered"
+LOG_KINDS = (logistics.COURSE_CONTENT, STORED_TOPIC, faq.KIND, logistics.LOGISTICS, NOT_COVERED)
+
+
 def answer(
     question: str,
     course: Optional[str],
@@ -172,28 +178,37 @@ def answer(
     provider: Optional[str] = None,
     model: Optional[str] = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Run retrieval + narration. Returns (playlist, info for logging)."""
+    """Run retrieval + narration. Returns (playlist, info for logging).
+
+    `info["kind"]` says which path answered (one of LOG_KINDS). `info["provider"]`
+    and `info["model"]` stay None unless a model was called for this question
+    (the logistics classifier or narration), so the question log is honest.
+    """
     if provider is None or model is None:
         provider, model = settings_store.llm_choice()
     voice = voices.for_answer()
-    info: dict[str, Any] = {"provider": provider, "model": model, "top_score": None, "narration": None, "kind": None}
+    info: dict[str, Any] = {"provider": None, "model": None, "top_score": None, "narration": None, "kind": None}
+
+    def used_model() -> None:
+        info["provider"], info["model"] = provider, model
 
     stored = _stored_topic(content, question, course)
     if stored is not None:
         info["narration"] = "stored"
-        info["kind"] = logistics.COURSE_CONTENT
+        info["kind"] = STORED_TOPIC
         return _replay_topic(content, question, stored, voice), info
 
     # Course FAQ (spec step 3a): Ben's own written answers, before any embedding or model call.
     hit = faq.match(question, course)
     if hit is not None:
-        info["kind"] = "faq"
+        info["kind"] = faq.KIND
         info["faq_id"] = hit.entry.id
         return faq.reply(question, course, hit, _suggested_questions(content, course)), info
 
     records, matrix = playlist.searchable(content, course)
     _check_retrieval_ready(retriever, matrix.shape[1])
     if not records:
+        info["kind"] = NOT_COVERED
         return playlist.not_covered(question), info
     try:
         qvec = embedder(question)
@@ -215,12 +230,15 @@ def answer(
         raise RetrievalNotReady() from exc
     info["top_score"] = float(ranked[0][1]) if ranked else None
     if not chosen:
+        info["kind"] = NOT_COVERED
         return playlist.not_covered(question), info
 
     # Logistics check (spec step 7a): meetings, absences, grades, deadlines and Canvas go to Ben.
     kind = logistics.classify(question, completer, provider=provider, model=model)
     info["kind"] = kind.kind
     info["kind_source"] = kind.source
+    if kind.source != "keyword":  # "llm", or "error" after a call was tried
+        used_model()
     if kind.kind == logistics.LOGISTICS:
         referral = logistics.referral(question, _suggested_questions(content, course))
         referral["links"] = [dict(faq.CALENDLY)]
@@ -228,6 +246,7 @@ def answer(
         return referral, info
 
     codes = {r["id"]: (playlist.related_code(content, r) or {}).get("source") for r in chosen}
+    used_model()
     result = narration.narrate(question, chosen, codes, provider=provider, model=model, complete=completer)
     info["narration"] = result.source
     info["errors"] = result.errors

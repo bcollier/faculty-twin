@@ -212,13 +212,13 @@ def test_ask_classifier_failure_still_answers(student):
     assert calls == ["classify"]
 
 
-def test_not_covered_skips_the_check_and_logs_no_kind(student):
+def test_not_covered_skips_the_check_and_logs_not_covered(student):
     calls: list[str] = []
     _use(_routing_llm("logistics", calls))
     r = student.post("/api/ask", json={"question": "who won the Stanley Cup"})
     assert r.status_code == 200 and r.json()["covered"] is False and "kind" not in r.json()
     assert calls == []
-    assert limits._mem_log[-1]["kind"] is None
+    assert limits._mem_log[-1]["kind"] == "not_covered"
 
 
 def test_question_log_keeps_the_scrub_with_kind():
