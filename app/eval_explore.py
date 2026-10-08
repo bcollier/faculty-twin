@@ -35,6 +35,11 @@ def _ok(judgements: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _errors(judgements: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Judge calls that failed ({judge, error}, no verdict): skipped by every rate here, but counted."""
+    return [j for j in judgements or [] if isinstance(j, dict) and "error" in j]
+
+
 def _avg(values: list[float], digits: int = 3) -> float | None:
     return round(mean(values), digits) if values else None
 
@@ -124,6 +129,7 @@ def questions(
                     "answers": 0,
                     "judgements": 0,
                     "passes": 0,
+                    "errors": 0,
                     "agreements": [],
                     "unanimous": 0,
                     "by_generator": {},
@@ -132,6 +138,7 @@ def questions(
                 },
             )
             q["answers"] += 1
+            q["errors"] += len(_errors(row.get("judgements")))
             q["runs"].add(run.get("id"))
             q["judgements"] += len(ok)
             q["passes"] += sum(1 for j in ok if j["verdict"] == "pass")
@@ -159,6 +166,7 @@ def questions(
                 "runs": len(q["runs"]),
                 "pass_rate": round(q["passes"] / q["judgements"], 3) if q["judgements"] else None,
                 "fails": q["judgements"] - q["passes"],
+                "errors_skipped": q["errors"],
                 "agreement": _avg(q["agreements"]),
                 "unanimous_share": round(q["unanimous"] / len(q["agreements"]), 3) if q["agreements"] else None,
                 "outcomes": q["outcomes"],
@@ -238,8 +246,11 @@ def compare(run: Run, rows: list[Row]) -> dict[str, Any]:
     cells: dict[str, dict[str, dict[str, Any]]] = {g: {} for g in generators}
     leniency: dict[str, list[float]] = {j: [] for j in judges}
     dim_scores: dict[str, dict[str, list[float]]] = {g: {} for g in generators}
+    errors: dict[str, int] = {}
     for r in rows:
         g = str(r.get("generator"))
+        for j in _errors(r.get("judgements")):
+            errors[str(j.get("judge"))] = errors.get(str(j.get("judge")), 0) + 1
         for j in _ok(r.get("judgements")):
             name = str(j["judge"])
             c = cells[g].setdefault(name, {"n": 0, "passes": 0})
@@ -278,6 +289,7 @@ def compare(run: Run, rows: list[Row]) -> dict[str, Any]:
             for g in generators
         },
         "leniency": {j: {"n": len(v), "pass_rate": _avg(v)} for j, v in leniency.items()},
+        "errors_skipped": dict(sorted(errors.items())),
         "pairs": pairs,
         "dimensions": list(eval_core.DIMENSIONS),
         "scores": {

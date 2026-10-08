@@ -123,7 +123,9 @@ async function loadCompare() {
     const c = await api(`/api/admin/evals/compare?run_id=${encodeURIComponent(runId)}`);
     $('#ev-x-body').replaceChildren(...compareView(c));
     const judges = (c.judges || []).length;
-    say($('#ev-x-status'), `${c.run?.name || runId}: ${(c.generators || []).length} answering models, ${judges} judge${judges === 1 ? '' : 's'}.${judges < 3 ? ' Few judges: add judges from more vendors to a run for a fairer comparison.' : ''}`);
+    const errs = Object.entries(c.errors_skipped || {});
+    const errNote = errs.length ? ` Failed judge calls are skipped, not counted as fails: ${errs.map(([j, n]) => `${j} ${n}`).join(', ')}.` : '';
+    say($('#ev-x-status'), `${c.run?.name || runId}: ${(c.generators || []).length} answering models, ${judges} judge${judges === 1 ? '' : 's'}.${judges < 3 ? ' Few judges: add judges from more vendors to a run for a fairer comparison.' : ''}${errNote}`);
   } catch (e) { say($('#ev-x-status'), e.message, 'err'); }
 }
 
@@ -136,7 +138,8 @@ function questionRow(q) {
     el('td', { 'data-label': 'Question' }, el('span', { text: q.question || q.qid }), el('span', { class: 'muted small', text: ` ${q.qid}` })),
     el('td', { 'data-label': 'Category', text: humanCat(q.category) }),
     el('td', { 'data-label': 'Expected', text: q.answerable ? 'Answer' : 'Decline' }),
-    el('td', { 'data-label': 'Pass rate', class: 'num', style: shade(q.pass_rate) }, `${pct(q.pass_rate)} (${q.fails} of ${q.judgements} failed)`),
+    el('td', { 'data-label': 'Pass rate', class: 'num', style: shade(q.pass_rate) }, `${pct(q.pass_rate)} (${q.fails} of ${q.judgements} failed)`,
+      q.errors_skipped ? el('span', { class: 'muted small', text: ` ${q.errors_skipped} judge error${q.errors_skipped === 1 ? '' : 's'} skipped` }) : null),
     el('td', { 'data-label': 'By answering model' }, ...per),
     el('td', { 'data-label': 'Judges agree', class: 'num' }, q.agreement == null ? 'n/a' : `${pct(q.agreement)}${q.unanimous_share != null ? `, unanimous ${pct(q.unanimous_share)}` : ''}`),
     el('td', {}, open));

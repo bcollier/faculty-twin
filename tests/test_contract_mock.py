@@ -87,7 +87,7 @@ def merge(a: Any, b: Any) -> Any:
 MAPS = {
     "$.prompts[].variables",
     "$.runs[].metrics", "$.run.metrics", "$.metrics",
-    "$.matrix", "$.matrix.*", "$.leniency", "$.scores", "$.scores.*",
+    "$.matrix", "$.matrix.*", "$.leniency", "$.scores", "$.scores.*", "$.errors_skipped",
     "$.questions[].by_generator", "$.questions[].outcomes",
 }
 

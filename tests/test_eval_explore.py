@@ -138,3 +138,12 @@ def test_routes_reject_bad_filters(admin_client):
 def test_routes_are_admin_only(student):
     for path in ("/api/admin/evals/explore", "/api/admin/evals/explore/q1", "/api/admin/evals/compare"):
         assert student.get(path).status_code in (401, 403)
+
+
+def test_failed_judge_calls_are_skipped_and_counted():
+    qs = {q["qid"]: q for q in eval_explore.questions(DATA)["questions"]}
+    assert qs["q2"]["errors_skipped"] == 1 and qs["q2"]["judgements"] == 4  # the error is not a fail
+    assert qs["q1"]["errors_skipped"] == 0
+    c = eval_explore.compare(RUN_A, ROWS_A)
+    assert c["errors_skipped"] == {"openrouter:gemini": 1}
+    assert "openrouter:gemini" not in c["judges"]  # a judge with only errors gets no column of fake fails
