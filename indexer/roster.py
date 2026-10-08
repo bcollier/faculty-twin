@@ -28,6 +28,13 @@ Placeholder rows that Canvas adds ("Points Possible", "Test Student") are
 skipped, so their words never join the scrub list. Numeric ids (SIS User ID)
 are not read: a number is not a name and would match ordinary text.
 
+Institution terms (added Oct 8). "Andrew" is CMU's account system as well as a
+first name: "Andrew ID", "Andrew account" and the "andrew.cmu.edu" email domain
+are not people. `institution_spans(text)` finds them, and every stage that
+masks or counts roster names (indexer/deidentify.py, indexer/leakcheck.py)
+skips those spans. Anything else, including "Andrew" on its own or an Andrew ID
+before "@andrew.cmu.edu", is still masked and counted.
+
 This module never prints, logs, or returns anything but the parsed rows to its
 caller.
 """
@@ -46,6 +53,25 @@ ID_HEADERS = ("andrew id", "login id", "sis login id", "username")
 EMAIL_HEADERS = ("email", "email address", "e mail")
 
 PLACEHOLDER_NAMES = {"points possible", "test student", "student test", "student, test"}
+
+# The keep list of institution terms: never a person, whatever the roster says. Kept narrow on
+# purpose ("Andrew emails the team" and "Andrew, ID cards..." are not matched), so real-name
+# masking is not weakened.
+INSTITUTION_TERMS = re.compile(
+    r"\bandrew[ \t-]+(?:ids?|id's|user[ \t-]?ids?|account|login|log-in|username|credentials|password)\b"
+    r"|(?<![\w.-])andrew\.cmu\.edu\b",
+    re.IGNORECASE,
+)
+
+
+def institution_spans(text: str) -> list[tuple[int, int]]:
+    """(start, end) of every institution term in `text` ("Andrew ID", "andrew.cmu.edu"), in order."""
+    return [m.span() for m in INSTITUTION_TERMS.finditer(text or "")]
+
+
+def blank_institution_terms(text: str) -> str:
+    """`text` with each institution term replaced by spaces of the same length (offsets stay put)."""
+    return INSTITUTION_TERMS.sub(lambda m: " " * len(m.group(0)), text or "")
 
 
 def _key(header: str) -> str:

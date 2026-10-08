@@ -138,3 +138,32 @@ def test_deidentify_scrub_list_sees_every_layout(roster_dir):
     assert {"thrandell", "ysolde", "mirabont", "kesh", "oriel", "plovinski", "quillane"} <= scrub.exact
     assert {"ythrande", "kmirabon", "aplovins"} <= scrub.ids
     assert "points" not in scrub.exact and "possible" not in scrub.exact
+
+
+# ---------------------------------------------------------------- institution terms (Oct 8)
+
+# A student named Andrew made "Andrew ID" and "@andrew.cmu.edu" come out as "[student] ID" in Canvas text.
+ANDREW_ROSTER = (
+    '"Semester","Course","Last Name","Preferred/First Name","MI","Andrew ID","Email"\n'
+    '"F26","70445","Quillbanks","Andrew","","aquillba","aquillba@andrew.cmu.edu"\n'
+)
+
+
+def test_institution_spans_cover_andrew_id_and_the_andrew_domain():
+    text = "Sign in with your Andrew ID and password (your andrew id). Include the @andrew.cmu.edu part."
+    assert [text[a:b] for a, b in roster.institution_spans(text)] == ["Andrew ID", "andrew id", "andrew.cmu.edu"]
+    assert roster.institution_spans("Andrew, ID cards are at the desk.") == []
+    assert roster.institution_spans("Andrew emails the team every week.") == []
+    assert roster.blank_institution_terms("your Andrew IDs.") == "your           ."
+
+
+def test_leak_check_ignores_andrew_id_but_not_a_student_named_andrew(tmp_path):
+    d = tmp_path / "rosters"
+    write(d, "CourseRoster_TEST.csv", ANDREW_ROSTER)
+    checker = RosterChecker.from_dir(d, english=set(), allowlist=d / "none.json")
+    assert checker.strict("Log in with your Andrew ID and password.") == 0
+    assert checker.strict("Email tafakeid@andrew.cmu.edu, who can add it by hand.") == 0
+    assert checker.strict("Andrew made a good point.") == 1
+    assert checker.strict("Andrew forgot his Andrew ID.") == 1
+    assert checker.strong("Write to aquillba@andrew.cmu.edu") == 1  # a student's email is still a hit
+    assert checker.strong("Andrew Quillbanks presented") == 1

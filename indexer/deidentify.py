@@ -77,10 +77,10 @@ except ImportError:  # pragma: no cover - degrade gracefully
 
 try:  # imported as a package (tests, worker)
     from indexer.pg_filter import smooth as pg_smooth
-    from indexer.roster import read_people
+    from indexer.roster import blank_institution_terms, institution_spans, read_people
 except ImportError:  # run as a script: python indexer/deidentify.py
     from pg_filter import smooth as pg_smooth
-    from roster import read_people
+    from roster import blank_institution_terms, institution_spans, read_people
 
 STUDENT = "[student]"
 PERSON = "[person]"
@@ -670,22 +670,28 @@ class Scrubber:
     def scrub(self, text: str, counts: Counter | None = None) -> str:
         counts = counts if counts is not None else Counter()
         hits: dict[int, tuple[int, str]] = {}  # start -> (end, rule)
+        # 0) institution terms ("Andrew ID", "andrew.cmu.edu"; indexer/roster.py) are never names
+        kept = institution_spans(text)
+
+        def free(a: int, b: int) -> bool:
+            return not any(x < b and a < y for x, y in kept)
 
         # 1) roster "first last" phrases -> [student]
         for ph in self.s.phrases:
             for m in re.finditer(r"\b" + re.escape(ph) + r"(?:['’]s)?\b", text, re.IGNORECASE):
-                hits[m.start()] = (m.end(), "roster_exact")
+                if free(m.start(), m.end()):
+                    hits[m.start()] = (m.end(), "roster_exact")
         # 2) known public figures by full name -> [person] (beats the product word in "Claude Shannon")
         for m in self.person_phrase_re.finditer(text):
-            if m.start() not in hits and not is_eponym(text, m.start(), m.end()):
+            if m.start() not in hits and not is_eponym(text, m.start(), m.end()) and free(m.start(), m.end()):
                 hits[m.start()] = (m.end(), "known_person")
-        covered = [(a, b) for a, (b, _) in hits.items()]
+        covered = kept + [(a, b) for a, (b, _) in hits.items()]
 
         # 3) self-introductions, hand-offs and roll calls -> [student]
         for a, b in self.intro_names(text):
             if a not in hits and not any(x <= a < y for x, y in covered):
                 hits[a] = (b, "intro_name")
-        covered = [(a, b) for a, (b, _) in hits.items()]
+        covered = kept + [(a, b) for a, (b, _) in hits.items()]
 
         ctx_starts: set[int] = set()
         for rx in self.strong_ctx + self.weak_ctx:
@@ -1193,6 +1199,7 @@ def sweep_texts(texts, scrub: ScrubList, english: set[str], given: set[str], kee
     given = given - INSTRUCTOR_FORMS
     hits = []
     for text in texts:
+        text = blank_institution_terms(text)  # "Andrew ID", "andrew.cmu.edu" are not names (indexer/roster.py)
         for m in phrase_re.finditer(text):
             if not is_eponym(text, m.start(), m.end()):
                 hits.append(("known_person", text[max(0, m.start() - 40):m.start()] + "<P>" + text[m.end():m.end() + 40]))
