@@ -1356,3 +1356,18 @@ The safety checks are code and run whatever a prompt says.
 - **Model performance moved:** the chart that was under Analytics now lives in Evals, replaced by the comparison above.
 - **More judges per run:** a Settings run can now use up to 6 judges, so it can include judges from several vendors.
 - **The multi-vendor suite with Jev:** Jev runs only from the command line, so the build session runs the suite on the local build machine with judges from OpenAI, Anthropic, Google, xAI, DeepSeek and Jev, after I approve the cost and the Jev key.
+
+### Prompt (Oct 8, 2:42 PM)
+
+> we should sort this before we select segments, fix it     hits = list(selected_segments) … (my `select_segments` gap-fill loop and the cut to MAX_SEGMENTS, pasted)
+
+**Response summary.** This changes my hand-written `select_segments`, at my request. Before editing, the AI pointed out that sorting everything into deck order before the cut to 5 would favor 45-884 over 70-445 (course codes sort as text) and could drop the best-scoring slides. It offered three behaviors. I chose "Best 5, bridges kept":
+- Each kept slide's score is remembered.
+- A gap-fill slide gets the average of its two neighbors' scores, so it is no longer the first slide cut.
+- The list is sorted by score, cut to 5, then put in deck order.
+
+Two tests were added in `tests/test_retrieval.py`:
+- The bridge survives the cut. This test fails on the old code.
+- The cut does not favor a course by its code.
+
+**The guard test.** `tests/test_thresholds.py` failed any branch that edits `app/retrieval.py`. I chose to let a change through only when a commit carries the trailer `Retrieval-Change-Requested-By: Ben`, documented in `AGENTS.md`. This edit to my code was written by Claude Code (Claude Opus 5.5), following my instruction and design choice.

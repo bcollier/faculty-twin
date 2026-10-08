@@ -73,3 +73,26 @@ def test_off_topic_question_returns_nothing():
     records, matrix = deck({}, n_slides=15)  # every slide scores under 0.1
     chosen = select_segments(rank(QUESTION, matrix), records, THRESHOLD)
     assert chosen == []
+
+
+def test_cut_to_five_keeps_the_best_slides_and_the_bridge():
+    # Six slides clear the threshold, and 3 bridges 2 and 4: seven in all, so two are cut.
+    # The cut goes by score (the bridge counts with its neighbors' average), not by list order,
+    # so the bridge stays and the weakest slides (8 and 9) go. The old cut kept list order,
+    # where the bridge came last, and dropped it.
+    records, matrix = deck({1: 0.95, 2: 0.94, 4: 0.93, 7: 0.60, 8: 0.59, 9: 0.58}, n_slides=12)
+    chosen = select_segments(rank(QUESTION, matrix), records, THRESHOLD)
+    assert [r["slide_number"] for r in chosen] == [1, 2, 3, 4, 7]
+
+
+def test_cut_to_five_does_not_favor_a_course_by_its_code():
+    # Two strong 70-445 slides and four weaker 45-884 slides: the strong ones survive the cut,
+    # even though "45884" sorts before "70445".
+    rec_a, mat_a = deck({10: 0.92, 11: 0.91}, n_slides=12, course="70445", session=6)
+    rec_b, mat_b = deck({3: 0.62, 4: 0.61, 5: 0.60, 6: 0.59}, n_slides=8, course="45884", session=2)
+    chosen = select_segments(rank(QUESTION, np.vstack([mat_a, mat_b])), rec_a + rec_b, THRESHOLD)
+    ids = [r["id"] for r in chosen]
+    assert len(ids) == 5 and "70445-s06-010" in ids and "70445-s06-011" in ids
+    assert ids == sorted(
+        ids, key=lambda i: next((r["course"], r["session"], r["slide_number"]) for r in rec_a + rec_b if r["id"] == i)
+    )
