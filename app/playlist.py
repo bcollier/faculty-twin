@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 _hidden_lock = threading.Lock()
 _hidden: tuple[float, set[tuple[str, int]]] = (0.0, set())
+_hidden_generation = 0  # bumped when Settings hides or shows a session; an older read is not cached
 HIDDEN_CACHE_SECONDS = 60.0
 
 
@@ -32,6 +33,7 @@ def hidden_sessions() -> set[tuple[str, int]]:
     with _hidden_lock:
         if _hidden[0] and now - _hidden[0] < HIDDEN_CACHE_SECONDS:
             return _hidden[1]
+        generation = _hidden_generation
     if not config.supabase_configured():
         return set()
     try:
@@ -41,14 +43,16 @@ def hidden_sessions() -> set[tuple[str, int]]:
         config.log.warning("sessions read failed: %s", exc)
         hidden = _hidden[1]
     with _hidden_lock:
-        _hidden = (now, hidden)
+        if generation == _hidden_generation:  # not if a session was hidden while this read was in flight
+            _hidden = (now, hidden)
     return hidden
 
 
 def clear_hidden_cache() -> None:
-    global _hidden
+    global _hidden, _hidden_generation
     with _hidden_lock:
         _hidden = (0.0, set())
+        _hidden_generation += 1
 
 
 def searchable(content: Content, course: str | None) -> tuple[list[dict[str, Any]], np.ndarray]:

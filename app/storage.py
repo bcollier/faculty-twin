@@ -156,6 +156,9 @@ def load_supabase() -> Content:
                    info_records=info_records, info_matrix=info_matrix)
 
 
+STALE_RELOAD_TRIES = 3  # reloads of a download whose files are older than settings.index_version
+
+
 class Store:
     """Process-wide holder for the loaded content, with lazy load and version reload."""
 
@@ -163,11 +166,13 @@ class Store:
         self._lock = threading.Lock()
         self._content: Content | None = None
         self._checked_at = 0.0
+        self._stale_tries: dict[str, int] = {}
 
     def reset(self) -> None:
         with self._lock:
             self._content = None
             self._checked_at = 0.0
+            self._stale_tries = {}
 
     def set(self, content: Content) -> None:
         """Tests and tools: install content directly."""
@@ -176,17 +181,46 @@ class Store:
             self._checked_at = time.monotonic()
 
     def _load(self) -> Content:
+        # Read the version before downloading: a bump that lands mid-download must look new next time,
+        # not be stamped on files fetched before it (Oct 8 code review).
+        expected = settings_store.index_version()
         root = config.content_dir()
-        if root is not None:
-            content = load_local(root)
-        elif config.supabase_configured():
-            content = load_supabase()
-        else:
-            raise ContentUnavailable("No content source: set CONTENT_DIR or the Supabase variables")
-        content.version = settings_store.index_version()
+        try:
+            if root is not None:
+                content = load_local(root)
+            elif config.supabase_configured():
+                content = load_supabase()
+            else:
+                raise ContentUnavailable("No content source: set CONTENT_DIR or the Supabase variables")
+        except ContentUnavailable:
+            raise
+        except Exception as exc:  # a truncated or half-uploaded file: keep what is loaded, or 503
+            raise ContentUnavailable(f"the index files could not be read ({type(exc).__name__})") from exc
+        content.version = self._label(content, expected)
         config.log.info("loaded %d records (%d course-info chunks) from %s",
                         len(content.records), len(content.info_records), content.source)
         return content
+
+    def _label(self, content: Content, expected: str | None) -> str | None:
+        """The version this download counts as.
+
+        index.json carries the version it was built as (`index_version`), and indexer/upload.py sets
+        settings.index_version to that plus "+info-<hash>". Bucket reads go through a CDN that may
+        serve a copy cached before the upload finished; such a download gets a label that does not
+        match, so the next check (60 s) loads again. After STALE_RELOAD_TRIES it is accepted, so a
+        version set by hand cannot make every instance reload forever.
+        """
+        built = str(content.meta.get("index_version") or "")
+        if content.source != "supabase" or not expected or not built or expected.split("+info-")[0] == built:
+            self._stale_tries = {}
+            return expected
+        tries = self._stale_tries.get(expected, 0) + 1
+        self._stale_tries = {expected: tries}
+        if tries > STALE_RELOAD_TRIES:
+            config.log.warning("index.json says %s but settings.index_version is %s; using it anyway", built, expected)
+            return expected
+        config.log.warning("downloaded index %s is older than settings.index_version %s; reloading soon", built, expected)
+        return f"stale:{built}"
 
     def get(self) -> Content:
         now = time.monotonic()
