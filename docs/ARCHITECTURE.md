@@ -16,6 +16,8 @@ Contents:
 6. [The Settings page](#6-the-settings-page)
 7. [The eval harness](#7-the-eval-harness)
 
+The data diagrams (every Postgres table and column, the Storage bucket's folders with who writes and reads each, the settings and counter keys, and what stays on the local build machine) are in **[DATABASE.md](DATABASE.md)**.
+
 ## 1. System context
 
 ```mermaid

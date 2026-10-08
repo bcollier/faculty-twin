@@ -170,11 +170,137 @@ flowchart LR
 
 Seven diagrams with explanations (system context, one question step by step, routing, the content pipeline, privacy boundaries, the Settings page, the eval harness) are in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
+### Database diagrams
+
+Supabase holds two things: Postgres (six tables and the `ft_increment` counter function) and the private Storage bucket `twin-content`. Both are reached only with the service role key, from the Vercel function and the local build machine. Row Level Security is on for every table with no policies, so the public anon key can read or write nothing. Full detail, with every settings key, every counter key pattern, and a "what lives where" diagram: **[docs/DATABASE.md](docs/DATABASE.md)**.
+
+**Postgres tables** (`supabase/schema.sql`, including the October 7 and 8 migration columns). Solid lines are foreign keys; dotted lines are links the code relies on without one. `index_slide` is a record in `content/index.json` in the bucket, not a table, and `ft_increment_fn` is the function, drawn as a box.
+
+```mermaid
+erDiagram
+    courses ||--o{ sessions : "code = sessions.course (FK, cascade)"
+    courses ||--o{ sources : "code = sources.course (FK, cascade)"
+    sessions ||..o{ sources : "course + session (logical)"
+    courses |o..o{ question_log : "course (logical)"
+    sessions |o..o{ question_log : "course + session (logical)"
+    sessions ||..o{ index_slide : "id is the slide id prefix"
+    index_slide |o..o{ question_log : "id = top_slide_id (logical)"
+    ft_increment_fn }o..|| counters : "upserts, adds under a cap, prunes expired"
+
+    courses {
+        text code PK "five digits, e.g. 70445"
+        text title "not null"
+        text term
+        timestamptz created_at "default now()"
+    }
+    sessions {
+        text id PK "course-sNN, e.g. 70445-s06"
+        text course FK,UK "references courses.code"
+        integer session UK "1 to 99"
+        date date
+        text title
+        boolean visible "default true; false hides it"
+        timestamptz created_at "default now()"
+    }
+    sources {
+        bigint id PK "identity"
+        text course FK "references courses.code"
+        integer session "not null"
+        text kind "slides, transcript, video, notebook"
+        text path UK "inbox/course/sNN/kind/file"
+        text status "pending_upload to ready or error"
+        text message "never a student name"
+        bigint size_bytes
+        timestamptz created_at "default now()"
+        timestamptz updated_at "default now()"
+    }
+    question_log {
+        bigint id PK "identity"
+        timestamptz at "default now(), indexed"
+        text question "scrubbed, at most 300 characters"
+        text course
+        boolean covered "not null"
+        real top_score
+        text provider
+        text model
+        integer latency_ms
+        text kind "migration Oct 7"
+        text top_slide_id "migration Oct 7"
+        integer session "migration Oct 7"
+        text session_title "migration Oct 7"
+        integer tokens_in "migration Oct 7"
+        integer tokens_out "migration Oct 7"
+        integer voice_chars "migration Oct 7"
+        text source "migration Oct 7, indexed"
+        text fallback_reason "migration Oct 8"
+    }
+    settings {
+        text key PK "e.g. model, voice_id, prompt:name"
+        jsonb value
+        timestamptz updated_at "default now()"
+    }
+    counters {
+        text key PK "e.g. questions:2026-10-08"
+        date day "default current_date"
+        bigint count "default 0"
+        timestamptz expires_at "indexed"
+        timestamptz updated_at "default now()"
+    }
+    ft_increment_fn {
+        text p_key "argument"
+        bigint p_amount "argument"
+        bigint p_cap "argument, null means no cap"
+        integer p_ttl_seconds "argument, default 172800"
+        boolean allowed "returned"
+        bigint count "returned"
+    }
+    index_slide {
+        text id PK "Storage, not Postgres"
+        text course
+        integer session
+        text image "slides/course/sNN/id.webp"
+        text thumb "slides/course/sNN/id-thumb.webp"
+        text clip "clips/id.mp4 or null"
+    }
+```
+
+**The private bucket `twin-content`.** W is who writes a prefix, R who reads it. Green reaches students only through one-hour signed links the API mints after the passcode; blue is read only by the API; orange only through Settings behind the admin cookie; red is the upload inbox the local worker reads. Rosters, raw transcripts and the full class video are never in it.
+
+```mermaid
+flowchart LR
+    classDef root fill:#f5f5f5,stroke:#333,stroke-width:2px,color:#111
+    classDef signed fill:#e8f5e9,stroke:#2e7d32,color:#0f2e12
+    classDef server fill:#eef4f8,stroke:#2c5f73,color:#10303c
+    classDef admin fill:#fff3e0,stroke:#b26a00,color:#3d2400
+    classDef inbox fill:#fbe9e7,stroke:#a33a2a,color:#4a140c
+
+    B[("twin-content<br/>private bucket<br/>public = false,<br/>no storage policies")]
+
+    B --> C["<b>content/</b><br/>index.json, embeddings.npy,<br/>info_index.json, info_embeddings.npy,<br/>manifest.json, upload_state.json<br/>W: indexer/upload.py<br/>R: the API at cold start and on index_version"]
+    B --> T["<b>topics/</b>topics.json<br/>W: indexer/upload.py<br/>R: the API (suggested questions)"]
+    B --> S["<b>slides/</b>&lt;course&gt;/s&lt;NN&gt;/&lt;slide_id&gt;.webp, -thumb.webp<br/>W: indexer/upload.py<br/>R: students, through 1-hour signed links"]
+    B --> CL["<b>clips/</b>&lt;slide_id&gt;.mp4, manifest.json<br/>W: indexer/upload.py<br/>R: students (mp4, signed links); the API (manifest)"]
+    B --> AU["<b>audio/</b>&lt;voice tag&gt;/&lt;hash&gt;.mp3<br/>W: indexer/upload.py (from pregenerate)<br/>R: students, through 1-hour signed links"]
+    B --> IN["<b>inbox/</b>&lt;course&gt;/s&lt;NN&gt;/&lt;kind&gt;/&lt;file&gt;<br/>W: Ben's browser, through a signed upload link from Settings<br/>R: indexer/worker.py on the local build machine"]
+    B --> D["<b>slides/drafts/</b>&lt;id&gt;.json<br/>W: Settings > Draft slides<br/>R: Settings; the API reads approved specs server side"]
+    B --> PH["<b>prompts/history/</b>&lt;name&gt;/&lt;UTC&gt;.json<br/>W: Settings > Prompts on every save<br/>R: Settings only"]
+    B --> AT["<b>analytics/topics/</b>&lt;UTC&gt;.json<br/>W: Settings > Analytics topic labeling<br/>R: Settings only"]
+    B --> E["<b>evals/</b>questions.jsonl, index.json, index/,<br/>runs/&lt;run_id&gt;/, calibration/<br/>W: scripts/upload_eval_questions.py, Settings > Evals runner,<br/>scripts/import_eval_history.py<br/>R: Settings only (Evals, Analytics)"]
+    B --> AL["<b>alerts/</b>&lt;UTC&gt;.json<br/>W: the API, when /api/ask detects an incident<br/>R: Settings only"]
+
+    class B root
+    class S,CL,AU signed
+    class C,T server
+    class D,PH,AT,E,AL admin
+    class IN inbox
+```
+
 ### Docs
 
 | Doc | What it covers |
 | --- | --- |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The seven diagrams, with Ben's hand-written code marked |
+| [docs/DATABASE.md](docs/DATABASE.md) | Postgres tables, the Storage bucket layout, settings and counter keys, and what lives where |
 | [docs/SPEC.md](docs/SPEC.md) | The spec and build guide: scope, data formats, every API route, limits, the build blocks |
 | [docs/TESTING_AND_SCORES.md](docs/TESTING_AND_SCORES.md) | What the Activity numbers mean, how the 0.52 threshold was chosen, and how to run every kind of test |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, findings, spend limits, the pre-launch checklist |
