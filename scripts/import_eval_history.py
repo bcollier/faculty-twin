@@ -21,7 +21,7 @@ describes (safe to run again; it replaces its own entries):
 It prints counts only, never question text.
 
 With `--compare <run folder>` it instead uploads one model comparison run from `evals/compare.py`
-(docs/SPEC.md, Block 8b): run 1 of every question x answering model, as a finished run with up to six
+(docs/SPEC.md, Block 8c): run 1 of every question x answering model, as a finished run with up to six
 answering models, so it appears on the Settings report card next to admin runs. Repeated answers
 (test-retest) stay in the run folder's report; the run's notes carry the headline reliability numbers.
 """

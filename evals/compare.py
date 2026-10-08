@@ -1,4 +1,4 @@
-"""Compare answering models on one question set, with the same judges for all (docs/SPEC.md, Block 8b).
+"""Compare answering models on one question set, with the same judges for all (docs/SPEC.md, Block 8c).
 
     # On the local build machine (built index in the archive, keys in the git-ignored .env):
     uv run --no-project --python 3.12 --with-requirements evals/requirements.txt python -m evals.compare \\

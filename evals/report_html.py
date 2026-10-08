@@ -1,4 +1,4 @@
-"""The visual model-comparison report: one self-contained HTML page (docs/SPEC.md, Block 8b).
+"""The visual model-comparison report: one self-contained HTML page (docs/SPEC.md, Block 8c).
 
 Inline SVG and HTML tables only (no libraries, no network), light and dark themes from CSS tokens,
 zero baselines on every axis, labeled scales, n on every number, a table view under every chart, and
@@ -564,7 +564,7 @@ def render(a: dict[str, Any], include_text: bool) -> str:
          "Test-retest for each judge, and agreement between judges. " + P["kappa"],
          agreement_matrix(a) + grid([alpha_panel(a)]) + jr_table + details("Agreement per dimension", ij_table))}
 {qdetail}
-<footer><p>Written by <code>evals/compare.py</code> (docs/SPEC.md, Block 8b). Question set: {esc(meta.get('questions_file', ''))}.
+<footer><p>Written by <code>evals/compare.py</code> (docs/SPEC.md, Block 8c). Question set: {esc(meta.get('questions_file', ''))}.
 Run {esc(meta.get('run_id', ''))}, finished {esc(meta.get('finished_at', ''))}.</p></footer>
 """
     return PAGE.replace("{{TITLE}}", "Model Comparison Report").replace("{{BODY}}", body)

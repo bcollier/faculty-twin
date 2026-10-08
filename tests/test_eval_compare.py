@@ -1,4 +1,4 @@
-"""Model comparison evals (docs/SPEC.md, Block 8b): new metrics, reliability statistics, the comparison
+"""Model comparison evals (docs/SPEC.md, Block 8c): new metrics, reliability statistics, the comparison
 runner, its reports, and the import into Settings. TEST FAKES only: no model, no embedding, no network."""
 
 from __future__ import annotations

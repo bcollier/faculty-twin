@@ -20,7 +20,7 @@ OLD_HASHES = {
     "narration_system": "022f4788fcc19d7d0ce318525b3250d1c8625ca36892ef5990935f92ff16bc0d",
     "logistics_classifier": "a18bd998559daae7330e1a3247b42d29f16530b6cc99cd3fff518878bad1df58",
     "course_info_answer": "1a96c123f02587ff25d44bb12e67a9ad11114d4b61ef86b562cdadb84b679525",  # main at afd7988
-    # Changed on purpose Oct 8 (Block 8b: teaching-quality dimensions); was db585038f377...
+    # Changed on purpose Oct 8 (Block 8c: teaching-quality dimensions); was db585038f377...
     "eval_judge": "dd8b5ade39f2df430b6fe6a4b836abc6e8627ff9d1abf123b77eed56749a9422",
     "eval_baseline": "4b11370d79dc1c3ca309eca4f135bcb701a967cb8dcef717a3d233572c150376",
 }

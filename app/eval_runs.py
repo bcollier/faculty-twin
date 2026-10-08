@@ -110,7 +110,7 @@ def summarize(run: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]
 
 
 REPORT_METRICS = ("pass_rate", "decline_accuracy", "fallback_rate", "judge_agreement")
-# Added Oct 8 (docs/SPEC.md, Block 8b): measured without a judge, plus the pass rate without same-family judges.
+# Added Oct 8 (docs/SPEC.md, Block 8c): measured without a judge, plus the pass rate without same-family judges.
 EXTRA_METRICS = ("pass_rate_excluding_same_family", "route_accuracy", "retrieval_hit_rate", "slide_precision",
                  "course_purity", "cost_per_answer", "mean_latency_ms", "route_n", "hit_n", "cost_n", "latency_n",
                  "judgements_excluding_same_family", "group_means")

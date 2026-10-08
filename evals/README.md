@@ -154,7 +154,7 @@ Next: rerun after PR #35. Compare against the baseline per category, since the t
 
 ## Model comparison
 
-Added October 8, 2026 (docs/SPEC.md, Block 8b). `python -m evals.compare` runs one question set through several answering models in-process, with the same three judges for all, and writes a comparison report.
+Added October 8, 2026 (docs/SPEC.md, Block 8c). `python -m evals.compare` runs one question set through several answering models in-process, with the same three judges for all, and writes a comparison report.
 
 ### Two question sets
 

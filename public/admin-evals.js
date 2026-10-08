@@ -56,7 +56,7 @@ const METRICS = {
   decline_accuracy: { label: 'Right call: answer versus decline (% of questions)', short: 'Right call', rate: true, n: 'questions' },
   fallback_rate: { label: 'Fell back to speaker notes (% of answers with slides)', short: 'Fell back to notes', rate: true, n: 'answered' },
   judge_agreement: { label: 'Judges agree on the verdict (% of answers both judged)', short: 'Judges agree', rate: true },
-  // Added Oct 8 (docs/SPEC.md, Block 8b). Runs before then show n/a.
+  // Added Oct 8 (docs/SPEC.md, Block 8c). Runs before then show n/a.
   pass_rate_excluding_same_family: { label: 'Pass rate without same-family judges (% of answers judged pass)', short: 'Pass rate, other families', rate: true, n: 'judgements_excluding_same_family' },
   route_accuracy: { label: 'Right route: slides, Canvas, FAQ, referral, web or decline (% of answers)', short: 'Right route', rate: true, n: 'route_n' },
   retrieval_hit_rate: { label: 'Retrieval hit: an expected slide was used (% of questions with expected slides)', short: 'Retrieval hit', rate: true, n: 'hit_n' },

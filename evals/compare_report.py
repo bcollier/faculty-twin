@@ -1,4 +1,4 @@
-"""Numbers and reports for a model comparison run (`evals/compare.py`; docs/SPEC.md, Block 8b).
+"""Numbers and reports for a model comparison run (`evals/compare.py`; docs/SPEC.md, Block 8c).
 
 `analyze(rows, meta)` turns result rows into one dict of numbers (no question text unless asked for).
 `write_all` writes, into the run folder:

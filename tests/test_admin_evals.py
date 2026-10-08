@@ -632,7 +632,7 @@ def test_cancel_reaches_a_step_through_the_marker(evals):
 
 
 def test_six_answering_models_run_with_usage_and_route_metrics(evals):
-    """Oct 8 (Block 8b): up to 6 answering models per run; rows carry tokens, cost and whether the web path exists."""
+    """Oct 8 (Block 8c): up to 6 answering models per run; rows carry tokens, cost and whether the web path exists."""
     six = [{"provider": "anthropic", "model": f"claude-test-{i}"} for i in range(6)]
     est = evals.post("/api/admin/evals/runs/estimate", json=run_body(generators=six, top=1))
     assert est.status_code == 200, est.text

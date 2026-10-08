@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "eval_parity.json").read_text())
 
 
-NEW_DIMS = eval_core.TEACHING_DIMENSIONS + eval_core.WEB_DIMENSIONS  # added Oct 8 (Block 8b)
+NEW_DIMS = eval_core.TEACHING_DIMENSIONS + eval_core.WEB_DIMENSIONS  # added Oct 8 (Block 8c)
 
 
 def _without_new_keys(s: dict) -> dict:
@@ -75,7 +75,7 @@ def test_missing_dimensions_show_as_n_a():
 
 
 def test_prompts_and_parser_match_the_old_cli():
-    # The judge prompt changed on purpose on Oct 8 (teaching dimensions, Block 8b); the six core lines remain.
+    # The judge prompt changed on purpose on Oct 8 (teaching dimensions, Block 8c); the six core lines remain.
     assert eval_core.SYSTEM_PROMPT == rubric.SYSTEM_PROMPT
     for d in eval_core.CORE_DIMENSIONS:
         assert f"- {d}: {eval_core.DIMENSIONS[d]}" in eval_core.SYSTEM_PROMPT
