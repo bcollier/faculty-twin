@@ -33,11 +33,15 @@ section.panel { background: var(--panel); border: 1px solid var(--line); border-
 section.panel h2 { font-family: var(--display); font-weight: 700; font-size: clamp(22px, 3vw, 30px); margin: 4px 0 0; text-wrap: balance; }
 h3 { font-size: 17px; margin: 0 0 8px; font-weight: 600; }
 .lead { color: var(--muted); margin: 6px 0 0; max-width: 72ch; }
-.nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 20px; }
+@media (max-width: 560px) { .nums { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .num { border-top: 3px solid var(--accent); padding-top: 8px; min-width: 0; }
 .num b { display: block; font-family: var(--display); font-size: 30px; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .num span { color: var(--muted); font-size: 14px; }
-.flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; counter-reset: step; }
+.flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; counter-reset: step; }
+.flow.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 860px) { .flow.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .flow, .flow.five { grid-template-columns: 1fr; } }
 .step { background: var(--accent-soft); border-radius: 8px; padding: 12px 14px; min-width: 0; }
 .step::before { counter-increment: step; content: "Step " counter(step); display: block; font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
 .step strong { display: block; font-size: 15px; }
@@ -89,17 +93,18 @@ footer { color: var(--muted); font-size: 13.5px; }
       <div class="num"><b>329</b><span>short class clips of me explaining a slide</span></div>
       <div class="num"><b>169</b><span>notebook code cells</span></div>
       <div class="num"><b>1,139</b><span>minutes of my own class speech used for narration</span></div>
+      <div class="num"><b>650</b><span>Canvas passages for course info: syllabus, policies, assignments and due dates</span></div>
     </div>
 
     <div>
       <h3>How a class becomes searchable</h3>
       <div class="flow">
-        <div class="step"><strong>Collect</strong><small>Slide PDFs, PowerPoint notes, Zoom recordings and captions, notebooks, from Google Drive and Zoom.</small></div>
+        <div class="step"><strong>Collect</strong><small>Slide PDFs, PowerPoint notes, Zoom recordings and captions, notebooks, and student-facing Canvas pages.</small></div>
         <div class="step"><strong>Read each slide</strong><small>PDF text, speaker notes, and text recognized inside images (278 picture slides).</small></div>
         <div class="step"><strong>Protect students</strong><small>Every name except mine replaced, student turns removed, cursing smoothed, quiz codes removed.</small></div>
         <div class="step"><strong>Match video to slides</strong><small>A frame every 2 seconds is matched to the slide on screen, so each slide gets the minutes I spent on it.</small></div>
         <div class="step"><strong>Cut clips</strong><small>Only stretches where I alone am speaking, with nobody named and no student presentations.</small></div>
-        <div class="step"><strong>Embed and upload</strong><small>1,143 records embedded with Voyage AI, checked against the rosters, stored in a private Supabase bucket.</small></div>
+        <div class="step"><strong>Check, embed, upload</strong><small>A name check runs on the build machine (rosters never leave it), then only de-identified text goes to Voyage AI for embeddings. Stored in a private Supabase bucket.</small></div>
       </div>
     </div>
 
@@ -113,7 +118,7 @@ footer { color: var(--muted); font-size: 13.5px; }
             <tr><td>Other people named, replaced with <code>[person]</code></td><td class="n">251</td></tr>
             <tr><td>Minutes of student speech left out</td><td class="n">251</td></tr>
             <tr><td>Minutes left out because the speaker was unclear</td><td class="n">214</td></tr>
-            <tr><td>Roster names found in the upload by the final leak check</td><td class="n">0</td></tr>
+            <tr><td>Roster names found in the upload by the final leak check (run locally; rosters are never uploaded or sent to any AI service)</td><td class="n">0</td></tr>
             <tr><td>Quiz access codes removed from the index</td><td class="n">3</td></tr>
           </tbody>
         </table></div>
@@ -123,6 +128,7 @@ footer { color: var(--muted); font-size: 13.5px; }
         <ul class="plain">
           <li><b>My FAQ</b> for logistics like office hours and missed classes, with a booking link or the TA's contact.</li>
           <li><b>My slides</b> for course concepts, narrated from the slide, my notes, and my class explanation, with the course, session, date and slide number.</li>
+          <li><b>Canvas</b> for course info like the syllabus, readings access and due dates, with a link to the exact page.</li>
           <li><b>A class clip</b> of me explaining that slide, where one passed every privacy rule.</li>
           <li><b>A clean decline</b> when nothing scores at least 0.52, my hand-chosen threshold.</li>
         </ul>
@@ -138,7 +144,7 @@ footer { color: var(--muted); font-size: 13.5px; }
       <p class="lead">22 real questions students emailed me, de-identified, run through the twin and judged by two AI models from different companies, so no model only grades its own work.</p>
     </div>
 
-    <div class="flow">
+    <div class="flow five">
       <div class="step"><strong>Real questions</strong><small>22 student emails, names and details removed, each with my actual reply as the reference.</small></div>
       <div class="step"><strong>Calibrate the judges</strong><small>8 made-up cases with known right answers. Both judges got 8 of 8 before we trusted them.</small></div>
       <div class="step"><strong>Ask the twin</strong><small>The real index, my retrieval code and the 0.52 threshold, exactly as students use it.</small></div>
