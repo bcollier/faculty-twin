@@ -208,14 +208,7 @@ class SettingsBody(BaseModel):
 def settings_view() -> dict[str, Any]:
     provider, model = settings_store.llm_choice()
     stored_voice = settings_store.get("voice_id")
-    if stored_voice == "none":
-        voice_source = "none"
-    elif stored_voice:
-        voice_source = "settings"
-    elif config.env("ELEVENLABS_VOICE_ID"):
-        voice_source = "env"
-    else:
-        voice_source = "none"
+    voice_source = voices.setting_source()
     return {
         "provider": provider,
         "model": model,

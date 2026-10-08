@@ -236,8 +236,9 @@ def test_audio_needs_student_cookie_for_free_voice(client, fake_edge):
 def test_free_voice_has_its_own_cap_and_visitor_share(student, fake_edge):
     settings_store.put({"voice_id": f"edge:{ANDREW}", "daily_voice_char_cap": 0, "daily_free_voice_char_cap": 80})
     link = speech.audio_link("Twenty characters!!!", f"edge:{ANDREW}")
+    other = speech.audio_link("Other twenty chars!!", f"edge:{ANDREW}")
     assert student.get(link).status_code == 200  # the ElevenLabs cap (0) does not apply to the free voice
-    r = student.get(link)  # 25% of 80 = 20 characters per visitor
+    r = student.get(other)  # 25% of 80 = 20 characters per visitor
     assert r.status_code == 429
     counters = limits.today_counters()
     assert counters["free_voice_chars"] == 20 and counters["voice_chars"] == 0
@@ -253,7 +254,7 @@ def test_elevenlabs_cap_does_not_touch_free_pool(student, fake_eleven):
     settings_store.put({"voice_id": "eleven:roger", "daily_voice_char_cap": 80})
     link = speech.audio_link("Twenty characters!!!", "roger")
     assert student.get(link).status_code == 200
-    assert student.get(link).status_code == 429
+    assert student.get(speech.audio_link("Other twenty chars!!", "roger")).status_code == 429
     counters = limits.today_counters()
     assert counters["voice_chars"] == 20 and counters["free_voice_chars"] == 0
 
@@ -482,3 +483,21 @@ def test_open_stream_raises_before_any_byte_when_service_is_down(fake_edge):
             await edge_voice.open_stream("Hello there. Second sentence.", ANDREW)
 
     asyncio.run(go())
+
+
+# ---------------------------------------------------------------- one reader for the voice setting (Oct 8)
+
+def test_one_reader_for_the_voice_setting(monkeypatch):
+    # Code review: settings_store.voice_id() and voices.stored_setting() both read the same setting with
+    # slightly different rules. voices is the one reader now; Settings' "source" label comes from it too.
+    from app import settings_store, voices
+
+    assert not hasattr(settings_store, "voice_id")
+    assert voices.stored_setting() is None and voices.setting_source() == "none"
+    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "abc123")
+    assert voices.stored_setting() == "abc123" and voices.setting_source() == "env"
+    settings_store.put({"voice_id": "edge:en-US-AndrewMultilingualNeural"})
+    assert voices.stored_setting() == "edge:en-US-AndrewMultilingualNeural" and voices.setting_source() == "settings"
+    settings_store.put({"voice_id": "none"})
+    assert voices.stored_setting() == "none" and voices.setting_source() == "none"
+    assert voices.current().primary is None

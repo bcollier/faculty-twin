@@ -251,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
     voice = None
     if not a.no_audio:
         try:
-            parsed = voices.parse(a.voice or settings_store.voice_id())
+            parsed = voices.parse(a.voice or voices.stored_setting())
         except voices.BadVoice as exc:
             print(f"Voice setting not usable: {exc}")
             return EXIT_NEEDS_KEYS

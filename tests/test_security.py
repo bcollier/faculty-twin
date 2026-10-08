@@ -281,8 +281,11 @@ def test_replaying_a_link_uses_only_one_visitors_share(client, monkeypatch):
     settings_store.put({"daily_voice_char_cap": 400})  # share = 100 characters
     link = speech.audio_link("Twenty characters!!!", "voice123")
     client.post("/api/login", json={"passcode": "student-pass"})
-    codes = [client.get(link).status_code for _ in range(7)]
-    assert codes == [200] * 5 + [429, 429]
+    # Since Oct 8 a link's first play and its next AUDIO_FREE_REPEATS plays (Safari's Range requests)
+    # are charged once; every play after that is charged again, so a replay loop still hits the share.
+    free = limits.AUDIO_FREE_REPEATS
+    codes = [client.get(link).status_code for _ in range(free + 7)]
+    assert codes == [200] * (free + 5) + [429, 429]
     client.cookies.clear()
     client.post("/api/login", json={"passcode": "student-pass"})
     assert client.get(link).status_code == 200  # the voice still works for everyone else

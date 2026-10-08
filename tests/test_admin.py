@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app import llm, settings_store, supa
+from app import llm, settings_store, supa, voices
 from app.main import app, get_completer
 
 
@@ -38,7 +38,7 @@ def test_settings_get_and_put(admin, monkeypatch):
     assert s["voice_id"] == "abc123" and s["voice_source"] == "settings" and s["daily_voice_char_cap"] == 5000
     s = admin.put("/api/admin/settings", json={"voice_id": "none"}).json()
     assert s["voice_id"] == "none" and s["voice_source"] == "none"
-    assert settings_store.voice_id() is None
+    assert voices.current().primary is None
     s = admin.put("/api/admin/settings", json={"voice_id": None}).json()
     assert s["voice_id"] is None and s["voice_source"] == "none"  # no ELEVENLABS_VOICE_ID in tests
     r = admin.put("/api/admin/settings", json={"student_passcode": "a-new-passcode"})
@@ -250,7 +250,7 @@ def test_settings_and_counters_through_supabase(admin, fake_supa):
     assert s["voice_id"] == "abc123"
     assert {"key": "voice_id", "value": "abc123"} in fake_supa.tables["settings"]
     settings_store.clear_cache()
-    assert settings_store.voice_id() == "abc123"
+    assert voices.stored_setting() == "abc123"
     from app import limits
 
     assert limits.take_voice_chars(10, cap=15) and not limits.take_voice_chars(10, cap=15)
