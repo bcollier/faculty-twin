@@ -188,7 +188,8 @@ export async function evalsRoute(url, method, body) {
 
 const X_GENS = ['anthropic:claude-sonnet-5-5', 'openai:gpt-6.1-sol'];
 const X_JUDGES = ['anthropic:claude-opus-5-5', 'openai:gpt-6.1-sol', 'openrouter:google/gemini-3.8-flash'];
-const X_DIMS = ['grounded', 'answers_question', 'correct_scope', 'matches_reference', 'speech_quality', 'safety_tone'];
+const X_DIMS = ['grounded', 'answers_question', 'correct_scope', 'matches_reference', 'speech_quality', 'safety_tone',
+  'good_teaching', 'explains_concept_effectively', 'accurate', 'engaging_voice', 'appropriate_depth'];
 const X_QUESTIONS = [
   { qid: 'q001', question: 'Placeholder question about meetings (mock).', category: 'MEETING_REQUEST', answerable: false, rates: [0.2, 0.4] },
   { qid: 'q002', question: 'Placeholder question about a method (mock).', category: 'CONCEPT_QUESTION', answerable: true, rates: [0.5, 0.67] },
@@ -238,7 +239,7 @@ function mockExploreDetail(qid) {
       run_id: '20261008T010000Z', run_name: 'Mock run', at: '2026-10-08T01:00:00Z', generator: g, outcome: gi ? 'declined' : 'answered',
       answer: `Placeholder answer from ${g} (mock).`,
       judgements: X_JUDGES.map((j, ji) => ({ judge: j, verdict: (ji + gi) % 2 ? 'fail' : 'pass', scores: Object.fromEntries(X_DIMS.map((d, di) => [d, 2 + ((di + ji) % 4)])),
-        rationale: 'Placeholder reason (mock).', issues: [], error: null, p_pass: null })),
+        rationale: 'Placeholder reason (mock). The answer narrated slides for a question that the expected behavior says should be declined, so the scope is wrong even though the narration itself reads clearly and stays on the slide material.', issues: ['Placeholder issue one (mock).'], error: null, p_pass: null })),
       agreement: { judges: 3, verdict: 0.67, unanimous: false, majority: gi ? 'fail' : 'pass', score_spread: { grounded: 2 }, mean_spread: 1.5 },
     })),
   };
