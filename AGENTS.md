@@ -38,7 +38,7 @@ docs, comments, and copy never name a particular machine.
 
 ## Never commit directly to `main`. Branch, open a pull request, then merge it.
 
-`main` is the branch Vercel deploys from, so a bad commit is a live site. The
+`main` is the branch production is deployed from (by hand, with the Vercel CLI), so a bad commit becomes the live site at the next deploy. The
 assignment also grades the commit history, so every change should leave a
 readable record of what changed and why.
 

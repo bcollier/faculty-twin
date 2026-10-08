@@ -166,7 +166,7 @@ flowchart LR
     GH["GitHub<br/>repo, pull requests"]
     GHA["GitHub Actions<br/>.github/workflows/tests.yml"]
     PKG["Package downloads<br/>PyPI through uv, apt,<br/>Playwright Chromium"]
-    VER["Vercel<br/>Git integration, env vars"]
+    VER["Vercel<br/>CLI deploys from main, env vars"]
     LIVE["Vercel: static public/<br/>+ FastAPI function app/"]
 
     DEV -- "push" --> GH
@@ -285,7 +285,7 @@ Every path in 2b and 2c starts with `/api/admin`.
 | PostHog (via DeepEval) | DeepEval's telemetry client, host `https://us.i.posthog.com` | DeepEval's own anonymous usage events, on by default | Imported by `evals/jev_judge.py` (DeepEval), not called by our code | Jev judge runs | None | Local build machine | Free | DeepEval usage events; `DEEPEVAL_TELEMETRY_OPT_OUT=1` turns it off and is not set in this repo |
 | GitHub | Git over HTTPS, pull requests (the `gh` CLI), GitHub Actions | Code, reviews, CI | `.github/workflows/tests.yml` (jobs `pytest`, `frontend-syntax`, `e2e`; actions `actions/checkout@v4`, `astral-sh/setup-uv@v6`, `actions/setup-node@v4`, `actions/cache@v4`) | Every pull request and push to `main` | The workflow's own token, `contents: read`; no secrets | GitHub Actions | Account plan | Code only |
 | CI package sources | PyPI (through `uv`), Ubuntu apt (`wamerican`), Playwright's Chromium download | Installs the test environment | `.github/workflows/tests.yml` | Every CI run | None | GitHub Actions | Free | Nothing |
-| Vercel | Git integration (deploys `main`), project environment variables, function runtime (`vercel.json`: 60 s max, CSP and security headers) | Hosts `public/` and the FastAPI function | `vercel.json`; `app/config.py:is_production` reads Vercel's own variables | Every merge to `main` | Vercel project; keys stored as env vars | Vercel | Account plan | The built app and its env vars |
+| Vercel | Deploys with the Vercel CLI (`vercel deploy --prod`) from an up-to-date `main` checkout, project environment variables, function runtime (`vercel.json`: 60 s max, CSP and security headers) | Hosts `public/` and the FastAPI function | `vercel.json`; `app/config.py:is_production` reads Vercel's own variables | Each production deploy, run after a merge | Vercel project; keys stored as env vars | Vercel | Account plan | The built app and its env vars |
 | Google Fonts | `https://fonts.googleapis.com/css2` stylesheet | Fonts on the demo page `docs/demo/data-and-evals.html` only; the app itself loads no outside fonts or scripts (`font-src 'self'`, `script-src 'self'`) | `docs/demo/data-and-evals.html` | Viewing the demo page | None | Viewer's browser | Free | The usual font request |
 
 Not APIs: Calendly and Canvas links in FAQ and course-info answers (`app/faq.py`, `app/course_info.py:links`) are plain links a student can click; the server never calls them. Zoom has no API call in this repo: the indexer reads Zoom VTT caption files and video that are already in the private archive. Whisper is not run by this code either: `indexer/deidentify.py:load_whisper` only reads `whisper/audio.vtt` files made earlier.
