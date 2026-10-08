@@ -27,10 +27,17 @@ class QuietHandler(SimpleHTTPRequestHandler):
         pass
 
 
+class PageServer(ThreadingHTTPServer):
+    # A page is a module script plus the modules it imports (public/student/, public/settings/), which the
+    # browser asks for all at once. The default listen backlog of 5 then resets some connections, and a
+    # module that fails to load stops the page.
+    request_queue_size = 128
+
+
 @pytest.fixture(scope="session")
 def base_url() -> Iterator[str]:
     handler = functools.partial(QuietHandler, directory=str(PUBLIC))
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    server = PageServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

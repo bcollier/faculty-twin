@@ -30,7 +30,7 @@ flowchart LR
 
     subgraph People["People"]
         SB["Student browser<br/>index.html + app.js<br/>no keys"]
-        PLAY["onClipEnded() in app.js<br/>player advance<br/>Ben's code"]
+        PLAY["onClipEnded() in student/player.js<br/>player advance<br/>Ben's code"]
         AB["Ben's browser<br/>admin.html (Settings)<br/>admin passcode"]
     end
 

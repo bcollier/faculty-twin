@@ -84,7 +84,7 @@ jobs:
       - name: Syntax-check every browser script
         run: |
           status=0
-          for f in public/*.js public/dev/*.js; do
+          for f in public/*.js public/*/*.js; do  # page scripts, their modules (student/, settings/) and dev/
             node --check "$f" && echo "ok  $f" || { echo "FAIL $f"; status=1; }
           done
           exit $status
