@@ -206,6 +206,7 @@ function mockCompare() {
       { a: X_JUDGES[0], b: X_JUDGES[2], n: 44, verdict_agreement: 0.71, mean_score_gap: 0.8 },
       { a: X_JUDGES[1], b: X_JUDGES[2], n: 44, verdict_agreement: 0.64, mean_score_gap: 0.95 },
     ],
+    errors_skipped: { 'openrouter:google/gemini-3.8-flash': 2 },
     dimensions: X_DIMS,
     scores: Object.fromEntries(X_GENS.map((g, gi) => [g, Object.fromEntries(X_DIMS.map((d, di) => [d, { n: 66, mean: 3 + ((di + gi) % 3) * 0.6 }]))])),
     runs: 3,
@@ -220,7 +221,7 @@ function mockExplore() {
       const rate = (q.rates[0] + q.rates[1]) / 2;
       return {
         qid: q.qid, question: q.question, category: q.category, course: null, answerable: q.answerable,
-        answers: 2, judgements: 6, runs: 1, pass_rate: rate, fails: Math.round(6 * (1 - rate)), agreement: 0.83, unanimous_share: 0.5,
+        answers: 2, judgements: 6, runs: 1, pass_rate: rate, fails: Math.round(6 * (1 - rate)), errors_skipped: q.qid === 'q002' ? 1 : 0, agreement: 0.83, unanimous_share: 0.5,
         outcomes: { answered: 1, declined: 1 },
         by_generator: Object.fromEntries(X_GENS.map((g, gi) => [g, { answers: 1, judgements: 3, pass_rate: q.rates[gi] }])),
       };
