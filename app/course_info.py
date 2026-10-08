@@ -17,7 +17,8 @@ index of Canvas material after the course FAQ and before slide narration:
    from the chunks.
 3. The reply is validated (word cap, no web addresses, no `[student]`, no
    access-code-like tokens, grounded in the chunks' words, no long echo of the
-   question). Any failure falls back to the first sentences of the top chunk.
+   question). A reply that is not JSON is asked for once more (added Oct 8);
+   any other failure falls back to the first sentences of the top chunk.
 4. The reply reuses the FAQ card: `answers`, Canvas link buttons, no audio.
 
 The index (content/info_index.json + content/info_embeddings.npy) is built
@@ -43,6 +44,9 @@ TOP_CHUNKS = 3
 MAX_WORDS = 120
 MAX_TOKENS = 600
 FALLBACK_WORDS = 80
+# A reply that is not JSON at all (prose, a refusal preamble) is asked for once more; every other
+# failure falls back at once (Oct 8 code review).
+NOT_JSON_RETRIES = 1
 CHUNK_CHARS = 2500
 LABEL = "From Canvas"
 NOT_ANSWERED = "Here's where that is on Canvas."
@@ -359,14 +363,25 @@ def answer(
     top = hits[0].record
     errors: list[str] = []
     source, reason = "llm", None
-    try:
-        raw = complete(system_prompt(), build_user_prompt(question, hits), MAX_TOKENS, provider=provider, model=model)
-        text = validate(raw, grounding(question, hits))
-    except Exception as exc:  # model trouble or a reply that fails the checks: never put it on screen
-        errors.append(str(exc)[:200])
-        reason = fallback_reason(exc)
-        config.log.warning("course-info answer fell back (%s): %s", reason, str(exc)[:200])
+    system, user, ground = system_prompt(), build_user_prompt(question, hits), grounding(question, hits)
+    text = None
+    for attempt in range(1 + NOT_JSON_RETRIES):
+        try:
+            raw = complete(system, user, MAX_TOKENS, provider=provider, model=model)
+            text = validate(raw, ground)
+            break
+        except Exception as exc:  # model trouble or a reply that fails the checks: never put it on screen
+            errors.append(str(exc)[:200])
+            reason = fallback_reason(exc)
+            if reason == "not_json" and attempt < NOT_JSON_RETRIES:
+                config.log.info("course-info reply was not JSON; asking once more")
+                continue
+            config.log.warning("course-info answer fell back (%s): %s", reason, str(exc)[:200])
+            break
+    if text is None:
         text, source = fallback_text(top), "fallback"
+    else:
+        reason = None  # the retry answered: nothing fell back
     code = str(top.get("course") or "")
     if code not in faq.COURSE_LABELS:
         code = course or ""
