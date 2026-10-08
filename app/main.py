@@ -611,7 +611,7 @@ def _replay_topic(content: Content, question: str, topic: dict[str, Any], voice:
     return result
 
 
-def words_path(mp3_path: str) -> Optional[str]:
+def words_path(mp3_path: str) -> str | None:
     """`audio/<tag>/<hash>.mp3` -> `audio/<tag>/<hash>.words.json` (the stored clip's word timings)."""
     return mp3_path[: -len(".mp3")] + ".words.json" if mp3_path.endswith(".mp3") else None
 
@@ -800,7 +800,7 @@ async def audio(
     return StreamingResponse(_keep_timings(stream, collector, v, text), media_type="audio/mpeg", headers=headers)
 
 
-async def _keep_timings(stream, collector: "timings.Collector", tag: str, text: str):
+async def _keep_timings(stream, collector: timings.Collector, tag: str, text: str):
     """Pass the audio through; once all of it was sent, save its word timings for the read-along."""
     async for chunk in stream:
         yield chunk
