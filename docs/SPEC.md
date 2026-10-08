@@ -207,7 +207,7 @@ Ben: "For faculty twin there should be an animation as the narration is read lik
 
 ### Settings page
 
-Added Oct 5, for me only. `/admin.html`, behind a separate admin passcode and its own cookie, never linked from the student page. Five sections (eight since Oct 7, with Prompts, Analytics and Evals):
+Added Oct 5, for me only. `/admin.html`, behind a separate admin passcode and its own cookie. *Changed Oct 8:* a small "Settings (for Prof. Collier)" link at the foot of the passcode and idle screens leads there; the page asks for the admin passcode. Five sections (eight since Oct 7, with Prompts, Analytics and Evals):
 
 1. **Model.** Provider dropdown (Claude native, OpenAI native, OpenRouter) and a model picker. Claude and OpenAI show a short curated list plus a free-text model id. OpenRouter shows its live model list, searchable. "Test this model" runs one sample question through the full ask pipeline and shows the result and latency. Save writes the choice to the `settings` table.
 2. **Voice.** The voices on the ElevenLabs account, each with a preview I can play, plus a stock voice and a captions-only option. Saving changes `voice_id`. Pre-generated audio is keyed by voice id, so changing the voice never plays the old one.
@@ -478,7 +478,7 @@ faculty-twin/
   public/index.html       passcode, idle, presenting
   public/app.js           player and state changes
   public/styles.css
-  public/admin.html       Settings page, never linked from the student page
+  public/admin.html       Settings page (small link from the student page; admin passcode)
   indexer/slides.py       render slide images, extract text and notes
   indexer/deidentify.py   parse VTT, scrub names, mark student turns, leak check
   indexer/align.py        match transcript time to slides
