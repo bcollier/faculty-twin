@@ -165,6 +165,10 @@ class EventBody(BaseModel):
     name: str = Field(..., max_length=40)
 
 
+class LinksBody(BaseModel):
+    slide_ids: list[str] = Field(..., max_length=playlist.LINKS_MAX_SLIDES)
+
+
 def question_source(request: Request, sent: Optional[str]) -> Optional[str]:
     """Where a question came from, for the log. The X-FT-Source header may only claim a test source
     (smoke, eval, prompt_test): it is a tag for analytics and changes nothing else."""
@@ -567,6 +571,23 @@ def event(body: EventBody, session: auth.Session = Depends(auth.require_student)
         if not ok:
             raise HTTPException(429, "Too many events.")
     usage.record_event(body.name)
+
+
+LINKS_PER_MINUTE = 10
+
+
+@app.post("/api/links")
+def links(body: LinksBody, session: auth.Session = Depends(auth.require_student)) -> dict[str, Any]:
+    """Fresh signed image and clip links for slides on screen, after the old ones expired (1 hour).
+
+    No model call, no question-log row: the page swaps the links into the answer it is playing.
+    """
+    minute = time.strftime("%Y%m%d%H%M", time.gmtime())
+    ok, _ = limits.increment(f"rl:links-min:{auth.visitor_key(session)}:{minute}", 1, cap=LINKS_PER_MINUTE,
+                             ttl_seconds=300)
+    if not ok:
+        raise HTTPException(429, "Too many link refreshes. Please wait a minute.")
+    return {"links": playlist.fresh_links(storage.store.get_or_503(), body.slide_ids)}
 
 
 @app.get("/api/audio")

@@ -239,3 +239,37 @@ def test_stored_answer_whose_slides_left_the_index_is_answered_live(student):
         seg["slide_id"] = "70445-s01-099"  # no longer in the index
     body = student.post("/api/ask", json={"question": "Show me the fruit slide"}).json()
     assert body["covered"] is True and [s["slide_id"] for s in body["segments"]] == FRUIT_IDS
+
+
+# ---------------------------------------------------------------- fresh links (Oct 8 code review)
+# Signed links expire after an hour. The page used to re-ask the whole question for fresh ones: a second
+# model call and question-log row, a different answer if the course filter had changed, and a 429 could
+# replace the paused walkthrough. /api/links re-signs the slides already on screen and nothing else.
+
+def test_links_returns_fresh_signed_image_and_clip_links(student):
+    r = student.post("/api/links", json={"slide_ids": ["70445-s01-002", "70445-s01-003", "nope-s01-001"]})
+    assert r.status_code == 200, r.text
+    links = r.json()["links"]
+    assert set(links) == {"70445-s01-002", "70445-s01-003"}  # unknown ids are left out
+    assert links["70445-s01-002"]["image"].startswith("/api/files/slides/70445/s01/70445-s01-002.webp?exp=")
+    assert links["70445-s01-002"]["clip"]["url"].startswith("/api/files/clips/70445-s01-002.mp4?exp=")
+    assert links["70445-s01-003"]["clip"] is None
+    assert student.get(links["70445-s01-002"]["image"]).status_code == 200
+
+
+def test_links_never_signs_hidden_sessions_and_needs_the_cookie(client, monkeypatch):
+    from app import playlist
+
+    assert client.post("/api/links", json={"slide_ids": ["70445-s01-002"]}).status_code == 401
+    client.post("/api/login", json={"passcode": "student-pass"})
+    monkeypatch.setattr(playlist, "hidden_sessions", lambda: {("70445", 1)})
+    assert client.post("/api/links", json={"slide_ids": ["70445-s01-002"]}).json()["links"] == {}
+
+
+def test_links_is_capped_and_rate_limited(student):
+    from app import limits
+
+    assert student.post("/api/links", json={"slide_ids": ["70445-s01-002"] * 11}).status_code == 400
+    codes = [student.post("/api/links", json={"slide_ids": ["70445-s01-002"]}).status_code for _ in range(12)]
+    assert codes[:10] == [200] * 10 and codes[-1] == 429
+    assert limits._mem_log == []  # no question is logged and no model is called
