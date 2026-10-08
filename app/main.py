@@ -23,6 +23,7 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from . import (
+    alerts,
     auth,
     config,
     course_info,
@@ -197,7 +198,8 @@ class RetrievalNotReady(Exception):
 # What answered a question, as written to question_log.kind (docs/SPEC.md, Data formats).
 STORED_TOPIC = "stored_topic"
 NOT_COVERED = "not_covered"
-LOG_KINDS = (logistics.COURSE_CONTENT, STORED_TOPIC, faq.KIND, course_info.KIND, logistics.LOGISTICS, NOT_COVERED)
+LOG_KINDS = (logistics.COURSE_CONTENT, STORED_TOPIC, faq.KIND, course_info.KIND, logistics.LOGISTICS, NOT_COVERED,
+             alerts.KIND)
 
 
 def answer(
@@ -209,6 +211,7 @@ def answer(
     completer: Callable[..., str],
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    visitor: Optional[str] = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Run retrieval + narration. Returns (playlist, info for logging).
 
@@ -223,6 +226,13 @@ def answer(
 
     def used_model() -> None:
         info["provider"], info["model"] = provider, model
+
+    # Instructor alerts (spec "Instructor alerts"): a broken quiz, submission or API key texts Ben, then stop.
+    # Only a student request (a visitor) can text; tests and evals run it as a dry run.
+    incident = alerts.check(question, course, content, completer, provider, model, visitor=visitor)
+    if incident is not None:
+        info.update(incident.info)
+        return incident.reply, info
 
     stored = _stored_topic(content, question, course)
     if stored is not None:
@@ -433,7 +443,8 @@ def ask(
         usage.purpose(test_purpose, sticky=True) if test_purpose else contextlib.nullcontext()
     ):
         try:
-            result, info = answer(question, course, content, retriever, embedder, completer)
+            result, info = answer(question, course, content, retriever, embedder, completer,
+                                  visitor=None if test_purpose else auth.visitor_key(session))
         except RetrievalNotReady:
             raise HTTPException(503, "retrieval not implemented yet")
     latency = int((time.monotonic() - started) * 1000)
@@ -551,3 +562,7 @@ app.include_router(analytics_router)
 from .admin_evals import router as admin_evals_router  # noqa: E402  (Settings > Evals)
 
 app.include_router(admin_evals_router)
+
+from .admin_alerts import router as admin_alerts_router  # noqa: E402  (Settings > Student alerts)
+
+app.include_router(admin_alerts_router)

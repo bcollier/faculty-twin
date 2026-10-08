@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
 from . import (
+    alerts,
     auth,
     config,
     edge_voice,
@@ -88,6 +89,7 @@ STATUS_VARS = (
     "AUDIO_SIGNING_SECRET",
     "STUDENT_PASSCODE",
     "ADMIN_PASSCODE",
+    *alerts.ENV_VARS,  # Settings > Student alerts (Twilio); booleans only like every key
 )
 MODEL_ID_RE = re.compile(r"^[A-Za-z0-9._:/~\-]{1,200}$")
 COURSE_RE = re.compile(r"^[0-9]{5}$")
@@ -535,6 +537,15 @@ def test_prompt(
             elif kind.source == "error":
                 output["note"] = "The reply was not a valid kind, so the question would be answered as course content."
             ok, errors = kind.source != "error", []
+        elif name == alerts.PROMPT_NAME:
+            content = storage.store.get_or_503()
+            output = alerts.detect(question, course, content, completer, provider=provider, model=model).public()
+            if output["keyword"] is None:
+                output["note"] = "The keyword pre-check found no problem phrase, so the prompt was not used."
+            elif output["classifier_source"] == "error":
+                output["note"] = "The reply was not usable, so only a strong keyword hit would alert."
+            output["note"] = output.get("note") or "A test never sends a text."
+            ok, errors = output["classifier_source"] != "error", []
         else:
             result, info = _answer_for_test(question, course, retriever, embedder, completer, provider, model)
             output = {

@@ -11,6 +11,7 @@
   <script type="module" src="admin.js"></script>
   <script type="module" src="admin-analytics.js"></script>
   <script type="module" src="admin-evals.js"></script>
+  <script type="module" src="admin-alerts.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#admin-main">Skip to content</a>
@@ -58,6 +59,7 @@
         <li><a href="#sec-prompts">Prompts</a></li>
         <li><a href="#sec-analytics">Analytics</a></li>
         <li><a href="#sec-evals">Evals</a></li>
+        <li><a href="#sec-alerts">Student alerts</a></li>
       </ul>
     </nav>
 
@@ -571,6 +573,41 @@
         <datalist id="ev-models-anthropic"></datalist>
         <datalist id="ev-models-openai"></datalist>
         <datalist id="ev-models-openrouter"></datalist>
+      </section>
+
+      <!-- 9. Student alerts -->
+      <section class="panel" id="sec-alerts" aria-labelledby="alerts-h">
+        <h2 id="alerts-h">Student alerts</h2>
+        <p class="panel-intro">When a student reports a broken quiz, a broken submission, or an API key out of credits, the twin texts my cell with the course, the Canvas item, and a short scrubbed quote (no names, no ids). Texts go through Twilio. If Twilio is not set up or a text fails, the alert still shows here.</p>
+        <div class="grid-2">
+          <form id="al-form" novalidate>
+            <div class="field"><label class="check"><input type="checkbox" id="al-enabled"> Text me when a student reports a problem</label>
+              <p class="hint">Off: the student is asked to email me or the TA, and nothing is stored or sent.</p></div>
+            <div class="field">
+              <label for="al-cap">Texts per day</label>
+              <input id="al-cap" type="number" min="0" max="50" step="1" aria-describedby="al-cap-hint">
+              <p class="hint" id="al-cap-hint">Past the cap, alerts are stored here but not texted. The same problem in the same course is texted once per 2 hours, and each student can raise one alert a day.</p>
+            </div>
+            <button class="btn btn-primary" type="submit">Save</button>
+            <p class="status-line" id="al-status" role="status"></p>
+          </form>
+          <div>
+            <h3 class="h-sub">Where texts go</h3>
+            <dl class="kv" id="al-kv"></dl>
+            <div class="actions">
+              <button type="button" class="btn" id="al-test">Send test text</button>
+              <button type="button" class="btn btn-small" id="al-refresh">Refresh</button>
+            </div>
+            <p class="status-line" id="al-test-status" role="status"></p>
+          </div>
+        </div>
+        <h3 class="h-sub">Recent alerts</h3>
+        <div class="table-wrap" style="max-height:480px;overflow:auto" tabindex="0" role="region" aria-label="Recent student alerts">
+          <table class="data stack">
+            <thead><tr><th scope="col">When (ET)</th><th scope="col">Course</th><th scope="col">Type</th><th scope="col">Item</th><th scope="col">Reports</th><th scope="col">Delivery</th><th scope="col">Student said (scrubbed)</th></tr></thead>
+            <tbody id="al-body"></tbody>
+          </table>
+        </div>
       </section>
     </main>
   </div>

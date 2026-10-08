@@ -167,6 +167,7 @@ def aggregate(
     tts_rows: dict[str, dict[str, Any]] = {}
     events: Counter = Counter()
     faq_hits: Counter = Counter()
+    sms = {"messages": 0, "segments": 0, "cost": 0.0}  # instructor alert texts (app/alerts.py)
     spend_day: dict[str, dict[str, float]] = {d: defaultdict(float) for d in day_list}
     raw_tokens: dict[tuple[str, str, str, str], dict[str, int]] = defaultdict(lambda: {"in": 0, "out": 0, "calls": 0})
 
@@ -186,6 +187,10 @@ def aggregate(
             row[k["metric"]] += count
             if k["metric"] == "chars" and k["day"] in spend_day and k["tier"] != "free":
                 spend_day[k["day"]]["ElevenLabs voice"] += pricing.tts_cost(table, k["tier"], count)
+        elif k["kind"] == "sms" and k["metric"] in ("messages", "segments"):
+            sms[k["metric"]] += count
+            if k["metric"] == "segments" and k["day"] in spend_day:
+                spend_day[k["day"]]["Twilio SMS"] += pricing.sms_cost(table, count)
         elif k["kind"] == "event":
             events[k["name"]] += count
         elif k["kind"] == "faq":
@@ -237,6 +242,7 @@ def aggregate(
     llm_total = sum(r["cost"] for r in llm_rows.values())
     embed_total = sum(r["cost"] for r in embed_rows.values())
     tts_total = sum(r["cost"] for r in tts_rows.values())
+    sms["cost"] = pricing.sms_cost(table, sms["segments"])
 
     # ---- topics: course -> session -> slide, from the top slide of each answered question
     courses: dict[str, dict[str, Any]] = {}
@@ -296,9 +302,9 @@ def aggregate(
             "by_kind": dict(kinds),
             "avg_latency_ms": round(sum(latencies) / len(latencies)) if latencies else None,
             "median_latency_ms": round(median(latencies)) if latencies else None,
-            "est_spend_usd": _round(llm_total + embed_total + tts_total, 4),
+            "est_spend_usd": _round(llm_total + embed_total + tts_total + sms["cost"], 4),
             "spend_parts": {"models": _round(llm_total, 4), "embeddings": _round(embed_total, 4),
-                            "voice": _round(tts_total, 4)},
+                            "voice": _round(tts_total, 4), "sms": _round(sms["cost"], 4)},
             "unpriced": sorted(unpriced),
         },
         "spend": {"series": series, "days": spend_series},
@@ -309,6 +315,7 @@ def aggregate(
         "embeddings": sorted(({**r, "cost": _round(r["cost"])} for r in embed_rows.values()),
                              key=lambda r: -r["tokens"]),
         "tts": sorted(({**r, "cost": _round(r["cost"])} for r in tts_rows.values()), key=lambda r: -r["chars"]),
+        "sms": {**sms, "cost": _round(sms["cost"])},
         "questions_by_day": list(per_day.values()),
         "questions_by_hour": by_hour,
         "hour_timezone": LOCAL_TZ,
