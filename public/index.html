@@ -205,8 +205,10 @@ html.handoff .handoff-frame { display: block; }
 
         <div id="player" class="player" hidden>
           <div class="media" id="media">
-          <figure class="slide-frame">
+          <figure class="slide-frame" id="slide-frame">
             <img id="slide-img" alt="">
+            <!-- Read-along: highlighter marks over the slide words the narrator is saying (public/readalong.js). -->
+            <div id="slide-marks" class="slide-marks" aria-hidden="true"></div>
             <video id="clip-video" playsinline controls preload="none" hidden></video>
             <figcaption class="visually-hidden" id="slide-alt"></figcaption>
           </figure>
@@ -225,7 +227,17 @@ html.handoff .handoff-frame { display: block; }
             <span id="clip-note" class="muted small" hidden></span>
           </div>
 
-          <p id="caption" class="caption" aria-live="polite"></p>
+          <!-- The narration box: the whole narration of the slide, the spoken word swept with a highlighter.
+               Screen readers hear it a sentence at a time (narration-live), never word by word. -->
+          <section id="narration" class="narration" aria-labelledby="narration-tag">
+            <div class="narration-head">
+              <h2 class="narration-tag" id="narration-tag">Narration</h2>
+              <span class="narration-voice" id="narration-voice"></span>
+              <span class="narration-note" id="narration-note" hidden></span>
+            </div>
+            <p id="caption" class="caption" tabindex="0"></p>
+            <p id="narration-live" class="visually-hidden" aria-live="polite"></p>
+          </section>
 
           <div class="controls" role="group" aria-label="Playback">
             <button type="button" id="btn-prev" class="icon-btn" aria-label="Previous slide">

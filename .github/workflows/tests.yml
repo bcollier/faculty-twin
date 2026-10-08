@@ -43,6 +43,12 @@ jobs:
               || { sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends wamerican >/dev/null; }
           fi
           test -f /usr/share/dict/words
+      - name: Poppler (indexer/slide_boxes.py reads word boxes with pdftotext -bbox-layout)
+        run: |
+          command -v pdftotext >/dev/null \
+            || sudo apt-get install -y --no-install-recommends poppler-utils >/dev/null \
+            || { sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends poppler-utils >/dev/null; }
+          pdftotext -v
       - name: Run the suite with coverage
         run: >
           uv run --no-project --with-requirements requirements.txt --with-requirements requirements-test.txt

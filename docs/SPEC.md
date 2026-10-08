@@ -194,9 +194,9 @@ Ben: "For faculty twin there should be an animation as the narration is read lik
 **The slide lights up.** (a) While a segment plays, its slide gets a gentle spotlight (a soft glow and a 2 px lift; the slide dims slightly while paused), and the progress dot for the current segment is highlighted. (b) Region highlights on the slide image: when a spoken word or phrase also appears on the slide, a translucent highlighter rectangle is drawn over those words on the image (it wipes in left to right, holds, and fades after about 1.5 seconds). Matching is done in the page from the slide's word boxes:
 
 - content words only (a stopword list is skipped), case-insensitive, light stemming (plural, `-ing`, `-ed`, `-ly`, `-er`/`-est` endings), at least 3 letters;
-- a phrase beats a single word: a run of narration content words that appears in the same order among the slide's words (ignoring slide stopwords between them) highlights the whole run, and its later words do not fire again;
+- a phrase beats a single word: a run of narration content words, within one narration sentence, that appears in the same order among the slide's words (ignoring slide stopwords between them) highlights the whole run, and its later words do not fire again;
 - a single word fires only when it is specific: at least 4 letters, and it appears at most 3 times on the slide (when it appears more than once, the occurrence after the last highlighted one wins, then the top-most);
-- the same slide region does not fire again within 3 seconds; at most 2 regions are lit at once;
+- a region lights once per segment, and a word already lit does not fire again on its own; the same region never fires twice within 3 seconds; at most 2 regions are lit at once, and a longer phrase holds a little longer (1.5 s plus 0.3 s a word, at most 3.5 s);
 - boxes on the same line that are next to each other merge into one rectangle;
 - with reduced motion the rectangle appears and disappears without the wipe;
 - an image-only slide uses OCR word boxes; a slide with no boxes keeps only the spotlight.

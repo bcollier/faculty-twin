@@ -22,6 +22,8 @@
 //   slow             4 second wait before the answer
 //   badclip          part 3's class clip fails to load (the button should disappear, the slide stays)
 //   stale            the first answer's slide links are expired (the page should re-ask once for fresh links)
+// Read-along: every segment has word timings (the first request for each answers "pending", like live audio
+// still streaming) and word boxes for its placeholder slide, so the narration box sweeps and the slide lights up.
 // URL flags:  &boot=offline  (server unreachable on first load)   &fresh=1  (forget mock login)
 // Passcodes:  student "demo", admin "admin".
 // Shapes follow the real API: tests/test_contract_mock.py compares them with app/ on every run.
@@ -39,9 +41,9 @@ console.info('[mock] Faculty Twin mock API is active (?mock=1). Nothing here tal
 /* ---------------- placeholder media ---------------- */
 
 const PALETTE = ['#2b5e6e', '#6b4f8a', '#8a5a2b', '#3d6b3a', '#7a3b4b', '#36506e'];
-function slideSvg({ course, session, slide, title, kind = 'Slide' }) {
+const DEFAULT_BULLETS = ['Placeholder point one', 'Placeholder point two', 'Placeholder point three'];
+function slideSvg({ course, session, slide, title, kind = 'Slide', bullets = DEFAULT_BULLETS }) {
   const color = PALETTE[(Number(session) + slide) % PALETTE.length];
-  const bullets = ['Placeholder point one', 'Placeholder point two', 'Placeholder point three'];
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
   <rect width="1600" height="900" fill="#ffffff"/>
   <rect width="1600" height="16" fill="${color}"/>
@@ -71,7 +73,8 @@ function wavBlob(seconds, freq = 0, volume = 0) {
 }
 
 // One short silent "narration" per segment so the audio element fires real `ended` events.
-const audioUrls = [5, 6, 5, 6, 5].map(s => wavBlob(s));
+const AUDIO_SECONDS = [16, 13, 12, 10, 5]; // about the pace of real narration (2.6 words a second)
+const audioUrls = AUDIO_SECONDS.map(s => wavBlob(s));
 
 // A 4 second placeholder "class clip" recorded from a canvas (Chrome, Firefox, Safari 14.1+).
 let clipPromise = null;
@@ -106,6 +109,24 @@ function placeholderClip() {
   return clipPromise;
 }
 
+/* Word boxes for a placeholder slide, as indexer/slide_boxes.py writes them: [[text, x0, y0, x1, y1, line]],
+   0..1 from the top left. The SVG text is laid out from known positions, so the widths are estimates. */
+function slideBoxes(title, bullets) {
+  const words = [];
+  const line = (text, x, baseline, size, charW, n) => {
+    let cx = x;
+    for (const w of text.split(' ')) {
+      const width = w.length * size * charW;
+      words.push([w, cx / 1600, (baseline - size * 0.78) / 900, (cx + width) / 1600, (baseline + size * 0.22) / 900, n]
+        .map((v, i) => (i === 0 || i === 5 ? v : Math.round(v * 10000) / 10000)));
+      cx += width + size * 0.28;
+    }
+  };
+  line(title, 96, 150, 68, 0.47, 0);
+  bullets.forEach((b, i) => line(b, 150, 342 + i * 90, 40, 0.54, i + 1));
+  return { v: 1, src: 'pdf', words };
+}
+
 /* ---------------- canned data ---------------- */
 
 const COURSES = [
@@ -137,6 +158,22 @@ const NARRATION = [
   'Here there is a clip from class for this slide. Press the button to watch it, and the stage swaps the slide for the video. When it ends, you come back to the slide.',
   'This is the last part of the mock answer. After it ends, the follow-up questions appear in the panel so you can keep going.',
 ];
+// What each placeholder slide says, so the read-along has narration words to light up on it.
+const BULLETS = [
+  ['Set up the idea', 'An example from class', 'Captions move along'],
+  ['The code panel', 'Marked lines matter', 'Long lines scroll'],
+  ['A clip from class', 'Watch it, then come back', 'The slide returns'],
+  ['Follow-up questions', 'Keep going', 'Ask a new question'],
+];
+const BOXES = new Map(); // mock boxes path -> boxes JSON
+const timingsAsked = new Set();
+
+/** Mock word timings: the narration spread evenly over its placeholder audio, as [[seconds, char_index]]. */
+function mockTimings(text, seconds) {
+  const starts = [...String(text).matchAll(/\S+/g)].map(m => m.index);
+  return starts.map((i, k) => [Math.round((k * seconds / starts.length) * 1000) / 1000, i]);
+}
+
 const MOCK_CODE = `# placeholder code for the mock (not course material)
 import numpy as np
 
@@ -150,14 +187,19 @@ print(placeholder_score([1, 2, 3], [0.2, 0.3, 0.5]))`;
 
 function segment(n, course, session, slide, extra = {}) {
   const sid = `${course}-s${String(session).padStart(2, '0')}-${String(slide).padStart(3, '0')}`;
+  const title = `Placeholder slide ${slide}`;
+  const bullets = BULLETS[n - 1] || BULLETS[0];
+  const boxesPath = `/api/files/slides/${course}/s${String(session).padStart(2, '0')}/${sid}.boxes.json`;
+  BOXES.set(boxesPath, slideBoxes(title, bullets));
   return {
     n, slide_id: sid, course,
     course_title: COURSES.find(c => c.course === course).title,
     session, session_title: sessionTitle(course, session), date: DATES[course][session - 1], slide_number: slide,
-    image: slideSvg({ course, session, slide, title: `Placeholder slide ${slide}` }),
+    image: slideSvg({ course, session, slide, title, bullets }),
     narration: NARRATION[n - 1] || NARRATION[0],
     audio: audioUrls[n - 1], voice: { kind: 'clone', label: 'AI voice made from my recordings.' },
-    audio_fallback: null, voice_fallback: null, code: null, clip: null, ...extra,
+    audio_fallback: null, voice_fallback: null, code: null, clip: null,
+    timings: `/api/audio/timings?mock=${n}`, timings_fallback: null, boxes: `${boxesPath}?exp=0&sig=mock`, ...extra,
   };
 }
 
@@ -191,9 +233,10 @@ async function buildAnswer(question, course) {
     segment(4, c, 7, 3),
   ];
   const q = question.toLowerCase();
-  if (q.includes('noaudio')) segments.forEach(s => { s.audio = null; s.voice = null; });
+  if (q.includes('noaudio')) segments.forEach(s => { s.audio = null; s.voice = null; s.timings = null; });
   if (q.includes('fallbackvoice')) segments.forEach((s, i) => {
     s.audio_fallback = s.audio;
+    s.timings_fallback = s.timings;
     s.voice_fallback = { kind: 'free', label: 'AI voice (a stock voice, not mine).' };
     if (i > 0) s.audio = '/__mock_missing_audio.mp3';
   });
@@ -358,6 +401,15 @@ async function route(url, method, body) {
 
   /* student */
   if (path === '/api/health') return json(200, { ok: true });
+  if (path === '/api/audio/timings') {
+    if (!student) return unauthorized();
+    const n = Number(url.searchParams.get('mock')) || 1;
+    if (!timingsAsked.has(n)) { timingsAsked.add(n); return json(200, { words: null, source: 'pending' }); }
+    return json(200, { words: mockTimings(NARRATION[n - 1] || NARRATION[0], AUDIO_SECONDS[n - 1] || 5), source: 'edge' });
+  }
+  if (path.startsWith('/api/files/') && path.endsWith('.boxes.json')) {
+    return BOXES.has(path) ? json(200, BOXES.get(path)) : json(404, { detail: 'Not found.' });
+  }
   if (path === '/api/login' && method === 'POST') {
     await sleep(300);
     if (body?.passcode === 'demo') { store.setItem('mock.student', '1'); return json(200, { ok: true }); }

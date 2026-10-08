@@ -239,6 +239,52 @@ def test_audio_failure_falls_back_to_captions(page, base_url):
     expect(page.locator("#btn-mute")).to_be_disabled()  # captions only: nothing to mute
 
 
+# ---------------------------------------------------------------- read-along
+
+def test_read_along_sweeps_the_words_and_lights_up_the_slide(page, base_url):
+    sign_in(page, base_url)
+    ask(page, "Explain the placeholder method")
+    wait_for_player(page)
+    expect(page.locator("#narration-tag")).to_have_text("Narration")
+    expect(page.locator("#narration-voice")).to_have_text("AI voice made from my recordings.")
+    words = page.locator("#caption .w")
+    assert words.count() == len(page.evaluate("document.querySelector('#caption').textContent").split())
+    # The spoken word moves along, the words before it are said, and the slide gets the spotlight.
+    expect(page.locator("#caption .w.now")).to_have_count(1)
+    expect(page.locator("#slide-frame")).to_have_class(re.compile(r"\bis-speaking\b"))
+    expect(page.locator("#caption .w.said").nth(3)).to_be_attached(timeout=8_000)
+    # "Set up the idea" is on the placeholder slide: a highlighter mark appears over it on the image.
+    expect(page.locator("#slide-marks .slide-mark").first).to_be_attached(timeout=10_000)
+    mark = page.locator("#slide-marks .slide-mark").first.bounding_box()
+    frame = page.locator("#slide-frame").bounding_box()
+    assert frame["x"] <= mark["x"] and mark["x"] + mark["width"] <= frame["x"] + frame["width"]
+    assert frame["y"] <= mark["y"] and mark["y"] + mark["height"] <= frame["y"] + frame["height"]
+    # Screen readers get the narration a sentence at a time.
+    expect(page.locator("#narration-live")).not_to_be_empty()
+    # Pausing takes the spotlight off.
+    page.click("#btn-play")
+    expect(page.locator("#slide-frame")).not_to_have_class(re.compile(r"\bis-speaking\b"))
+
+
+def test_read_along_reduced_motion_marks_the_sentence(page, base_url):
+    page.emulate_media(reduced_motion="reduce")
+    sign_in(page, base_url)
+    ask(page, "Explain the placeholder method")
+    wait_for_player(page)
+    expect(page.locator("#caption")).to_have_class(re.compile(r"\breduce\b"))
+    expect(page.locator("#caption .w.in-sentence").first).to_be_attached(timeout=8_000)
+    first_sentence = page.locator("#caption .w[data-s='0']").count()
+    expect(page.locator("#caption .w.in-sentence")).to_have_count(first_sentence)
+
+
+def test_read_along_in_captions_only(page, base_url):
+    sign_in(page, base_url)
+    ask(page, "noaudio")
+    wait_for_player(page)
+    expect(page.locator("#narration-voice")).to_have_text("Captions only")
+    expect(page.locator("#caption .w.now")).to_have_count(1, timeout=8_000)
+
+
 # ---------------------------------------------------------------- arriving from collier.phd
 
 @pytest.mark.parametrize("motion", ["no-preference", "reduce"])
