@@ -83,11 +83,15 @@ export async function evalsRoute(url, method, body) {
   const path = url.pathname.replace('/api/admin/evals', '');
   let m;
   await sleep(150);
-  if (path === '/limits') return json(200, { max_questions: 30, max_generators: 3, max_judges: 3, run_call_cap: 300, daily_eval_cap: 300, eval_calls_today: 12, live_model: { provider: 'anthropic', model: 'claude-sonnet-5-5' } });
+  if (path === '/limits') return json(200, { max_questions: 30, max_generators: 3, max_judges: 3, run_call_cap: 300, daily_eval_cap: 300, eval_calls_today: 12,
+    daily_llm_cap: 600, llm_calls_today: 31, student_reserve: 100,
+    jev: 'Jev runs from the command line only (it needs deepeval, which is not in the Vercel bundle).',
+    live_model: { provider: 'anthropic', model: 'claude-sonnet-5-5' }, keys: { anthropic: true, openai: true, openrouter: false } });
   if (path === '/questions' && method === 'GET') {
     return json(200, { count: QUESTIONS.length, answerable: QUESTIONS.filter(q => q.answerable).length, uploaded: true, questions: QUESTIONS,
       categories: Object.entries(QUESTIONS.reduce((a, q) => ({ ...a, [q.category]: (a[q.category] || 0) + 1 }), {})).map(([category, count]) => ({ category, count })).sort((a, b) => b.count - a.count),
-      all_categories: ['CONCEPT_QUESTION', 'CODE_HELP', 'MEETING_REQUEST', 'EXTENSION_REQUEST', 'MISSED_CLASS', 'OTHER'] });
+      all_categories: ['CONCEPT_QUESTION', 'CODE_HELP', 'MEETING_REQUEST', 'EXTENSION_REQUEST', 'MISSED_CLASS', 'OTHER'],
+      privacy: 'De-identified student questions (evals/README.md). Private: admin only, never in git or a public link.' });
   }
   if (path === '/questions' && method === 'POST') {
     if (/@|\d{7,}/.test(body.question)) return json(400, { detail: 'question still has: email' });
@@ -159,7 +163,8 @@ export async function evalsRoute(url, method, body) {
           self_grading: (r.self_grading || []).filter(x => x.generator === key), ...mm });
       }
     }
-    return json(200, { series: Object.values(series), calibration: Object.values(calibration).map(c => ({ judge: c.judge, met: c.met, cases: c.cases, done: c.done, missed: c.missed, at: c.finished_at, source: c.source })), legend: LEGEND });
+    return json(200, { series: Object.values(series), dimensions: DIMS,
+      metrics: ['pass_rate', 'decline_accuracy', 'fallback_rate', 'judge_agreement'], calibration: Object.values(calibration).map(c => ({ judge: c.judge, met: c.met, cases: c.cases, done: c.done, missed: c.missed, at: c.finished_at, source: c.source })), legend: LEGEND });
   }
   if (path === '/calibration/step') {
     await sleep(400);

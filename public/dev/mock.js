@@ -10,6 +10,7 @@
 //   faqmeet          FAQ answer with a link button (Calendly)
 //   faqta            FAQ answer for two courses with two TA contact cards
 //   logistics        logistics referral with the Calendly button and a TA card
+//   canvasinfo       course-info answer from Canvas (syllabus wording, links to the Canvas pages)
 //   offline          network failure (backend unreachable)
 //   busy             429 rate limit
 //   unfinished       503 retrieval not implemented yet
@@ -22,6 +23,7 @@
 //   stale            the first answer's slide links are expired (the page should re-ask once for fresh links)
 // URL flags:  &boot=offline  (server unreachable on first load)   &fresh=1  (forget mock login)
 // Passcodes:  student "demo", admin "admin".
+// Shapes follow the real API: tests/test_contract_mock.py compares them with app/ on every run.
 
 import { evalsRoute } from './mock-evals.js';
 
@@ -191,15 +193,27 @@ async function buildAnswer(question, course) {
 }
 
 /* admin state */
+// A session as GET /api/admin/courses lists it (app/admin.py list_courses).
+function sessionRow(course, session, date, title, has) {
+  return {
+    id: `${course}-s${String(session).padStart(2, '0')}`, session, date, title, visible: true,
+    sources: { slides: null, transcript: null, video: null, notebook: null },
+    slides_indexed: has.indexed ? 24 : 0, clips: has.clips ? 3 : 0, has,
+  };
+}
 const admin = {
-  settings: { provider: 'anthropic', model: 'claude-sonnet-5-5', web_answers_enabled: true, daily_web_answer_cap: 200, web_answers_today: 3, web_answer_voice: 'none', voice_id: 'eleven:mock-voice-ben', voice_kind: 'clone',
-    voice_label: 'AI voice made from my recordings.', voice_fallback: 'captions', voice_fallback_voice: 'edge:en-US-AndrewMultilingualNeural',
-    daily_voice_char_cap: 20000, daily_free_voice_char_cap: 200000, index_version: 7 },
+  settings: { provider: 'anthropic', model: 'claude-sonnet-5-5', providers: ['anthropic', 'openai', 'openrouter'],
+    default_models: { anthropic: 'claude-sonnet-5-5', openai: 'gpt-6.1-sol', openrouter: 'anthropic/claude-sonnet-5.5' },
+    web_answers_enabled: true, daily_web_answer_cap: 200, web_answers_today: 3, web_answer_voice: 'none', web_answer_voice_label: null,
+    voice_id: 'eleven:mock-voice-ben', voice_source: 'settings', voice_default_configured: true, voice_kind: 'clone',
+    voice_label: 'AI voice made from my recordings.', voice_costs_money: true,
+    voice_fallback: 'captions', voice_fallback_voice: 'edge:en-US-AndrewMultilingualNeural', voice_fallback_label: null,
+    daily_voice_char_cap: 20000, daily_free_voice_char_cap: 200000,
+    per_minute_limit: 5, per_day_limit: 30, question_max_chars: 300, model_warning: null,
+    max_price_per_mtok: { prompt: 15.0, completion: 60.0 }, student_passcode_source: 'env', index_version: 7 },
   courses: COURSES.map(c => ({
     ...c,
-    sessions: DATES[c.course].map((date, i) => ({
-      id: `${c.course}-s${String(i + 1).padStart(2, '0')}`, course: c.course, session: i + 1, date,
-      title: sessionTitle(c.course, i + 1), visible: true,
+    sessions: DATES[c.course].map((date, i) => sessionRow(c.course, i + 1, date, sessionTitle(c.course, i + 1), {
       slides: true, transcript: i < 10, video: i < 9, clips: i < 8 && !(c.course === '45884' && i >= 10), indexed: i < 9,
     })),
   })),
@@ -289,6 +303,13 @@ const LOG = Array.from({ length: 50 }, (_, i) => {
     provider: model ? (i % 4 === 0 ? 'openrouter' : 'anthropic') : null,
     model: model ? (i % 4 === 0 ? 'qwen/mock-model-6' : 'claude-sonnet-5-5') : null,
     latency_ms: kind === 'faq' ? 2 : kind === 'stored_topic' ? 140 : 900 + ((i * 337) % 2400),
+    course: i % 3 === 0 ? null : (i % 3 === 1 ? '70445' : '45884'),
+    top_slide_id: searched && kind !== 'not_covered' ? '70445-s06-012' : null,
+    session: searched && kind !== 'not_covered' ? 6 : null,
+    session_title: searched && kind !== 'not_covered' ? sessionTitle('70445', 6) : null,
+    tokens_in: model ? 2400 : 0, tokens_out: model ? 380 : 0,
+    voice_chars: kind === 'course_content' ? 1450 : 0,
+    source: i === 7 ? 'smoke' : null, test: i === 7, test_inferred: false,
   };
 });
 
@@ -338,17 +359,29 @@ async function route(url, method, body) {
     if (q.includes('unfinished')) return json(503, { detail: 'Retrieval is not implemented yet' });
     if (q.includes('expire')) { store.removeItem('mock.student'); return unauthorized(); }
     if (q.includes('faqmeet')) {
+      const message = 'Placeholder FAQ answer (mock). Book a time through the link below.';
       return json(200, { question: body.question, covered: false, kind: 'faq', faq_id: 'meeting', title: 'Meeting with me',
-        segments: [], sources: [], follow_ups: [],
-        message: 'Placeholder FAQ answer (mock). Book a time through the link below.',
+        segments: [], sources: [], follow_ups: [], message,
+        answers: [{ course: '', course_label: '', text: message }],
         links: [{ label: 'Book a 30-minute meeting', url: 'https://calendly.com/bencollierphd' }], contacts: [] });
     }
     if (q.includes('faqta')) {
       return json(200, { question: body.question, covered: false, kind: 'faq', faq_id: 'reschedule_presentation',
         title: 'Rescheduling a presentation', segments: [], sources: [], follow_ups: [], links: [],
         message: 'For 70-445: placeholder answer one.\n\nFor 45-884: placeholder answer two.',
+        answers: [{ course: '70445', course_label: '70-445', text: 'Placeholder answer one.' },
+                  { course: '45884', course_label: '45-884', text: 'Placeholder answer two.' }],
         contacts: [{ course: '70445', course_label: '70-445', name: '', email: 'ta-one@example.edu' },
                    { course: '45884', course_label: '45-884', name: 'Placeholder TA', email: 'ta-two@example.edu' }] });
+    }
+    if (q.includes('canvasinfo')) {
+      const message = 'Placeholder course-info answer (mock), written from a placeholder Canvas page.';
+      return json(200, { question: body.question, covered: true, kind: 'course_info', label: 'From Canvas',
+        title: 'Syllabus: placeholder policy', message,
+        answers: [{ course: '70445', course_label: '70-445', text: message }],
+        links: [{ label: 'Syllabus: placeholder policy', url: 'https://canvas.example.edu/courses/1/assignments/syllabus' },
+                { label: 'Placeholder assignment', url: 'https://canvas.example.edu/courses/1/assignments/2' }],
+        segments: [], sources: [], follow_ups: ['Mock question about topic A?', 'Mock question about topic B?'] });
     }
     if (q.includes('logistics')) {
       return json(200, { question: body.question, covered: false, kind: 'logistics', segments: [], sources: [], follow_ups: [],
@@ -385,8 +418,15 @@ async function route(url, method, body) {
   if (path === '/api/admin/status') {
     return json(200, {
       keys: { ANTHROPIC_API_KEY: true, OPENAI_API_KEY: false, OPENROUTER_API_KEY: true, VOYAGE_API_KEY: true,
-        ELEVENLABS_API_KEY: true, SUPABASE_SERVICE_ROLE_KEY: true },
-      today: { questions: 23, covered: 20, not_covered: 3, rate_limited: 1, voice_chars: 8420, voice_char_cap: admin.settings.daily_voice_char_cap },
+        ELEVENLABS_API_KEY: true, ELEVENLABS_VOICE_ID: true, SUPABASE_URL: true, SUPABASE_SERVICE_ROLE_KEY: true,
+        SESSION_SECRET: true, AUDIO_SIGNING_SECRET: true, STUDENT_PASSCODE: true, ADMIN_PASSCODE: true,
+        TWILIO_ACCOUNT_SID: false, TWILIO_AUTH_TOKEN: false, TWILIO_FROM: false, ALERT_TO_PHONE: false },
+      llm: { provider: admin.settings.provider, model: admin.settings.model },
+      voyage_model: 'voyage-3.5',
+      content: { loaded: true, source: 'supabase', records: 412, slides: 380, info_chunks: 32, index_version: admin.settings.index_version },
+      today: { questions: 23, covered: 20, not_covered: 3, rate_limited: 1, voice_chars: 8420, free_voice_chars: 1200,
+        llm_calls: 31, embeddings: 18, eval_llm_calls: 12, web_answers: 3, web_answer_cap: 200,
+        voice_char_cap: admin.settings.daily_voice_char_cap, free_voice_char_cap: admin.settings.daily_free_voice_char_cap },
       limits: { per_minute: 5, per_day: 30, question_max_chars: 300, narration_max_words: 110 },
     });
   }
@@ -429,17 +469,16 @@ async function route(url, method, body) {
       admin.courses.push(c);
       return json(201, c);
     }
-    return json(200, admin.courses);
+    return json(200, { courses: admin.courses });
   }
   if (path === '/api/admin/sessions' && method === 'POST') {
     const c = admin.courses.find(x => x.course === body?.course);
     if (!c) return json(404, { detail: 'No such course' });
     const n = Number(body.session);
     if (c.sessions.some(s => s.session === n)) return json(409, { detail: 'That session already exists' });
-    const s = { id: `${c.course}-s${String(n).padStart(2, '0')}`, course: c.course, session: n, date: body.date, title: body.title,
-      visible: true, slides: false, transcript: false, video: false, clips: false, indexed: false };
+    const s = sessionRow(c.course, n, body.date, body.title, { slides: false, transcript: false, video: false, clips: false, indexed: false });
     c.sessions.push(s); c.sessions.sort((a, b) => a.session - b.session);
-    return json(201, s);
+    return json(200, { id: s.id, course: c.course, session: n, date: s.date, title: s.title, visible: true });
   }
   let m;
   if ((m = path.match(/^\/api\/admin\/sessions\/([^/]+)$/)) && method === 'PATCH') {
@@ -465,7 +504,7 @@ async function route(url, method, body) {
     setTimeout(() => Object.assign(s, { status: 'ready', message: 'Mock: 24 slides indexed', updated_at: new Date().toISOString() }), 7000);
     return json(200, s);
   }
-  if (path === '/api/admin/log') return json(200, LOG);
+  if (path === '/api/admin/log') return json(200, { rows: LOG });
 
   /* prompts (placeholder texts; the real ones live in app/prompts.py) */
   if (path === '/api/admin/prompts') return json(200, { prompts: MOCK_PROMPTS.map(promptView), max_chars: 12000 });

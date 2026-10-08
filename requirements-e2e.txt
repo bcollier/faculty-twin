@@ -1,0 +1,3 @@
+# Browser tests only (tests/e2e, run with --e2e). After installing, fetch the browser once:
+#   uv run --no-project --with-requirements requirements-e2e.txt python -m playwright install chromium
+playwright==1.63.0

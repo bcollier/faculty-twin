@@ -404,7 +404,10 @@ faculty-twin/
   indexer/upload.py       mirror build outputs to the bucket, bump index_version
   indexer/worker.py       poll sources, run the stages for uploaded files
   tests/test_retrieval.py Ben's selection tests (plus failing stubs for his functions)
-  tests/                  auth, signing, providers, storage, pipeline tests with fakes
+  tests/                  auth, signing, providers, storage, pipeline tests with fakes (no network)
+  tests/test_contract_mock.py  the ?mock=1 dev mock answers in the real API's shapes (added Oct 8)
+  tests/e2e/              Playwright browser tests of public/ with ?mock=1, run with --e2e (added Oct 8)
+  .github/workflows/tests.yml  CI: the suite with coverage, node --check, browser tests (added Oct 8)
 ```
 
 ## Data
@@ -1052,6 +1055,19 @@ New Oct 5. Build in this order and stop where the clock says.
 5. `app/analytics.py` and the Analytics section (`public/admin-analytics.js`, `public/analytics.css`).
 
 **Check:** after the migration, ask one typed question and tap one chip on the live site; Analytics shows two questions with sources typed and chip, tokens under `narration`, and a nonzero estimated spend; `python -m scripts.live_smoke` adds rows that show only with "Show test traffic"; "Label topics" returns themes and the run appears in its history.
+
+### Block 8b. Test harness (added Oct 8)
+
+1. CI on every pull request and push to `main` (`.github/workflows/tests.yml`): the full suite with coverage, `node --check` on the browser scripts, and the browser tests. No secrets; `tests/conftest.py` fails any test that reaches a non-loopback host.
+2. Coverage per module, with tests that bring every `app/` module to at least 80% of lines.
+3. Browser tests (Playwright, headless Chromium) of the student page and Settings against `?mock=1`.
+4. A contract test that keeps `public/dev/mock.js` in the real API's shapes.
+5. The live smoke check also covers a course-info answer, a signed slide image, a stored chip's audio (first kilobyte only), Settings status (only with `ADMIN_PASSCODE`), and `--json`.
+6. Property tests (hypothesis) for the PG filter, the access-code filter, de-identification and the narration validators.
+
+Details and commands: [TESTING_AND_SCORES.md](TESTING_AND_SCORES.md), "(a) The automated test suite" and "(d) Live smoke check".
+
+**Check:** the `tests` workflow is green on the pull request; locally the suite passes with no network, and `--e2e tests/e2e` passes.
 
 ### Block 9. Phone pass and error states (was Block 6)
 

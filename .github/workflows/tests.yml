@@ -1,0 +1,104 @@
+# The automated test suite on every pull request and every push to main
+# (docs/TESTING_AND_SCORES.md, "(a) The automated test suite").
+# No secrets and no network: every model, embedding, voice and storage call is a test fake, and
+# tests/conftest.py fails any test that opens a connection to a non-loopback host.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_NO_PROGRESS: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  pytest:
+    name: pytest + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"  # the contract test runs public/dev/mock.js in Node
+      - name: Install Python (from .python-version)
+        run: uv python install
+      - name: English word list (indexer/deidentify.py reads /usr/share/dict/words, as on macOS)
+        run: |
+          if [ ! -f /usr/share/dict/words ]; then
+            sudo apt-get install -y --no-install-recommends wamerican >/dev/null \
+              || { sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends wamerican >/dev/null; }
+          fi
+          test -f /usr/share/dict/words
+      - name: Run the suite with coverage
+        run: >
+          uv run --no-project --with-requirements requirements.txt --with-requirements requirements-test.txt
+          python -m pytest -q -p no:cacheprovider
+          --cov=app --cov=scripts --cov-report=term --cov-report=xml:coverage.xml --cov-fail-under=90
+      - name: Coverage per module (job summary)
+        if: always()
+        run: |
+          if [ -f .coverage ]; then
+            echo "### Coverage per module" >> "$GITHUB_STEP_SUMMARY"
+            uv run --no-project --with-requirements requirements-test.txt python -m coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  frontend-syntax:
+    name: node --check public/*.js
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Syntax-check every browser script
+        run: |
+          status=0
+          for f in public/*.js public/dev/*.js; do
+            node --check "$f" && echo "ok  $f" || { echo "FAIL $f"; status=1; }
+          done
+          exit $status
+
+  e2e:
+    name: browser tests (Playwright, ?mock=1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements*.txt"
+      - name: Install Python (from .python-version)
+        run: uv python install
+      - name: Cache the Playwright browser
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements-e2e.txt') }}
+      - name: Install headless Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: uv run --no-project --with-requirements requirements-e2e.txt python -m playwright install --with-deps --only-shell chromium
+      - name: Install Chromium's system libraries (cache hit)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: uv run --no-project --with-requirements requirements-e2e.txt python -m playwright install-deps chromium
+      - name: Run the browser tests
+        run: >
+          uv run --no-project --with-requirements requirements.txt --with-requirements requirements-test.txt
+          --with-requirements requirements-e2e.txt
+          python -m pytest -q -p no:cacheprovider --e2e tests/e2e
