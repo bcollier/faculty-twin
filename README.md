@@ -135,3 +135,4 @@ uv run --no-project --with-requirements requirements.txt python -m evals.run \
 - [docs/SECURITY.md](docs/SECURITY.md): threat model, findings, and the pre-launch checklist
 - [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md): shot list and pre-flight checklist for the demo video
 - [docs/EXPLORATION_JEV.md](docs/EXPLORATION_JEV.md): exploration of Jev (TypeSafe's System One model) as an evaluation judge
+- [docs/demo/data-and-evals.html](docs/demo/data-and-evals.html): demo page, what data goes into the twin and how the eval harness scores it ([view rendered](https://htmlpreview.github.io/?https://github.com/bcollier/faculty-twin/blob/main/docs/demo/data-and-evals.html))
