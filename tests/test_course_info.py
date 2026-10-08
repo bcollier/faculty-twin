@@ -436,6 +436,15 @@ def test_fallback_skips_unsafe_sentences_and_caps_words():
     assert course_info.fallback_text({"text": "[student] only."}) == course_info.NOT_ANSWERED
 
 
+def test_an_andrew_email_is_never_shown():
+    # Oct 8: "Andrew ID" and "andrew.cmu.edu" are no longer masked in Canvas text (indexer/roster.py), so a
+    # student's or TA's andrew.cmu.edu address could reach an answer. It never does; the domain alone can.
+    assert "email" in course_info.problem("Please email tafakeid@andrew.cmu.edu, who can add it by hand.")
+    assert course_info.problem("Sign in with your Andrew ID and include the @andrew.cmu.edu part.") is None
+    rec = {"title": "x", "text": "Email tafakeid@andrew.cmu.edu if it is missing. Sign in with your Andrew ID."}
+    assert course_info.fallback_text(rec) == "Sign in with your Andrew ID."
+
+
 def test_links_are_https_and_deduplicated():
     recs = [
         {"title": "A", "canvas_url": "https://canvas.cmu.edu/x"},

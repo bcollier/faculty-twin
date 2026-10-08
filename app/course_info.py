@@ -61,6 +61,9 @@ _STUDENT = re.compile(r"\[\s*student\s*\]", re.I)
 # A run of 6+ letters and digits mixed together ("X7K2QP") looks like an access code.
 _CODE_LIKE = re.compile(r"\b(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{6,}\b")
 _SECRET_WORDS = re.compile(r"\b(access|enrol(?:l)?ment|join|invite|invitation)\s+code\s*(?:is|:)\s*\S", re.I)
+# A student's or TA's CMU address. Added Oct 8: the Canvas text no longer masks "andrew.cmu.edu" (it is the
+# university's account domain, indexer/roster.py), so the address before it is checked here instead.
+_ANDREW_EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@andrew\.cmu\.edu\b", re.I)
 
 
 class ValidationError(ValueError):
@@ -203,6 +206,8 @@ def problem(text: str) -> Optional[str]:
     """Why this text may not be shown, or None. Shared by the model's answer and the fallback."""
     if _STUDENT.search(text):
         return "it contains [student]"
+    if _ANDREW_EMAIL.search(text):
+        return "it contains an andrew.cmu.edu email address"
     if narration._URLISH.search(text):
         return "it contains a web address"
     if _CODE_LIKE.search(text) or _SECRET_WORDS.search(text):
