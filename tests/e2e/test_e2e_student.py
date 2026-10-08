@@ -199,6 +199,38 @@ def test_logistics_referral(page, base_url):
     expect(page.locator("#stage-message-actions button", has_text="Contact the TA")).to_be_visible()
 
 
+def test_answer_from_the_other_course_says_so(page, base_url):
+    # Spec step 7c: the course filter had nothing, so the other course's slides answer, labeled plainly.
+    sign_in(page, base_url)
+    ask(page, "crosscourse")
+    wait_for_player(page)
+    note = page.locator("#cross-note")
+    expect(note).to_be_visible()
+    expect(note).to_have_text(re.compile(r"^My 45-884 slides don't cover that, but I taught it in 70-445"))
+    expect(page.locator(".msg-twin").last).to_contain_text("My 45-884 slides don't cover that")
+    # The next ordinary answer has no note.
+    ask(page, "Explain the placeholder method")
+    expect(page.locator(".msg-twin")).to_have_count(2)
+    wait_for_player(page)
+    expect(note).to_be_hidden()
+    expect(page.locator(".msg-twin").last).to_contain_text("Here are 4 slides")
+
+
+def test_web_card_with_and_without_closest_material(page, base_url):
+    sign_in(page, base_url)
+    ask(page, "webanswer")
+    expect(page.locator("#stage-message-label")).to_have_text("Beyond my slides: from the web")
+    expect(page.locator("#stage-message-extra h3", has_text="Closest material in my courses")).to_be_visible()
+    expect(page.locator(".related-slides li")).to_have_count(3)
+    # Spec step 7b: nothing cleared the related-slide floor, so the card shows its sources only.
+    ask(page, "webanswer norelated")
+    expect(page.locator(".msg-twin")).to_have_count(2)
+    expect(page.locator("#stage-message-extra h3", has_text="Sources")).to_be_visible()
+    expect(page.locator("#stage-message-extra h3", has_text="Closest material")).to_have_count(0)
+    expect(page.locator(".related-slides")).to_have_count(0)
+    expect(page.locator("#stage-message-text")).to_contain_text("Placeholder web answer")
+
+
 # ---------------------------------------------------------------- error states
 
 @pytest.mark.parametrize(

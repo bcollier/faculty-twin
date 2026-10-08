@@ -354,7 +354,8 @@ def log_question(
     """One question-log row. See docs/TESTING_AND_SCORES.md for what each field means.
 
     `kind` is what answered: "course_content", "stored_topic", "faq", "course_info",
-    "logistics", "web" (beyond the slides, from a web search), or "not_covered".
+    "logistics", "web" (beyond the slides, from a web search), "cross_course" (the other course's slides
+    when the course filter had none over the threshold), or "not_covered".
     `provider` and `model` are None when no model was called.
     `extra` may carry the analytics columns (ANALYTICS_COLUMNS): the top slide and its
     session, tokens in/out, voice characters signed, and where the question came from

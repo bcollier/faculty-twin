@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -206,6 +207,59 @@ def _source(rec: dict[str, Any], image: str | None) -> dict[str, Any]:
 
 def not_covered(question: str) -> dict[str, Any]:
     return {"question": question, "covered": False, "segments": [], "sources": [], "follow_ups": []}
+
+
+# ---------------------------------------------------------------- cross-course fallback (spec step 7c)
+
+CROSS_COURSE = "cross_course"
+
+
+def other_course_ranked(ranked: list[tuple[int, float]], records: list[dict[str, Any]],
+                        course: str) -> list[tuple[int, float]]:
+    """`ranked` (over every course's slides) without the pairs for `course`: indexes still point into `records`.
+
+    Added Oct 8 (the frames question filtered to 45-884): Ben's select_segments() runs on these pairs with the
+    unfiltered records list, so it can only pick the other course's slides (its gap fills come from the same
+    session as two picked slides).
+    """
+    return [(i, s) for i, s in ranked if 0 <= i < len(records) and str(records[i].get("course")) != course]
+
+
+def _course_label(code: str) -> str:
+    """The course number as students write it: "70-445" for "70445"; anything else as given."""
+    return f"{code[:2]}-{code[2:]}" if len(code) == 5 and code.isdigit() else code
+
+
+def cross_course_intro(asked: str, chosen: list[dict[str, Any]]) -> str:
+    """What the student reads first when the slides come from another course than the filter.
+
+    "My 45-884 slides don't cover that, but I taught it in 70-445 (AI for Business Leaders). Here are 3 slides
+    from session 3 (Rules Search and Expert Systems). I'll walk you through them."
+    Plain words only: no em dash, no web address, nothing the voice checks would stop (tests/test_cross_course.py).
+    """
+    first = chosen[0]
+    taught = _course_label(str(first.get("course") or ""))
+    title = str(first.get("course_title") or "").strip()
+    n = len(chosen)
+    sessions = list(dict.fromkeys(int(r.get("session") or 0) for r in chosen))
+    slides = "Here is 1 slide" if n == 1 else f"Here are {n} slides"
+    if len(sessions) == 1:
+        session_title = str(first.get("session_title") or "").strip()
+        where = f"from session {sessions[0]}" + (f" ({session_title})" if session_title else "")
+        walk = "I'll walk you through it." if n == 1 else "I'll walk you through them."
+    else:
+        where, walk = f"from {len(sessions)} sessions", "I'll walk you through them in order."
+    text = (f"My {_course_label(asked)} slides don't cover that, but I taught it in {taught}"
+            + (f" ({title})" if title else "") + f". {slides} {where}. {walk}")
+    return re.sub(r"\s*[—–]\s*", ", ", text)
+
+
+def mark_cross_course(reply: dict[str, Any], asked: str, chosen: list[dict[str, Any]]) -> dict[str, Any]:
+    """The playlist from build_playlist(), labeled as an answer from another course than the filter."""
+    reply["kind"] = CROSS_COURSE
+    reply["asked_course"] = asked
+    reply["message"] = cross_course_intro(asked, chosen)
+    return reply
 
 
 def courses(content: Content) -> list[dict[str, Any]]:

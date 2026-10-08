@@ -47,7 +47,7 @@ RANGES = (7, 30, 90)
 MAX_LOG_ROWS = 10000
 MAX_SERIES = 7  # spend chart: the top seven series, the rest fold into "Other"
 TOP_N = 20
-CONTENT_KINDS = ("course_content", "stored_topic")
+CONTENT_KINDS = ("course_content", "stored_topic", "cross_course")  # walkthroughs (cross_course: added Oct 8)
 SLIDE_ID_RE = re.compile(r"^(\d{5})-s(\d{2})-(\d{3})$")
 LOCAL_TZ = "America/New_York"
 

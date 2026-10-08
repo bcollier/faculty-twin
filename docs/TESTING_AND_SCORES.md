@@ -34,9 +34,10 @@ The path is saved with the question as its **kind**.
 | 2 | The question matches an entry in my course FAQ (`app/faq.py`, `app/faq_entries.json`) | `faq` | no | no | My written FAQ answer, word for word, with link buttons and TA contact cards |
 | 2a | Added Oct 8. Embed the question once; a request only I can act on (a regrade, an extension, an absence, a meeting, access problems: `personal_request()` in `app/logistics.py`, keywords only) | `logistics` | yes | no | The "that one is for me directly" referral, with the Calendly button |
 | 3 | Embed the question with Voyage once, rank every visible slide and every course-info chunk from Canvas with the same vector (`rank()` in `app/retrieval.py`). The best info chunk scores at least the course-info threshold (0.55 unless changed in Settings) and beats the best slide by the course-info margin (0.05 unless changed in Settings; added Oct 8) (`app/course_info.py`) | `course_info` | yes | yes (one grounded answer call) | A short answer in my voice written only from the top 3 Canvas chunks, with buttons that open those Canvas pages |
-| 4 | No slide at or above the slide threshold (0.52 unless changed in Settings), and either web answers are off, or the scope check (`app/web_answer.py`, added Oct 8) says it is off-topic or is unsure, or today's web answer cap is used up | `not_covered` | yes | only the scope check, when its keyword pre-check misses | The not-covered reply |
+| 3b | Added Oct 8. A course filter is set, no slide in that course is at or above the slide threshold, but `select_segments()` picks slides from the other course (docs/SPEC.md step 7c) | `cross_course` | yes | yes (the logistics check, then narration) | A narrated walkthrough of the other course's slides, introduced with "My 45-884 slides don't cover that, but I taught it in 70-445 (AI for Business Leaders). Here are ...". A logistics question still gets path 5's referral |
+| 4 | No slide at or above the slide threshold (0.52 unless changed in Settings) in any course, and either web answers are off, or the scope check (`app/web_answer.py`, added Oct 8) says it is off-topic or is unsure, or today's web answer cap is used up | `not_covered` | yes | only the scope check, when its keyword pre-check misses | The not-covered reply |
 | 4a | No slide clears the threshold and the scope check says it is about meetings, grades, deadlines and the like | `logistics` | yes | only if the keyword pre-check missed it | The "that one is for me directly" referral |
-| 4b | No slide clears the threshold and the scope check says it is course-adjacent (AI, data, agents, coding tools), web answers are on and today's cap has room | `web` | yes | yes (the scope check unless keywords decide, then one call with the provider's web search tool) | "Beyond my slides: from the web": a short answer from a web search, 2 to 4 source links, and the closest slides in my course |
+| 4b | No slide clears the threshold and the scope check says it is course-adjacent (AI, data, agents, coding tools), web answers are on and today's cap has room | `web` | yes | yes (the scope check unless keywords decide, then one call with the provider's web search tool) | "Beyond my slides: from the web": a short answer from a web search, 2 to 4 source links, and the closest slides in my courses (both courses, only those scoring at least 0.42; none, no section) |
 | 5 | Slides found, but the logistics check says it is about meetings, absences, grades, deadlines, Canvas and the like (`app/logistics.py`) | `logistics` | yes | only if the keyword pre-check missed it | The "that one is for me directly" referral, with the Calendly button |
 | 6 | Slides found and it is course content | `course_content` | yes | yes (the logistics check, then narration) | A narrated walkthrough of the chosen slides |
 
@@ -69,6 +70,7 @@ A badge for the kind of answer (see the table above):
 | FAQ | `faq` | false |
 | From Canvas | `course_info` | true |
 | From the web | `web` | true |
+| Other course | `cross_course` | true |
 | Referred to Ben | `logistics` | false |
 | Not covered | `not_covered` | false |
 | Student alert | `alert` | false |

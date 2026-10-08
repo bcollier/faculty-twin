@@ -218,8 +218,9 @@ class RetrievalNotReady(Exception):
 # What answered a question, as written to question_log.kind (docs/SPEC.md, Data formats).
 STORED_TOPIC = "stored_topic"
 NOT_COVERED = "not_covered"
+CROSS_COURSE = playlist.CROSS_COURSE  # the other course's slides answered (spec step 7c)
 LOG_KINDS = (logistics.COURSE_CONTENT, STORED_TOPIC, faq.KIND, course_info.KIND, logistics.LOGISTICS,
-             web_answer.KIND, NOT_COVERED, alerts.KIND)
+             web_answer.KIND, CROSS_COURSE, NOT_COVERED, alerts.KIND)
 
 
 def answer(
@@ -280,6 +281,10 @@ class _Ask:
     ranked: list[tuple[int, float]] = field(default_factory=list)
     info_ranked: list[tuple[int, float]] = field(default_factory=list)
     best_slide: float | None = None
+    qvec: np.ndarray | None = None
+    # Filled by _other_course when a course filter found nothing: every course's visible slides, ranked.
+    all_records: list[dict[str, Any]] = field(default_factory=list)
+    all_ranked: list[tuple[int, float]] = field(default_factory=list)
 
     def used_model(self) -> None:
         """Record the model in the log row: only routes that called one do this."""
@@ -347,6 +352,7 @@ def _search(ask: _Ask) -> dict[str, Any] | None:
     except NotImplementedError as exc:
         raise RetrievalNotReady() from exc
     ask.records, ask.info_records, ask.ranked, ask.info_ranked = records, info_records, ranked, info_ranked
+    ask.qvec = qvec
     ask.best_slide = float(ranked[0][1]) if ranked else None
     ask.info["top_score"] = ask.best_slide
     ask.info["top_slide_id"] = records[ranked[0][0]].get("id") if ranked else None  # Analytics topics
@@ -405,23 +411,26 @@ def _canvas_answer(ask: _Ask) -> dict[str, Any] | None:
 
 
 def _slides_answer(ask: _Ask) -> dict[str, Any]:
-    """The last route: Ben's select_segments() picks the slides; else not covered, or the web path.
+    """The last route: Ben's select_segments() picks the slides; else the other course, the web path, or not covered.
 
-    With slides chosen, the logistics check (spec step 7a) may still send the question to Ben;
+    With a course filter and nothing picked in that course, the other course's slides get a turn first
+    (spec step 7c). With slides chosen, the logistics check (spec step 7a) may still send the question to Ben;
     otherwise one narration call explains the slides, with the helper-slide check beside it.
     """
     info = ask.info
-    if not ask.records:
-        info["kind"] = NOT_COVERED
-        return playlist.not_covered(ask.question)
-    try:
-        chosen = ask.retriever.select_segments(ask.ranked, ask.records, ask.retriever.threshold)
-    except NotImplementedError as exc:
-        raise RetrievalNotReady() from exc
+    chosen = _select(ask, ask.ranked, ask.records) if ask.records else []
+    cross = False
+    if not chosen:
+        chosen = _other_course(ask)
+        cross = bool(chosen)
     if not chosen:
         info["kind"] = NOT_COVERED
-        # Beyond the slides (spec step 7b): a course-adjacent question may get a web answer.
-        reply, _ = _beyond_the_slides(ask.question, ask.course, ask.content, ask.records, ask.ranked, ask.completer,
+        if not ask.records:
+            return playlist.not_covered(ask.question)
+        # Beyond the slides (spec step 7b): a course-adjacent question may get a web answer. Its closest slides
+        # come from every course (they are links to look at): with a filter, _other_course ranked them all.
+        records, ranked = (ask.all_records, ask.all_ranked) if ask.all_records else (ask.records, ask.ranked)
+        reply, _ = _beyond_the_slides(ask.question, ask.course, ask.content, records, ranked, ask.completer,
                                       ask.searcher or get_searcher(), ask.provider, ask.model, info, ask.used_model)
         return reply
 
@@ -433,6 +442,8 @@ def _slides_answer(ask: _Ask) -> dict[str, Any]:
         ask.used_model()
     if kind.kind == logistics.LOGISTICS:
         return _referral(ask.question, ask.course, ask.content)
+    if cross:
+        info["kind"] = CROSS_COURSE
 
     codes = {r["id"]: (playlist.related_code(ask.content, r) or {}).get("source") for r in chosen}
     ask.used_model()
@@ -444,8 +455,54 @@ def _slides_answer(ask: _Ask) -> dict[str, Any]:
     info["narration"] = result.source
     info["errors"] = result.errors
     reply = playlist.build_playlist(ask.content, ask.question, chosen, result.narrations, result.follow_ups, ask.voice)
+    if cross:
+        playlist.mark_cross_course(reply, str(ask.course), chosen)
     _attach_helper(reply, helper, info)
     return reply
+
+
+def _select(ask: _Ask, ranked: list[tuple[int, float]], records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ben's select_segments() with the threshold in use (Settings override, else his value)."""
+    try:
+        return ask.retriever.select_segments(ranked, records, ask.retriever.threshold)
+    except NotImplementedError as exc:
+        raise RetrievalNotReady() from exc
+
+
+def _rank_all_courses(ask: _Ask) -> None:
+    """Rank every course's visible slides with the question vector already made (no second embedding)."""
+    records, matrix = playlist.searchable(ask.content, None)
+    if not records or ask.qvec is None or ask.qvec.shape[-1] != matrix.shape[1]:
+        return
+    try:
+        ask.all_ranked = ask.retriever.rank(ask.qvec, matrix)
+    except NotImplementedError as exc:
+        raise RetrievalNotReady() from exc
+    ask.all_records = records
+
+
+def _other_course(ask: _Ask) -> list[dict[str, Any]]:
+    """Spec step 7c: a course filter found nothing over the threshold, so try the other course's slides.
+
+    Added Oct 8 (live bug): with the filter on 45-884, the frames and semantic networks question (taught in 70-445,
+    best slide 0.594) got a web answer, because its best 45-884 slide scored 0.412. Same vector, same rank(), same
+    threshold and select_segments() over the unfiltered records, with the filtered course's pairs left out.
+    """
+    if ask.course is None:
+        return []
+    _rank_all_courses(ask)
+    others = playlist.other_course_ranked(ask.all_ranked, ask.all_records, ask.course)
+    if not others:
+        return []
+    chosen = [r for r in _select(ask, others, ask.all_records) if str(r.get("course")) != ask.course]
+    if chosen:
+        best, score = ask.all_records[others[0][0]], float(others[0][1])
+        config.log.info("cross-course answer: %s best %.3f, %s best %s %.3f", ask.course,
+                        ask.best_slide if ask.best_slide is not None else float("nan"), best.get("course"),
+                        best.get("id"), score)
+        # The log row shows the slides that answered, so a covered row never carries the filtered course's low score.
+        ask.info["top_score"], ask.info["top_slide_id"] = score, best.get("id")
+    return chosen
 
 
 _helper_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ft-helper")

@@ -39,8 +39,8 @@ def _use(kind: str, calls: list[str]):
     app.dependency_overrides[get_completer] = lambda: fake
 
 
-def _ask(student, question: str) -> dict:
-    r = student.post("/api/ask", json={"question": question})
+def _ask(student, question: str, course: str | None = None) -> dict:
+    r = student.post("/api/ask", json={"question": question, "course": course})
     assert r.status_code == 200, r.text
     return limits._mem_log[-1]
 
@@ -114,12 +114,14 @@ def test_empty_index_for_the_filter_is_not_covered(student, monkeypatch):
     assert row["kind"] == "not_covered" and row["top_score"] is None and row["provider"] is None
 
 
-def test_every_logged_kind_is_known(student):
+def test_every_logged_kind_is_known(student, monkeypatch):
+    monkeypatch.setattr(limits, "check_ask_rate", lambda *a, **k: None)  # six questions: over the per-minute limit
     calls: list[str] = []
     _use("course_content", calls)
     for q in ["Tell me about fruit", "Show me the banana slide", "When are your office hours?",
               "who won the Stanley Cup", "Can I get a regrade on my fruit quiz?"]:
         _ask(student, q)
+    _ask(student, "Tell me about fruit", course="45884")  # cross_course: the fruit slides are all in 70445
     # course_info needs the optional info index, which this fixture leaves out: tests/test_course_info.py logs it.
     # alert (a student reporting a broken quiz or submission) is logged in tests/test_alerts.py.
     # web needs a course-adjacent question and a search: tests/test_web_answer.py logs it.

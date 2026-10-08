@@ -954,6 +954,7 @@ const KIND_BADGES = {
   stored_topic: { text: 'Stored answer', cls: 'ok', title: 'A suggested question: its stored answer was replayed. No search, no model.' },
   faq: { text: 'FAQ', cls: 'info', title: 'Answered from my course FAQ, word for word. No search, no model.' },
   course_info: { text: 'From Canvas', cls: 'info', title: 'Answered from my Canvas pages (syllabus, policies, assignments), written by the model from those pages only.' },
+  cross_course: { text: 'Other course', cls: 'ok', title: 'The course filter had no slide at or above the threshold, but the other course did: answered from those slides, and the student was told they are from the other course.' },
   web: { text: 'From the web', cls: 'info', title: 'No slide covered it, but it was about AI, data or coding tools: answered from a web search, with source links. Never in my voice.' },
   logistics: { text: 'Referred to Ben', cls: 'info', title: 'A logistics question: the student was sent to me.' },
   not_covered: { text: 'Not covered', cls: 'warn', title: 'No slide scored at or above the threshold.' },

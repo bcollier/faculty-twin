@@ -155,6 +155,7 @@ SCENARIOS: dict[str, tuple[str, str, Any, Any]] = {
     "login_wrong": ("POST", "/api/login", {"passcode": "nope"}, None),
     "ask_covered": ("POST", "/api/ask", {"question": "Explain the placeholder method"}, STUDENT),
     "ask_not_covered": ("POST", "/api/ask", {"question": "Who won the stanley cup?"}, STUDENT),
+    "ask_cross_course": ("POST", "/api/ask", {"question": "crosscourse", "course": "45884"}, STUDENT),
     "ask_faq": ("POST", "/api/ask", {"question": "faqmeet"}, STUDENT),
     "ask_faq_contacts": ("POST", "/api/ask", {"question": "faqta"}, STUDENT),
     "ask_logistics": ("POST", "/api/ask", {"question": "logistics"}, STUDENT),
@@ -186,6 +187,8 @@ PREP = {
 REAL_QUESTIONS = {
     "ask_covered": {"question": "What is an apple?", "course": "70445"},
     "ask_not_covered": {"question": "who won the stanley cup"},
+    # Filtered to the weather course, answered from the fruit course (spec step 7c).
+    "ask_cross_course": {"question": "What is an apple?", "course": "45884"},
     "ask_faq": {"question": "When are your office hours?"},
     "ask_faq_contacts": {"question": "Can we reschedule our presentation?"},
     "ask_logistics": {"question": "Can I get a regrade on my fruit quiz?", "course": "70445"},
