@@ -19,6 +19,7 @@ from app.main import Retriever, app, get_completer, get_embedder, get_retriever
 
 # isort: split
 from app import admin, analytics, embed, limits, llm, logistics, pricing, supa, usage  # noqa: E402,I001
+from page_source import page_source  # tests/fixtures is on sys.path (tests/conftest.py)
 
 ROOT = Path(__file__).resolve().parents[1]
 TODAY = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -287,7 +288,7 @@ def test_event_cross_site_is_refused(student):
 
 
 def test_every_frontend_event_is_allowlisted():
-    js = (ROOT / "public" / "app.js").read_text()
+    js = page_source("app.js")
     sent = set(re.findall(r"track\('([a-z_]+)'\)", js))
     assert sent and sent <= set(usage.EVENT_NAMES)
     listed = set(re.search(r"const EVENTS = new Set\(\[(.*?)\]\)", js, re.S).group(1).replace("'", "").replace(" ", "")

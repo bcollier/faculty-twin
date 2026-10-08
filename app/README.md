@@ -57,7 +57,7 @@ One FastAPI app, deployed on Vercel as a single Python function (`app/main.py`, 
 
 ## How it connects
 
-- `public/app.js` and `public/admin*.js` call these routes; nothing else does.
+- The student page (`public/app.js`, `public/student/`) and the Settings scripts (`public/admin*.js`) call these routes; nothing else does.
 - Content comes from the private Supabase bucket that `indexer/upload.py` fills; settings, counters and the question log live in Supabase Postgres (`supabase/schema.sql`).
 - `evals/` imports `answer()` from `main.py` for in-process eval runs.
 

@@ -20,6 +20,8 @@ from test_voice_tiers import FakeCommunicate, fake_edge  # noqa: F401  (pytest f
 from app.main import LOG_KINDS, Retriever, app, get_completer, get_embedder, get_retriever, get_searcher
 
 # isort: split
+from page_source import page_source  # tests/fixtures is on sys.path (tests/conftest.py)
+
 from app import (
     analytics,
     edge_voice,
@@ -702,7 +704,7 @@ def test_frontend_card_is_labeled_and_links_open_safely():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
-    js = (root / "public" / "app.js").read_text(encoding="utf-8")
+    js = page_source("app.js")
     assert "answer.kind === 'web'" in js and "Beyond my slides: from the web" in js
     assert "Closest material in my course" in js
     assert "rel: 'noopener noreferrer'" in js and "target: '_blank'" in js
