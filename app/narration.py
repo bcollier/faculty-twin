@@ -312,14 +312,18 @@ def _extract_json(raw: str) -> Any:
 _SENTENCE = re.compile(r"[^.!?]+(?:[.!?]+[\"'”’)\]]*|$)\s*")
 
 
-def trim_to_sentences(text: str, max_words: int, max_chars: int | None = None) -> str | None:
+def trim_to_sentences(
+    text: str, max_words: int, max_chars: int | None = None, min_words: int | None = None
+) -> str | None:
     """`text` cut back to its leading whole sentences that fit the caps, or None.
 
     A reply a few words over a cap used to be thrown away whole (Oct 8 code review: Opus 5.5 wrote
     122-126 word course-info answers, so every one fell back to raw Canvas text). Only whole sentences
     are kept, nothing is added, and every check still runs on what is kept. None when no sentence
-    boundary fits, or when what fits is under half the word cap (then the retry or fallback is better).
+    boundary fits, or when what fits is under `min_words` (default half the word cap: then the retry
+    or fallback is better). Shared by narration, course-info, and web answers.
     """
+    min_words = max_words // 2 if min_words is None else min_words
     if word_count(text) <= max_words and (max_chars is None or len(text) <= max_chars):
         return text
     kept, raw = "", ""
@@ -329,7 +333,7 @@ def trim_to_sentences(text: str, max_words: int, max_chars: int | None = None) -
         if word_count(candidate) > max_words or (max_chars is not None and len(candidate) > max_chars):
             break
         kept = candidate
-    if not kept or kept[-1] not in ".!?\"'”’)]" or word_count(kept) < max_words // 2:
+    if not kept or kept[-1] not in ".!?\"'”’)]" or word_count(kept) < min_words:
         return None
     return kept
 

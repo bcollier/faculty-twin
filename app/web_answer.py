@@ -489,15 +489,10 @@ def problem(text: str, question: str = "") -> Optional[str]:
 
 
 def trim_to_cap(text: str, limit: int = MAX_WORDS) -> str:
-    """Whole sentences that fit the word cap. A reply a few words over keeps its first sentences, never a cut one."""
-    if narration.word_count(text) <= limit:
-        return text
-    out: list[str] = []
-    for sentence in re.split(r"(?<=[.!?])\s+", text):
-        if narration.word_count(" ".join(out + [sentence])) > limit:
-            break
-        out.append(sentence)
-    return " ".join(out) if out else text  # one sentence over the cap: leave it for the checks to reject
+    """Whole sentences that fit the word and character caps. A reply a little over keeps its first sentences,
+    never a cut one; with no sentence that fits, the text is left for the checks to reject. Uses the shared
+    narration.trim_to_sentences (Oct 8 code review: this was a second copy that only counted words)."""
+    return narration.trim_to_sentences(text, limit, MAX_CHARS, min_words=1) or text
 
 
 def validate(raw: str, question: str) -> str:
