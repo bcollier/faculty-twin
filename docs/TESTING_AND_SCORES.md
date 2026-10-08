@@ -294,7 +294,7 @@ or to the web path when no slide clears the slide threshold. The Oct 8
 course-set comparison is why: Canvas class summaries beat the right slides
 by only 0.003 to 0.011 on three concept questions and answered them from
 Canvas. A request only I can act on (a regrade, an extension) never gets a
-Canvas answer, whatever the scores. 0.55 starts just above the
+Canvas answer, whatever the scores. The other way round, a question about where something is on Canvas ("Where is the syllabus on Canvas?", "When is Homework 3 due?") gets Canvas whenever a Canvas page clears the course-info threshold, even if a slide scores higher (added Oct 8 after the syllabus question went to the referral on the live site). 0.55 starts just above the
 logistics band from the Oct 7 eval (0.54 to 0.55 against slides), so a
 question has to match a Canvas page clearly before it is answered from one.
 Re-check it with real questions once the Canvas index is built: a policy or

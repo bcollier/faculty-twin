@@ -353,6 +353,71 @@ def test_a_question_that_mentions_canvas_can_still_get_a_canvas_answer(with_info
     assert _ask(student, "Where is the syllabus on Canvas?")["kind"] == "course_info"
 
 
+# ---------------------------------------------------------------- Oct 8 live bug: "Where is the syllabus on Canvas?"
+
+@pytest.mark.parametrize("question", [
+    "Where is the fruit lab page on Canvas?",
+    "Where do I find the fruit lab?",
+    "Where are the fruit lab instructions posted?",
+])
+def test_a_where_on_canvas_question_gets_canvas_even_when_a_slide_scores_higher(with_info, student, question):
+    # Live, Oct 8: the course intro slide scored 0.702 and the best Canvas chunk 0.586 for "Where is the
+    # syllabus on Canvas?". The slide won, then "on Canvas" sent it to the logistics referral. A question
+    # about where something is on Canvas now gets Canvas when a chunk clears the info threshold, whatever
+    # the slides score (here: fruit slides 0.994, the fruit lab page 0.70).
+    model = FakeModel(info_reply=json.dumps({"answer": "The fruit lab is optional, so bring a notebook if you come."}))
+    _use(model)
+    body = _ask(student, question)
+    assert body["kind"] == "course_info" and model.calls == ["course_info"]
+
+
+def test_a_syllabus_question_puts_the_syllabus_first(with_info, student):
+    # Live, Oct 8: "Where is the syllabus on Canvas?" ranked a welcome announcement first, so the answer
+    # was "Here's where that is on Canvas." with a link to the announcement, not the syllabus.
+    model = FakeModel(info_reply=json.dumps({"answer": GOOD_ANSWER}))
+    _use(model)
+    body = _ask(student, "Where is the syllabus for the fruit lab?")  # fruit lab chunk 0.70, syllabus chunk 0
+    assert body["kind"] == "course_info"
+    assert body["links"][0]["url"] == "https://canvas.cmu.edu/courses/55124/assignments/syllabus"
+    sent = json.loads(model.info_users[0].split("Canvas material:\n", 1)[1])
+    assert sent[0]["title"] == "Syllabus: AI use policy"
+    assert limits._mem_log[-1]["top_score"] == pytest.approx(0.7, abs=1e-3)  # the best chunk's score is logged
+
+
+def test_a_canvas_question_still_needs_the_info_threshold(with_info, student):
+    settings_store.put({"info_threshold": 0.8})  # the fruit lab page scores 0.70
+    model = FakeModel()
+    _use(model)
+    assert _ask(student, "Where is the fruit lab page on Canvas?").get("kind") != "course_info"
+
+
+def test_a_concept_question_still_needs_the_margin(with_info, student):
+    model = FakeModel()
+    _use(model)
+    assert _ask(student, "Tell me about the fruit lab").get("kind") != "course_info"
+
+
+@pytest.mark.parametrize("question", [
+    "Where is the syllabus on Canvas?",
+    "What does the syllabus say about AI tools?",
+    "Where do I find the Homework 3 assignment page?",
+    "Where are the class recordings posted?",
+    "Where can I find the late policy?",
+    "When is homework 3 due?",
+    "What is the due date for Lab 2?",
+    "Is the rubric for the final project on Canvas?",
+])
+def test_canvas_requests(question):
+    assert course_info.canvas_request(question)
+
+
+def test_no_course_set_concept_beyond_or_off_topic_question_is_a_canvas_request():
+    rows = [json.loads(line) for line in (ROOT / "evals" / "questions.course.jsonl").read_text().splitlines()]
+    for row in rows:
+        if row["type"] in ("concept", "beyond", "off_topic"):
+            assert not course_info.canvas_request(row["question"]), row["question"]
+
+
 def _web(student, model, question_vec):
     from test_web_answer import FakeSearch
 
