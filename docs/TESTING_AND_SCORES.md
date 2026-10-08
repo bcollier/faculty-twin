@@ -367,7 +367,8 @@ What the suite holds besides the unit and API tests:
 
 **On GitHub.** `.github/workflows/tests.yml` runs on every pull request and
 every push to `main`, with no secrets: the suite with coverage (the per-module
-table is in the job summary), `node --check` on every `public/*.js` and
+table is in the job summary), `ruff check .` with the rules in `ruff.toml`
+(see [CODE_STYLE.md](CODE_STYLE.md)), `node --check` on every `public/*.js` and
 `public/dev/*.js`, and the browser tests in headless Chromium. uv's cache and
 the Playwright browser cache keep a run to a few minutes. A red check means do
 not merge.

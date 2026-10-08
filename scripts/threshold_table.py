@@ -25,9 +25,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 import httpx
 import numpy as np
@@ -58,13 +59,15 @@ DEFAULT_QUESTIONS: list[dict[str, str]] = [
 
 @dataclass
 class Row:
+    """One question's top retrieval score and the slide it came from."""
+
     question: str
     label: str
-    top_score: Optional[float]
-    slide_id: Optional[str]
+    top_score: float | None
+    slide_id: str | None
 
 
-def load_questions(path: Optional[str]) -> list[dict[str, str]]:
+def load_questions(path: str | None) -> list[dict[str, str]]:
     """The questions to score: the defaults, or a JSON Lines file of {question, label}."""
     if not path:
         return [dict(q) for q in DEFAULT_QUESTIONS]
@@ -116,7 +119,7 @@ def score(
     return rows
 
 
-def summarize(rows: list[Row], threshold: Optional[float]) -> dict[str, Any]:
+def summarize(rows: list[Row], threshold: float | None) -> dict[str, Any]:
     """Lowest on-topic score, highest off-topic score, the gap, and what the threshold gets wrong."""
     on = [r.top_score for r in rows if r.label == ON and r.top_score is not None]
     off = [r.top_score for r in rows if r.label == OFF and r.top_score is not None]
@@ -140,11 +143,12 @@ def summarize(rows: list[Row], threshold: Optional[float]) -> dict[str, Any]:
     }
 
 
-def _fmt(x: Optional[float]) -> str:
+def _fmt(x: float | None) -> str:
     return "" if x is None else f"{x:.3f}"
 
 
 def render(rows: list[Row], summary: dict[str, Any]) -> str:
+    """The Markdown table, highest score first, and what the threshold gets right or wrong."""
     threshold = summary["threshold"]
     lines = [
         f"Threshold: {_fmt(threshold) or 'none'}  (app/retrieval.py NOT_COVERED_THRESHOLD)",
@@ -175,7 +179,8 @@ def render(rows: list[Row], summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def load_slides(course: Optional[str]) -> tuple[list[dict[str, Any]], np.ndarray]:
+def load_slides(course: str | None) -> tuple[list[dict[str, Any]], np.ndarray]:
+    """The slides students can search (visible sessions only), from the local index in CONTENT_DIR."""
     root = config.content_dir()
     if root is None:
         raise SystemExit("Set CONTENT_DIR to the folder that holds content/index.json and content/embeddings.npy.")
@@ -183,7 +188,7 @@ def load_slides(course: Optional[str]) -> tuple[list[dict[str, Any]], np.ndarray
     return playlist.searchable(content, course)  # slides only, visible sessions only, like /api/ask
 
 
-def main(argv: Optional[list[str]] = None, embed_many: Optional[Callable] = None) -> int:
+def main(argv: list[str] | None = None, embed_many: Callable | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--questions", help="JSON Lines file of {question, label: on|off} (default: 10 invented ones)")
     p.add_argument("--course", choices=config.COURSE_CODES, help="score against one course only (default: all)")

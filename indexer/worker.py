@@ -59,9 +59,10 @@ import signal
 import subprocess
 import sys
 import threading
-from datetime import date, datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -99,25 +100,28 @@ class WorkerError(RuntimeError):
 
 
 class StageMissing(WorkerError):
-    pass
+    """A stage script is not installed; the file stays saved so Re-run can finish it later."""
 
 
 class AlreadyRunning(RuntimeError):
-    pass
+    """Another worker holds the lock file."""
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    """The current UTC time, ISO 8601, for updated_at columns."""
+    return datetime.now(UTC).isoformat()
 
 
 # ---------------------------------------------------------------- lock and signals
 
 class Lock:
+    """An exclusive, non-blocking file lock, so only one worker polls at a time."""
+
     def __init__(self, path: Path) -> None:
         self.path = path
         self._fh = None
 
-    def __enter__(self) -> "Lock":
+    def __enter__(self) -> Lock:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._fh = open(self.path, "a+")
         try:
@@ -163,11 +167,13 @@ class Stopper:
 # ---------------------------------------------------------------- placing files
 
 def _safe(text: str, limit: int = 80) -> str:
+    """Text that is safe as one folder or file name (no separators), at most `limit` characters."""
     text = re.sub(r"[/\\:\0]+", "-", str(text or "")).strip(" .")
     return text[:limit]
 
 
-def ensure_session_folder(sb, archive: Path, course: str, session: int) -> Path:
+def ensure_session_folder(sb: common.Supabase, archive: Path, course: str, session: int) -> Path:
+    """The session's archive folder, created from the courses and sessions tables when it is new."""
     found = common.session_folder(archive, course, session)
     if found:
         return found
@@ -186,6 +192,7 @@ def ensure_session_folder(sb, archive: Path, course: str, session: int) -> Path:
 
 
 def target_name(kind: str, filename: str) -> str:
+    """The archive file name an upload of this kind replaces (slides.pdf, transcript_raw.vtt, ...)."""
     ext = Path(filename).suffix.lower()
     if kind == "slides" and ext in (".pdf", ".pptx"):
         return f"slides{ext}"
@@ -199,6 +206,7 @@ def target_name(kind: str, filename: str) -> str:
 
 
 def _set_aside(folder: Path, rel: str) -> None:
+    """Move a file about to be replaced into _replaced/ with a time stamp, never delete it."""
     path = folder / rel
     if path.exists():
         dest = folder / "_replaced" / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{path.name}"
@@ -206,7 +214,7 @@ def _set_aside(folder: Path, rel: str) -> None:
         shutil.move(str(path), str(dest))
 
 
-def place(sb, row: dict[str, Any], folder: Path, keep_pdf: bool = False) -> Path:
+def place(sb: common.Supabase, row: dict[str, Any], folder: Path, keep_pdf: bool = False) -> Path:
     """Download one inbox object into the session folder. Returns the archive path."""
     rel = target_name(row["kind"], row["path"])
     tmp = folder / f".incoming-{row['id']}{Path(rel).suffix}"
@@ -231,9 +239,11 @@ def place(sb, row: dict[str, Any], folder: Path, keep_pdf: bool = False) -> Path
 # ---------------------------------------------------------------- stages
 
 def run_external(stage: str, course: str, session: int, logs: Path, stopper: Stopper | None = None) -> None:
+    """Run one per-session stage script under uv, logging to a file. Raises WorkerError on failure."""
     script = common.REPO / "indexer" / f"{stage}.py"
     if not script.exists():
-        raise StageMissing(f"stage {stage} is not installed yet (indexer/{stage}.py); the file is saved, use Re-run later")
+        raise StageMissing(
+            f"stage {stage} is not installed yet (indexer/{stage}.py); the file is saved, use Re-run later")
     extras, args = EXTERNAL[stage]
     uv = shutil.which("uv") or "uv"
     cmd = [uv, "run", "--no-project", *extras, "python", str(script)]
@@ -246,9 +256,9 @@ def run_external(stage: str, course: str, session: int, logs: Path, stopper: Sto
             stopper.child = proc
         try:
             code = proc.wait(timeout=STAGE_TIMEOUT)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             proc.kill()
-            raise WorkerError(f"stage {stage} timed out")
+            raise WorkerError(f"stage {stage} timed out") from exc
         finally:
             if stopper:
                 stopper.child = None
@@ -271,6 +281,7 @@ UPLOAD_MESSAGES = {
 
 
 def run_global(stage: str, archive: Path) -> None:
+    """Run build_index or upload in-process, turning its exit code into a message Settings can show."""
     if stage == "build_index":
         from indexer import build_index
 
@@ -290,6 +301,8 @@ def run_global(stage: str, archive: Path) -> None:
 # ---------------------------------------------------------------- one poll
 
 class Worker:
+    """One poll: claim uploaded rows, process them by session, rebuild once, mark each row ready or error."""
+
     def __init__(
         self,
         sb,
@@ -306,9 +319,12 @@ class Worker:
         self.global_runner = global_runner or (lambda st: run_global(st, archive))
 
     def status(self, row_id: int, status: str, message: str | None) -> None:
-        self.sb.update("sources", {"id": f"eq.{row_id}"}, {"status": status, "message": message, "updated_at": now_iso()})
+        """Set one sources row's status and the message Settings shows next to it."""
+        values = {"status": status, "message": message, "updated_at": now_iso()}
+        self.sb.update("sources", {"id": f"eq.{row_id}"}, values)
 
     def recover(self) -> int:
+        """Put rows a crashed or killed worker left "processing" back in the queue."""
         rows = self.sb.update(
             "sources",
             {"status": "eq.processing"},
@@ -319,6 +335,7 @@ class Worker:
         return len(rows or [])
 
     def claim(self) -> list[dict[str, Any]]:
+        """Move up to 20 uploaded rows to processing. The status match makes a claim atomic."""
         rows = self.sb.select(
             "sources", {"select": "*", "status": "eq.uploaded", "order": "updated_at.asc", "limit": "20"}
         )
@@ -334,7 +351,8 @@ class Worker:
             )
             if got:
                 claimed.append(got[0])
-                log.info("source %s: %s s%02d %s -> processing", row["id"], row["course"], int(row["session"]), row["kind"])
+                log.info("source %s: %s s%02d %s -> processing",
+                         row["id"], row["course"], int(row["session"]), row["kind"])
         return claimed
 
     def poll_once(self) -> int:
@@ -342,6 +360,18 @@ class Worker:
         claimed = self.claim()
         if not claimed:
             return 0
+        done = self._run_session_groups(claimed)
+        if done and not self.stopper.hard.is_set():
+            self._rebuild_and_finish(done)
+        elif done:
+            self._release([r for r, _ in done])
+        return len(claimed)
+
+    def _run_session_groups(self, claimed: list[dict[str, Any]]) -> list[tuple[dict[str, Any], list[str]]]:
+        """Place each session's files and run its stages. Returns (row, stages run) for the groups that succeeded.
+
+        A failed group is marked error (or released when a hard stop interrupted it); the others carry on.
+        """
         groups: dict[tuple[str, int], list[dict[str, Any]]] = {}
         for row in claimed:
             groups.setdefault((str(row["course"]), int(row["session"])), []).append(row)
@@ -361,25 +391,25 @@ class Worker:
             except Exception as exc:  # never let one bad file stop the worker
                 log.exception("source group %s s%02d crashed", course, session)
                 self._fail(rows, f"unexpected {type(exc).__name__} in the worker; see the local worker log")
-        if done and not self.stopper.hard.is_set():
-            try:
-                for stage in GLOBAL_STAGES:
-                    log.info("running %s", stage)
-                    self.global_runner(stage)
-            except WorkerError as exc:
-                self._fail([r for r, _ in done], str(exc))
-                return len(claimed)
-            except Exception as exc:  # a crash in build_index or upload must not leave rows "processing"
-                log.exception("global stage crashed")
-                self._fail([r for r, _ in done],
-                           f"unexpected {type(exc).__name__} while rebuilding the index; see the local worker log")
-                return len(claimed)
-            for row, stages in done:
-                self.status(row["id"], "ready", "Processed: " + ", ".join(stages + GLOBAL_STAGES))
-                log.info("source %s -> ready", row["id"])
-        elif done:
-            self._release([r for r, _ in done])
-        return len(claimed)
+        return done
+
+    def _rebuild_and_finish(self, done: list[tuple[dict[str, Any], list[str]]]) -> None:
+        """Rebuild the index and upload once for every processed session, then mark those rows ready."""
+        rows = [r for r, _ in done]
+        try:
+            for stage in GLOBAL_STAGES:
+                log.info("running %s", stage)
+                self.global_runner(stage)
+        except WorkerError as exc:
+            self._fail(rows, str(exc))
+            return
+        except Exception as exc:  # a crash in build_index or upload must not leave rows "processing"
+            log.exception("global stage crashed")
+            self._fail(rows, f"unexpected {type(exc).__name__} while rebuilding the index; see the local worker log")
+            return
+        for row, stages in done:
+            self.status(row["id"], "ready", "Processed: " + ", ".join(stages + GLOBAL_STAGES))
+            log.info("source %s -> ready", row["id"])
 
     def _session(self, course: str, session: int, rows: list[dict[str, Any]]) -> list[str]:
         folder = ensure_session_folder(self.sb, self.archive, course, session)
@@ -403,6 +433,7 @@ class Worker:
             self.status(row["id"], "uploaded", "Worker stopped; it will retry")
 
     def loop(self, interval: float = POLL_SECONDS) -> None:
+        """Poll until a stop signal. A failed poll is logged and the next one runs on schedule."""
         self.recover()
         log.info("worker started; polling every %ss", int(interval))
         while not self.stopper.stop.is_set():

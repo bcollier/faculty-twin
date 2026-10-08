@@ -64,6 +64,7 @@ import re
 import subprocess
 import sys
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -75,19 +76,18 @@ try:  # optional: public nickname <-> given-name pairs (no student data)
 except ImportError:  # pragma: no cover - degrade gracefully
     NickNamer = None
 
-try:  # imported as a package (tests, worker)
-    from indexer.pg_filter import smooth as pg_smooth
-    from indexer.roster import read_people
-except ImportError:  # run as a script: python indexer/deidentify.py
-    from pg_filter import smooth as pg_smooth
-    from roster import read_people
+if __package__ in (None, ""):  # run as a script (python indexer/deidentify.py): make `indexer` importable
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from indexer.layout import DEFAULT_ARCHIVE, TERM  # noqa: E402
+from indexer.pg_filter import smooth as pg_smooth  # noqa: E402
+from indexer.roster import read_people  # noqa: E402
 
 STUDENT = "[student]"
 PERSON = "[person]"
 SPEAKERS = ("instructor", "student", "unclear")
 
-ARCHIVE = Path(os.environ.get("LECTURE_ARCHIVE", Path.home() / "Lecture Archive"))
-TERM = "2026 Fall"
+ARCHIVE = DEFAULT_ARCHIVE
 CLEAN_DIR = Path("_import") / "FacultyTwinContent" / "transcripts-clean"
 CLEAN_COURSES = {"45884"}  # courses that use the ASR-corrected cleaned cues
 
@@ -208,7 +208,8 @@ NON_PERSON_WORDS = {
     "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "January", "February",
     "March", "April", "May", "June", "July", "August", "September", "October", "November", "December",
     "Christmas", "Thanksgiving", "Halloween", "Easter", "God", "Lord", "Jesus", "Bible",
-    "Team", "Python", "Professor", "Dr", "Mr", "Mrs", "Ms", "Prof", "Visual", "Studio", "VS", "Code", "Dartmouth", "NavLab", "Navlab",
+    "Team", "Professor", "Dr", "Mr", "Mrs", "Ms", "Prof", "Visual", "Studio", "VS", "Code", "Dartmouth",
+    "NavLab", "Navlab",
     "OpenRouter", "Rakuten", "Ghibli", "Saudi", "Antigravity", "README", "NLP", "AGI", "Tavily", "Intercom",
     "Jetstream", "Astra", "Kiro", "Gradio", "XGBoost", "Medtronic", "Gartner", "Bloomberg", "Reuters", "Forbes",
     "Substack", "Trello", "Basecamp", "Calendly", "Venmo", "WhatsApp", "SpaceX", "Moderna", "Optum", "PwC",
@@ -264,7 +265,7 @@ ABSORB_STOP = {
     "if", "then", "like", "yes", "ok", "okay", "hi", "hey", "thanks", "thank", "think", "see", "day", "life",
     "list", "link", "case", "little", "major", "fall", "chat", "can", "new", "old", "big", "good",
     "great", "dear", "when", "where", "what", "who", "how", "why", "here", "there", "now", "just", "also",
-    "even", "still", "only", "maybe", "said", "ask", "asked", "called", "named", "by", "via", "versus", "vs",
+    "even", "still", "only", "maybe", "said", "ask", "asked", "called", "named", "via", "versus", "vs",
 }
 INTRO_STOP = {
     "the", "i", "a", "an", "and", "team", "group", "here", "going", "not", "just", "so", "very", "really", "sure",
@@ -273,7 +274,9 @@ INTRO_STOP = {
     "they", "he", "she", "you", "everyone", "everybody", "guys", "all", "us", "them", "him", "her",
     "presenting", "talking", "next", "first", "also", "now", "then", "currently", "actually", "basically",
 }
-TITLE_RE = re.compile(r"\b(?:Dr|Mr|Mrs|Ms|Mx|Prof|Professor|Sir|Dame|Mister|Miss|Doctor)\.?\s+(?P<n>[A-Z][^\W\d_]+(?:['’]s)?)")
+TITLE_RE = re.compile(
+    r"\b(?:Dr|Mr|Mrs|Ms|Mx|Prof|Professor|Sir|Dame|Mister|Miss|Doctor)\.?\s+(?P<n>[A-Z][^\W\d_]+(?:['’]s)?)"
+)
 
 WORD_RE = re.compile(r"[^\W\d_](?:[^\W\d_]|['’\-](?=[^\W\d_]))*", re.UNICODE)
 
@@ -343,7 +346,7 @@ def load_english_words() -> set[str]:
     return words
 
 
-def lowercase_vocab(texts, min_count: int = 2) -> set[str]:
+def lowercase_vocab(texts: Iterable[str], min_count: int = 2) -> set[str]:
     """Words that occur in lowercase at least min_count times in the given texts."""
     c: Counter = Counter()
     for t in texts:
@@ -393,6 +396,7 @@ class ScrubList:
         return self.exact | self.nick | self.ids | self.extra
 
     def kind(self, low: str) -> str | None:
+        """Which student rule a lowercase token falls under, or None."""
         if low in INSTRUCTOR_FORMS:
             return None
         if low in self.extra:
@@ -423,7 +427,9 @@ def read_rosters(roster_dir: Path) -> list[dict]:
     return people
 
 
-def build_scrub_list(people: list[dict], english: set[str], extra_terms=(), person_terms=()) -> ScrubList:
+def build_scrub_list(people: list[dict], english: set[str], extra_terms: Iterable[str] = (),
+                     person_terms: Iterable[str] = ()) -> ScrubList:
+    """The student scrub list from the rosters: full names, ids, nicknames, fuzzy-match pool, override terms."""
     sl = ScrubList()
     nn = NickNamer() if NickNamer is not None else None
     for p in people:
@@ -482,7 +488,7 @@ def parse_vtt(text: str, strip_labels: bool = True) -> list[dict]:
             m = TS_RE.search(line)
             if m:
                 g = m.groups()
-                body = " ".join(l.strip() for l in lines[i + 1:] if l.strip())
+                body = " ".join(ln.strip() for ln in lines[i + 1:] if ln.strip())
                 if strip_labels:
                     body = LABEL_RE.sub("", body, count=1)
                 body = re.sub(r"<[^>]+>", "", body).strip()
@@ -493,6 +499,7 @@ def parse_vtt(text: str, strip_labels: bool = True) -> list[dict]:
 
 
 def load_clean_jsonl(path: Path) -> list[dict]:
+    """Cues from an ASR-corrected .cleaned.timed.jsonl file."""
     cues = []
     for line in path.read_text().splitlines():
         if not line.strip():
@@ -584,6 +591,8 @@ STUDENT_RULES = {"roster_exact", "roster_id", "roster_nickname", "roster_fuzzy",
 
 
 class Scrubber:
+    """Masks people in transcript text. Learns names from address context first (collect_context_names)."""
+
     def __init__(self, scrub: ScrubList, english: set[str], given_names: set[str], keep_terms=(),
                  frequent: set[str] | None = None):
         self.s = scrub
@@ -658,19 +667,46 @@ class Scrubber:
             # names are learned and masked everywhere
             if not self.s.kind(low) and len(low) >= 3 and (low not in self.english or low in self.given):
                 self.observed.add(low)
-        for rxs, strong in ((self.strong_ctx, True), (self.weak_ctx, False)):
-            for rx in rxs:
-                for m in rx.finditer(text):
-                    tok = m.group("n")
-                    low = _norm(tok)
-                    if not self.s.kind(low) and self._ctx_candidate(tok, True) and low not in KNOWN_PERSON_LOW:
-                        self.observed.add(low)
+        # Both context lists are checked as strong here (unlike scrub's word rules), so a name met
+        # once in weak context ("X said") is learned too. Kept as it was built; see the PR notes.
+        for rx in self.strong_ctx + self.weak_ctx:
+            for m in rx.finditer(text):
+                tok = m.group("n")
+                low = _norm(tok)
+                if not self.s.kind(low) and self._ctx_candidate(tok, True) and low not in KNOWN_PERSON_LOW:
+                    self.observed.add(low)
 
     # -- main --------------------------------------------------------------
     def scrub(self, text: str, counts: Counter | None = None) -> str:
-        counts = counts if counts is not None else Counter()
-        hits: dict[int, tuple[int, str]] = {}  # start -> (end, rule)
+        """Mask every person named in `text`: students as [student], everyone else as [person].
 
+        Phrases first (roster full names, known public figures, self-introductions), then
+        each remaining word on its own (`_token_rule`), then neighbouring name parts are
+        folded into one mask. `counts` gets one tick per mask, by rule name (never the text).
+        """
+        counts = counts if counts is not None else Counter()
+        hits = self._phrase_hits(text)  # start -> (end, rule)
+        covered = [(a, b) for a, (b, _) in hits.items()]
+        ctx_starts: set[int] = set()
+        for rx in self.strong_ctx + self.weak_ctx:
+            for m in rx.finditer(text):
+                ctx_starts.add(m.start("n"))
+        title_starts = {m.start("n") for m in TITLE_RE.finditer(text)}
+
+        tokens = list(WORD_RE.finditer(text))
+        for idx, m in enumerate(tokens):
+            if any(x <= m.start() < y for x, y in covered):
+                continue
+            rule = self._token_rule(text, tokens, idx, ctx_starts, title_starts)
+            if rule:
+                hits[m.start()] = (m.end(), rule)
+        if not hits:
+            return text
+        return self._join_neighbouring_masks(self._apply_masks(text, hits, counts), counts)
+
+    def _phrase_hits(self, text: str) -> dict[int, tuple[int, str]]:
+        """Multi-word matches, which win over the word-by-word rules: {start: (end, rule)}."""
+        hits: dict[int, tuple[int, str]] = {}
         # 1) roster "first last" phrases -> [student]
         for ph in self.s.phrases:
             for m in re.finditer(r"\b" + re.escape(ph) + r"(?:['’]s)?\b", text, re.IGNORECASE):
@@ -680,115 +716,113 @@ class Scrubber:
             if m.start() not in hits and not is_eponym(text, m.start(), m.end()):
                 hits[m.start()] = (m.end(), "known_person")
         covered = [(a, b) for a, (b, _) in hits.items()]
-
         # 3) self-introductions, hand-offs and roll calls -> [student]
         for a, b in self.intro_names(text):
             if a not in hits and not any(x <= a < y for x, y in covered):
                 hits[a] = (b, "intro_name")
-        covered = [(a, b) for a, (b, _) in hits.items()]
+        return hits
 
-        ctx_starts: set[int] = set()
-        for rx in self.strong_ctx + self.weak_ctx:
-            for m in rx.finditer(text):
-                ctx_starts.add(m.start("n"))
-        title_starts = {m.start("n") for m in TITLE_RE.finditer(text)}
+    def _token_rule(self, text: str, tokens: list[re.Match], idx: int, ctx_starts: set[int],
+                    title_starts: set[int]) -> str | None:
+        """The rule that masks word `idx`, or None to leave it. Student rules are tried before [person] rules."""
+        m = tokens[idx]
+        tok = m.group(0)
+        a, b = m.start(), m.end()
+        low = _norm(tok)
+        if low in INSTRUCTOR_FORMS or (low in self.keep and not self.s.kind(low)):
+            return None
+        cap = tok[:1].isupper()
+        acronym = tok.isupper() and 1 < len(tok) <= 5
+        sent_start = self._sentence_start(text, a)
+        common = self.is_common(low)
+        non_person = low in NON_PERSON_LOW
+        kind = self.s.kind(low)
+        in_ctx = a in ctx_starts
+        prev_tok = tokens[idx - 1].group(0) if idx > 0 else ""
+        next_tok = tokens[idx + 1].group(0) if idx + 1 < len(tokens) else ""
+        near_name = any(t[:1].isupper() and (self.s.kind(_norm(t)) or _norm(t) in self.given)
+                        and _norm(t) not in NON_PERSON_LOW and _norm(t) not in INSTRUCTOR_FORMS
+                        for t in (prev_tok, next_tok))
+        rule = None
 
-        tokens = list(WORD_RE.finditer(text))
-        for idx, m in enumerate(tokens):
-            tok = m.group(0)
-            a, b = m.start(), m.end()
-            if any(x <= a < y for x, y in covered):
-                continue
-            low = _norm(tok)
-            if low in INSTRUCTOR_FORMS or (low in self.keep and not self.s.kind(low)):
-                continue
-            cap = tok[:1].isupper()
-            acronym = tok.isupper() and 1 < len(tok) <= 5
-            sent_start = self._sentence_start(text, a)
-            common = self.is_common(low)
-            non_person = low in NON_PERSON_LOW
-            kind = self.s.kind(low)
-            in_ctx = a in ctx_starts
-            prev_tok = tokens[idx - 1].group(0) if idx > 0 else ""
-            next_tok = tokens[idx + 1].group(0) if idx + 1 < len(tokens) else ""
-            adjacent = (prev_tok, next_tok)
-            near_name = any(t[:1].isupper() and (self.s.kind(_norm(t)) or _norm(t) in self.given)
-                            and _norm(t) not in NON_PERSON_LOW and _norm(t) not in INSTRUCTOR_FORMS for t in adjacent)
-            rule = None
-
-            # --- students (roster and overrides) ---
-            if kind == "roster_id":
-                if not common and not acronym:
-                    rule = "roster_id"
-            elif kind == "override_student":
-                if cap or not common:
+        # --- students (roster and overrides) ---
+        if kind == "roster_id":
+            if not common and not acronym:
+                rule = "roster_id"
+        elif kind == "override_student":
+            if cap or not common:
+                rule = kind
+        elif kind:
+            if acronym and len(low) <= 3:
+                pass
+            elif non_person and not (in_ctx or near_name):
+                pass  # e.g. a student sharing a product/place name; only masked in name context
+            elif not common:
+                if cap or len(low) >= 4:
                     rule = kind
-            elif kind:
-                if acronym and len(low) <= 3:
-                    pass
-                elif non_person and not (in_ctx or near_name):
-                    pass  # e.g. a student sharing a product/place name; only masked in name context
-                elif not common:
-                    if cap or len(low) >= 4:
-                        rule = kind
-                elif cap and (not sent_start or in_ctx or near_name):
-                    rule = kind
-            epo = is_eponym(text, a, b)
-            if rule is None and epo:
-                continue  # "Nash equilibrium", "Turing test": a concept, not a mention of the person
-            if rule is None and cap and not acronym and not non_person and \
-                    (low in self.s.person or low in KNOWN_PERSON_LOW):
-                rule = "override_person" if low in self.s.person else "known_person"
-            if rule is None and cap and not acronym and low in self.observed and not non_person:
-                if not common or not sent_start or in_ctx:
-                    rule = "observed_name"
-            if rule is None and cap and not acronym and in_ctx and self._ctx_candidate(tok, True) \
-                    and low not in KNOWN_PERSON_LOW:
-                rule = "context_name"
-            if rule is None and cap and not acronym and len(low) >= 5 and low not in self.english and not non_person \
-                    and low not in KNOWN_PERSON_LOW and low not in self.given and self.s.fuzzy_pool:
-                best = process.extractOne(low, self.s.fuzzy_pool, scorer=fuzz.ratio, score_cutoff=90)
-                if best is None and len(low) >= 6:
-                    best = process.extractOne(low, self.s.fuzzy_pool, scorer=JaroWinkler.normalized_similarity,
-                                              score_cutoff=0.93)
-                if best is not None:
-                    rule = "roster_fuzzy"
+            elif cap and (not sent_start or in_ctx or near_name):
+                rule = kind
+        if rule is None and is_eponym(text, a, b):
+            return None  # "Nash equilibrium", "Turing test": a concept, not a mention of the person
+        if rule is None and cap and not acronym and not non_person and \
+                (low in self.s.person or low in KNOWN_PERSON_LOW):
+            rule = "override_person" if low in self.s.person else "known_person"
+        if rule is None and cap and not acronym and low in self.observed and not non_person \
+                and (not common or not sent_start or in_ctx):
+            rule = "observed_name"
+        if rule is None and cap and not acronym and in_ctx and self._ctx_candidate(tok, True) \
+                and low not in KNOWN_PERSON_LOW:
+            rule = "context_name"
+        if rule is None and cap and not acronym and len(low) >= 5 and low not in self.english and not non_person \
+                and low not in KNOWN_PERSON_LOW and low not in self.given and self.s.fuzzy_pool \
+                and self._near_roster_spelling(low):
+            rule = "roster_fuzzy"
 
-            # --- everyone else -> [person] ---
-            if rule is None and low in self.s.person and (cap or not common):
-                rule = "override_person"
-            if rule is None and cap and not acronym and not non_person and not is_eponym(text, a, b):
-                if low in KNOWN_PERSON_LOW and not is_eponym(text, a, b) and (not common or not sent_start):
-                    rule = "known_person"
-                elif a in title_starts and (not common or not sent_start):
-                    rule = "title_name"
-                elif low in self.given and (not sent_start or not common or near_name):
-                    rule = "given_name"
-                elif near_name and low not in self.english and not sent_start:
-                    rule = "name_pair"  # surname next to a first name: "Priya Xyz"
-            if rule and rule not in STUDENT_RULES and kind and kind != "roster_id":
-                rule = kind  # a roster student caught by a generic rule is still a student
-            if rule:
-                hits[a] = (b, rule)
+        # --- everyone else -> [person] ---
+        # (No eponym check below: a word with no rule yet that is an eponym already returned above.)
+        if rule is None and low in self.s.person and (cap or not common):
+            rule = "override_person"
+        if rule is None and cap and not acronym and not non_person:
+            if low in KNOWN_PERSON_LOW and (not common or not sent_start):
+                rule = "known_person"
+            elif a in title_starts and (not common or not sent_start):
+                rule = "title_name"
+            elif low in self.given and (not sent_start or not common or near_name):
+                rule = "given_name"
+            elif near_name and low not in self.english and not sent_start:
+                rule = "name_pair"  # surname next to a first name: "Priya Xyz"
+        if rule and rule not in STUDENT_RULES and kind and kind != "roster_id":
+            rule = kind  # a roster student caught by a generic rule is still a student
+        return rule
 
-        if not hits:
-            return text
+    def _near_roster_spelling(self, low: str) -> bool:
+        """A misspelled or mis-transcribed roster name (ratio 90+, or Jaro-Winkler 0.93+ for longer words)."""
+        best = process.extractOne(low, self.s.fuzzy_pool, scorer=fuzz.ratio, score_cutoff=90)
+        if best is None and len(low) >= 6:
+            best = process.extractOne(low, self.s.fuzzy_pool, scorer=JaroWinkler.normalized_similarity,
+                                      score_cutoff=0.93)
+        return best is not None
+
+    @staticmethod
+    def _apply_masks(text: str, hits: dict[int, tuple[int, str]], counts: Counter) -> str:
+        """Replace each hit with its mask, keeping a possessive "'s". Overlapping later hits are dropped."""
         out, pos = [], 0
         for a in sorted(hits):
             b, rule = hits[a]
             if a < pos:
                 continue
             out.append(text[pos:a])
-            seg = text[a:b]
-            suffix = "'s" if re.search(r"['’]s$", seg) else ""
+            suffix = "'s" if re.search(r"['’]s$", text[a:b]) else ""
             out.append((STUDENT if rule in STUDENT_RULES else PERSON) + suffix)
             counts[rule] += 1
             pos = b
         out.append(text[pos:])
-        res = "".join(out)
-        # a first name right before a mask ("Mark [person]") or an unknown surname right after one
-        # ("[person] Xyzzy") belongs to the same person
-        def _absorb_before(m):
+        return "".join(out)
+
+    def _join_neighbouring_masks(self, res: str, counts: Counter) -> str:
+        """A first name right before a mask ("Mark [person]") or an unknown surname right after one
+        ("[person] Xyzzy") belongs to the same person; then adjacent masks become one."""
+        def _absorb_before(m: re.Match) -> str:
             low = m.group(1).lower()
             if low in self.frequent and self._sentence_start(m.string, m.start()):
                 return m.group(0)  # "Will [student] present?" keeps the verb
@@ -798,7 +832,7 @@ class Scrubber:
                 return m.group(2)
             return m.group(0)
 
-        def _absorb_after(m):
+        def _absorb_after(m: re.Match) -> str:
             low = _norm(m.group(2))
             if low not in self.english and low not in NON_PERSON_LOW and low not in INSTRUCTOR_FORMS \
                     and low not in self.keep:
@@ -844,46 +878,59 @@ INSTRUCTOR_OPENERS = re.compile(
 )
 
 
+STUDENT_QUESTION_START = re.compile(
+    r"^(?:is|are|can|could|do|does|did|will|would|should|what if|how do|how does|why|so is|so does|so do|"
+    r"what about|is there|isn't)\b", re.IGNORECASE)
+
+
 def label_speakers(cues: list[dict]) -> list[str]:
     """Heuristic first pass. Prefers 'unclear' whenever a cue might be a student."""
     n = len(cues)
-    labels = ["instructor"] * n
     words = [len(c["text"].split()) for c in cues]
 
     # Before the lecture starts: chatter until the first long, lecture-like cue.
     first_long = next((i for i, w in enumerate(words) if w >= 30), 0)
-    for i in range(first_long):
-        labels[i] = "unclear"
+    labels = ["unclear" if i < first_long else _cue_label(c, cues[i - 1] if i else None, words[i])
+              for i, c in enumerate(cues)]
+    _mark_presentations(cues, labels)
 
-    for i, c in enumerate(cues):
-        if i < first_long:
-            continue
-        t = c["text"].strip()
-        w = words[i]
-        prev = cues[i - 1] if i else None
-        prev_q = bool(prev and prev["text"].rstrip().endswith("?") and c["start"] - prev["end"] < 12)
-        if STUDENT_MARKERS.search(t) and w <= 60:
-            labels[i] = "unclear" if w > 40 else "student"
-            continue
-        if w >= 35:
-            continue  # long explanatory speech: instructor
-        if w < 6:
-            labels[i] = "unclear"
-            continue
-        if INSTRUCTOR_OPENERS.match(t) and w >= 14:
-            continue
-        if prev_q and w <= 30:
-            labels[i] = "unclear"
-            continue
-        if t.endswith("?") and w <= 20 and re.match(
-                r"^(?:is|are|can|could|do|does|did|will|would|should|what if|how do|how does|why|so is|so does|so do|"
-                r"what about|is there|isn't)\b", t, re.IGNORECASE):
-            labels[i] = "unclear"
-            continue
-        if w <= 12:
+    # A short 'instructor' cue between two non-instructor cues is probably part of the exchange.
+    for i in range(1, n - 1):
+        if labels[i] == "instructor" and words[i] < 20 \
+                and labels[i - 1] != "instructor" and labels[i + 1] != "instructor":
             labels[i] = "unclear"
 
-    # Student presentations: from a self-introduction until a hand-back phrase (max 20 minutes).
+    # After the lecture ends: trailing short chatter.
+    j = n - 1
+    while j >= 0 and words[j] < 20:
+        labels[j] = "unclear"
+        j -= 1
+    return labels
+
+
+def _cue_label(c: dict, prev: dict | None, w: int) -> str:
+    """One cue's label from its own words: long explanations are the instructor, short or
+    question-like turns (and anything with a student marker) are not."""
+    t = c["text"].strip()
+    if STUDENT_MARKERS.search(t) and w <= 60:
+        return "unclear" if w > 40 else "student"
+    if w >= 35:
+        return "instructor"  # long explanatory speech
+    if w < 6:
+        return "unclear"
+    if INSTRUCTOR_OPENERS.match(t) and w >= 14:
+        return "instructor"
+    prev_q = bool(prev and prev["text"].rstrip().endswith("?") and c["start"] - prev["end"] < 12)
+    if prev_q and w <= 30:
+        return "unclear"  # an answer to a question just asked may be a student's
+    if t.endswith("?") and w <= 20 and STUDENT_QUESTION_START.match(t):
+        return "unclear"
+    return "unclear" if w <= 12 else "instructor"
+
+
+def _mark_presentations(cues: list[dict], labels: list[str]) -> None:
+    """Student presentations: from a self-introduction until a hand-back phrase (max 20 minutes)."""
+    n = len(cues)
     i = 0
     while i < n:
         if PRESENTATION_START.search(cues[i]["text"]):
@@ -898,20 +945,9 @@ def label_speakers(cues: list[dict]) -> list[str]:
         else:
             i += 1
 
-    # A short 'instructor' cue between two non-instructor cues is probably part of the exchange.
-    for i in range(1, n - 1):
-        if labels[i] == "instructor" and words[i] < 20 and labels[i - 1] != "instructor" and labels[i + 1] != "instructor":
-            labels[i] = "unclear"
-
-    # After the lecture ends: trailing short chatter.
-    j = n - 1
-    while j >= 0 and words[j] < 20:
-        labels[j] = "unclear"
-        j -= 1
-    return labels
-
 
 def apply_label_overrides(cues: list[dict], labels: list[str], overrides: list[dict]) -> int:
+    """Apply the review pass's speaker ranges. Returns how many cue labels changed."""
     changed = 0
     for ov in overrides or []:
         lo, hi, sp = float(ov["from"]), float(ov["to"]), ov["speaker"]
@@ -930,6 +966,8 @@ def apply_label_overrides(cues: list[dict], labels: list[str], overrides: list[d
 # ---------------------------------------------------------------------------
 @dataclass
 class Session:
+    """One class session's transcript inputs."""
+
     course: str      # "70445"
     session: int
     date: str
@@ -950,6 +988,7 @@ class Session:
 
 
 def find_sessions(archive: Path) -> list[Session]:
+    """Every `<NN> <date> <title>` session folder of every course in the archive."""
     out = []
     for course_dir in sorted(archive.glob("[0-9][0-9]-[0-9][0-9][0-9] *")):
         code = course_dir.name.split()[0].replace("-", "")
@@ -978,6 +1017,7 @@ def load_session_cues(archive: Path, s: Session) -> tuple[list[dict], str | None
 
 
 def load_overrides(archive: Path, course: str | None = None, key: str | None = None) -> dict:
+    """One private override file (global when no course is given); {} when there is none."""
     base = archive / "_private" / "deid_overrides"
     path = base / "global.json" if course is None else base / course / f"{key}.json"
     if path.exists():
@@ -1001,7 +1041,9 @@ def _snippet(text: str, n: int = 6) -> str:
     return " ".join(w[:n]) + (" ..." if len(w) > n else "")
 
 
-def build_context(archive: Path, sessions: list[Session] | None = None):
+def build_context(
+    archive: Path, sessions: list[Session] | None = None,
+) -> tuple[set[str], set[str], list[dict], ScrubList, set[str], dict]:
     """Word lists, roster scrub list and override terms. Never prints contents."""
     sessions = sessions if sessions is not None else find_sessions(archive)
     english = load_english_words()
@@ -1018,6 +1060,7 @@ def build_context(archive: Path, sessions: list[Session] | None = None):
 
 
 def process_all(archive: Path = ARCHIVE, out_dir: Path | None = None, verbose: bool = True) -> list[dict]:
+    """De-identify and label every session's transcript; write the outputs and summary.json (counts only)."""
     out_dir = out_dir or archive / "_build" / "transcripts"
     sessions = find_sessions(archive)
     english, given, people, scrub, keep, per_session = build_context(archive, sessions)
@@ -1031,6 +1074,8 @@ def process_all(archive: Path = ARCHIVE, out_dir: Path | None = None, verbose: b
     given = given - lowercase_vocab(all_texts, 5)  # name lists contain everyday words ("chat", "part")
     scrubber = Scrubber(scrub, english, given, keep, frequent)
 
+    # First pass over every session: learn names said in address context, so a name heard
+    # once ("thanks, X") is masked in every session.
     loaded: dict = {}
     for s in sessions:
         cues, source, skip = load_session_cues(archive, s)
@@ -1051,60 +1096,75 @@ def process_all(archive: Path = ARCHIVE, out_dir: Path | None = None, verbose: b
             if verbose:
                 print(f"{s.course} {s.key}: SKIPPED ({skip})")
             continue
-        ov = per_session[(s.course, s.key)]
-        counts: Counter = Counter()
-        pg_counts: Counter = Counter()
-        for c in cues:
-            c["text"] = scrubber.scrub(c["text"], counts)
-        labels = label_speakers(cues)
-        heur = Counter(labels)
-        n_over = apply_label_overrides(cues, labels, ov.get("labels", []))
-        for c, lab in zip(cues, labels):
-            c["speaker"] = lab
-        pg_cues = apply_pg(cues, pg_counts)
-        dest = out_dir / s.course
-        dest.mkdir(parents=True, exist_ok=True)
-        doc = {"course": s.course, "session": s.session, "date": s.date, "title": s.title, "source": source,
-               "cues": cues}
-        _write_private(dest / f"{s.key}.json", json.dumps(doc, ensure_ascii=False, indent=1))
-
-        drive_counts: Counter = Counter()
-        drive_pg: Counter = Counter()
-        if s.drive.exists():
-            lines = [pg_smooth(scrubber.scrub(l, drive_counts), drive_pg)[0]
-                     for l in s.drive.read_text(errors="ignore").splitlines()]
-            _write_private(dest / f"{s.key}.drive.md", "\n".join(lines) + "\n")
-
-        mins = Counter()
-        for c in cues:
-            mins[c["speaker"]] += (c["end"] - c["start"]) / 60
-        n_student = sum(v for k, v in counts.items() if k in STUDENT_RULES)
-        row = {
-            "course": s.course, "session": s.session, "source": source, "cues": len(cues),
-            "replacements": sum(counts.values()), "student_masks": n_student,
-            "person_masks": sum(counts.values()) - n_student, "by_rule": dict(counts),
-            "drive_replacements": sum(drive_counts.values()),
-            "labels": dict(Counter(labels)), "minutes": {k: round(v, 1) for k, v in mins.items()},
-            "overridden": n_over,
-            "pg_cues": pg_cues, "pg_changes": sum(pg_counts.values()), "pg_by_word": dict(pg_counts),
-            "drive_pg_changes": sum(drive_pg.values()),
-        }
+        row = _process_session(s, cues, source, per_session[(s.course, s.key)], scrubber, out_dir)
         summary.append(row)
-        review = dest / f"{s.key}.review.md"
-        write_review(review, s, source, cues, counts, drive_counts, heur, n_over, ov, pg_counts, drive_pg)
-        # the spec's review location (never uploaded): _build/review/<course>-s<NN>.txt
-        review_dir = out_dir.parent / "review"
-        review_dir.mkdir(parents=True, exist_ok=True)
-        _write_private(review_dir / f"{s.course}-{s.key}.txt", review.read_text())
         if verbose:
-            print(f"{s.course} {s.key}: src={source} cues={len(cues)} student={n_student} "
+            print(f"{s.course} {s.key}: src={source} cues={len(cues)} student={row['student_masks']} "
                   f"person={row['person_masks']} drive={row['drive_replacements']} "
                   f"min instr={row['minutes'].get('instructor', 0)} stud={row['minutes'].get('student', 0)} "
-                  f"uncl={row['minutes'].get('unclear', 0)} overrides={n_over} "
-                  f"pg={row['pg_changes']} ({pg_cues} cues) drive_pg={row['drive_pg_changes']}")
+                  f"uncl={row['minutes'].get('unclear', 0)} overrides={row['overridden']} "
+                  f"pg={row['pg_changes']} ({row['pg_cues']} cues) drive_pg={row['drive_pg_changes']}")
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=1))
     return summary
+
+
+def _process_session(s: Session, cues: list[dict], source: str | None, ov: dict, scrubber: Scrubber,
+                     out_dir: Path) -> dict:
+    """Scrub, label and PG-filter one session; write its transcript, Drive copy and review files.
+
+    Returns the session's summary row (counts only).
+    """
+    counts: Counter = Counter()
+    pg_counts: Counter = Counter()
+    for c in cues:
+        c["text"] = scrubber.scrub(c["text"], counts)
+    labels = label_speakers(cues)
+    heur = Counter(labels)
+    n_over = apply_label_overrides(cues, labels, ov.get("labels", []))
+    for c, lab in zip(cues, labels):
+        c["speaker"] = lab
+    pg_cues = apply_pg(cues, pg_counts)
+    dest = out_dir / s.course
+    dest.mkdir(parents=True, exist_ok=True)
+    doc = {"course": s.course, "session": s.session, "date": s.date, "title": s.title, "source": source,
+           "cues": cues}
+    _write_private(dest / f"{s.key}.json", json.dumps(doc, ensure_ascii=False, indent=1))
+
+    drive_counts: Counter = Counter()
+    drive_pg: Counter = Counter()
+    if s.drive.exists():
+        lines = [pg_smooth(scrubber.scrub(line, drive_counts), drive_pg)[0]
+                 for line in s.drive.read_text(errors="ignore").splitlines()]
+        _write_private(dest / f"{s.key}.drive.md", "\n".join(lines) + "\n")
+
+    n_student = sum(v for k, v in counts.items() if k in STUDENT_RULES)
+    row = {
+        "course": s.course, "session": s.session, "source": source, "cues": len(cues),
+        "replacements": sum(counts.values()), "student_masks": n_student,
+        "person_masks": sum(counts.values()) - n_student, "by_rule": dict(counts),
+        "drive_replacements": sum(drive_counts.values()),
+        "labels": dict(Counter(labels)),
+        "minutes": {k: round(v, 1) for k, v in _minutes_by_speaker(cues).items()},
+        "overridden": n_over,
+        "pg_cues": pg_cues, "pg_changes": sum(pg_counts.values()), "pg_by_word": dict(pg_counts),
+        "drive_pg_changes": sum(drive_pg.values()),
+    }
+    review = dest / f"{s.key}.review.md"
+    write_review(review, s, source, cues, counts, drive_counts, heur, n_over, ov, pg_counts, drive_pg)
+    # the spec's review location (never uploaded): _build/review/<course>-s<NN>.txt
+    review_dir = out_dir.parent / "review"
+    review_dir.mkdir(parents=True, exist_ok=True)
+    _write_private(review_dir / f"{s.course}-{s.key}.txt", review.read_text())
+    return row
+
+
+def _minutes_by_speaker(cues: list[dict]) -> Counter:
+    """Minutes of speech per speaker label."""
+    mins: Counter = Counter()
+    for c in cues:
+        mins[c["speaker"]] += (c["end"] - c["start"]) / 60
+    return mins
 
 
 def apply_pg(cues: list[dict], counts: Counter | None = None) -> int:
@@ -1131,12 +1191,12 @@ def _write_private(path: Path, text: str) -> None:
     os.chmod(path, 0o600)
 
 
-def write_review(path: Path, s: Session, source, cues, counts, drive_counts, heur, n_over, ov,
+def write_review(path: Path, s: Session, source: str | None, cues: list[dict], counts: Counter,
+                 drive_counts: Counter, heur: Counter, n_over: int, ov: dict,
                  pg_counts: Counter | None = None, drive_pg: Counter | None = None) -> None:
+    """The private per-session review file: counts by rule and label, review-pass ranges, unsure spots."""
     lab = Counter(c["speaker"] for c in cues)
-    mins = Counter()
-    for c in cues:
-        mins[c["speaker"]] += (c["end"] - c["start"]) / 60
+    mins = _minutes_by_speaker(cues)
     L = [f"# De-identification review: {s.course} {s.key} ({s.date})", "",
          f"Source: {source}. PRIVATE. Counts only; quoted words already have names masked.", "",
          "## Replacements by rule (transcript cues)", ""]
@@ -1182,7 +1242,8 @@ SWEEP_KINDS = ("roster", "roster_nickname", "roster_fuzzy", "override_term", "kn
 REVIEW_ONLY_KINDS = {"ambiguous", "cap_bigram"}  # read by a person; not automatically names
 
 
-def sweep_texts(texts, scrub: ScrubList, english: set[str], given: set[str], keep=(),
+def sweep_texts(texts: Iterable[str], scrub: ScrubList, english: set[str], given: set[str],
+                keep: Iterable[str] = (),
                 frequent: set[str] | None = None) -> list[tuple[str, str]]:
     """Return [(kind, masked context)] for every surviving name-like token. Contexts never show the token."""
     keep = {_norm(k) for k in keep}
@@ -1195,7 +1256,8 @@ def sweep_texts(texts, scrub: ScrubList, english: set[str], given: set[str], kee
     for text in texts:
         for m in phrase_re.finditer(text):
             if not is_eponym(text, m.start(), m.end()):
-                hits.append(("known_person", text[max(0, m.start() - 40):m.start()] + "<P>" + text[m.end():m.end() + 40]))
+                context = text[max(0, m.start() - 40):m.start()] + "<P>" + text[m.end():m.end() + 40]
+                hits.append(("known_person", context))
         title_starts = {m.start("n") for m in TITLE_RE.finditer(text)}
         for m in WORD_RE.finditer(text):
             tok = m.group(0)
@@ -1281,7 +1343,7 @@ def dump(archive: Path, course: str, session: int, start: int = 0, count: int = 
         print(f"{i}|{_fmt(c['start'])}|{c['start']:.0f}-{c['end']:.0f}|{c['speaker'][:5]}|{c['text']}")
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--archive", type=Path, default=ARCHIVE)
     sub = ap.add_subparsers(dest="cmd", required=True)

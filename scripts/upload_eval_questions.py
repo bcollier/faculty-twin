@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from app import eval_store
@@ -28,7 +29,9 @@ from evals import dataset
 from evals.run import PRIVATE, ROOT, load_dotenv
 
 
-def run(questions: Path, bucket: eval_store.Bucket, force: bool = False, out=print) -> int:
+def run(questions: Path, bucket: eval_store.Bucket, force: bool = False,
+        out: Callable[[str], None] = print) -> int:
+    """Check the local file, compare it with the bucket copy, upload it. Returns the exit code."""
     try:
         qs = dataset.load(questions)
     except OSError as exc:
@@ -38,7 +41,8 @@ def run(questions: Path, bucket: eval_store.Bucket, force: bool = False, out=pri
         out(f"Privacy check failed, nothing uploaded: {exc}")
         return 2
     text = questions.read_text(encoding="utf-8")
-    out(f"{len(qs)} questions passed the checks ({sum(1 for q in qs if q.answerable)} answerable from course material).")
+    answerable = sum(1 for q in qs if q.answerable)
+    out(f"{len(qs)} questions passed the checks ({answerable} answerable from course material).")
     for cat, n in dataset.category_counts(qs):
         out(f"  {cat}: {n}")
     try:

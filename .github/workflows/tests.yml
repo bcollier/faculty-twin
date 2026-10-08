@@ -56,6 +56,16 @@ jobs:
             uv run --no-project --with-requirements requirements-test.txt python -m coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  ruff:
+    name: ruff (Python lint, rules in ruff.toml)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Lint the Python code (docs/CODE_STYLE.md)
+        run: uvx ruff@0.16.10 check --output-format=github .
+
   frontend-syntax:
     name: node --check public/*.js
     runs-on: ubuntu-latest

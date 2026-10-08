@@ -28,12 +28,11 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import httpx
-import numpy as np
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -44,11 +43,15 @@ from indexer.build_index import (  # noqa: E402
     INPUT_TYPE,
     EmbedCache,
     EmbeddingError,
+    content_hash,
     embed_records,
-    new_version,
+    embedding_state,
+    keep_or_new_version,
+    run_leak_check,
+    save_matrix,
 )
 from indexer.canvas_import import redact_secrets  # noqa: E402
-from indexer.leakcheck import INFO_STRICT_FIELDS, RosterChecker, RosterMissing  # noqa: E402
+from indexer.leakcheck import INFO_STRICT_FIELDS  # noqa: E402
 
 KINDS = {"page", "file", "assignment", "link", "announcement", "syllabus"}
 EXIT_OK, EXIT_EMPTY, EXIT_EMBED, EXIT_PENDING, EXIT_LEAK = 0, 1, 2, 3, 4
@@ -91,6 +94,7 @@ def collect(build: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
 
 
 def slide_index_dim(content: Path) -> int | None:
+    """The slide index's embedding dimension, which the info index must match (one question vector scores both)."""
     meta = common.read_json(content / "manifest.json", {}) or {}
     return meta.get("embedding_dim")
 
@@ -105,13 +109,14 @@ def build(
     sleep: Callable[[float], None] = time.sleep,
     log: Callable[[str], None] = print,
 ) -> int:
+    """Build info_index.json, info_embeddings.npy and info_manifest.json. Returns an EXIT_* code."""
     build_root = build_root or common.build_dir(archive)
     out = build_root / "content"
     records, counts = collect(build_root)
     if not records:
         log(f"No Canvas items under {build_root / 'canvas'}. Run indexer/canvas_import.py first.")
         return EXIT_EMPTY
-    chash = common.sha256_bytes(common.dump_json({"model": model, "records": records}))
+    chash = content_hash(records, model)
     usage = {"tokens": 0}
     try:
         matrix, cached, fresh = embed_records(records, EmbedCache(out / "embed_cache", model), key, client,
@@ -127,9 +132,7 @@ def build(
         return EXIT_EMBED
 
     previous = common.read_json(out / "info_manifest.json", {}) or {}
-    same = previous.get("content_hash") == chash and previous.get("embeddings") == ("complete" if complete else "pending")
-    version = previous["info_version"] if same and previous.get("info_version") else new_version(chash)
-    now = (same and previous.get("built_at")) or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    version, now = keep_or_new_version(previous, "info_version", chash, complete)
     index = {
         "info_version": version,
         "built_at": now,
@@ -142,19 +145,14 @@ def build(
     index_bytes = common.dump_json(index)
     common.write_bytes_atomic(out / "info_index.json", index_bytes)
     emb_path = out / "info_embeddings.npy"
-    if complete:
-        tmp = out / "info_embeddings.tmp.npy"
-        np.save(tmp, matrix)
-        tmp.replace(emb_path)
-    elif emb_path.exists():
-        emb_path.unlink()  # never leave a matrix that does not match info_index.json
+    save_matrix(emb_path, matrix)
     common.write_json(out / "info_manifest.json", {
         "info_version": version,
         "built_at": now,
         "content_hash": chash,
         "embedding_model": model,
         "embedding_dim": dim,
-        "embeddings": "complete" if complete else "pending",
+        "embeddings": embedding_state(complete),
         "counts": counts,
         "outputs": {
             "content/info_index.json": common.sha256_bytes(index_bytes),
@@ -165,18 +163,12 @@ def build(
         + "; ".join(f"{c}: " + ", ".join(f"{k} {v}" for k, v in sorted(kinds.items()))
                     for c, kinds in sorted(counts["by_course"].items())))
     if complete:
-        log(f"info_embeddings.npy: {matrix.shape[0]} x {matrix.shape[1]} ({fresh} newly embedded, {cached} from cache); "
-            f"Voyage tokens this run: {usage['tokens']:,}")
+        log(f"info_embeddings.npy: {matrix.shape[0]} x {matrix.shape[1]} ({fresh} newly embedded, "
+            f"{cached} from cache); Voyage tokens this run: {usage['tokens']:,}")
 
-    try:
-        checker = RosterChecker.from_dir(roster or common.roster_dir(archive))
-    except RosterMissing as exc:
-        log(f"leak check skipped here: {exc}. indexer/upload.py will refuse to upload without it.")
-    else:
-        hits = checker.check_index(index, "content/info_index.json", strict_fields=INFO_STRICT_FIELDS)
-        log(hits.summary())
-        if hits.total:
-            return EXIT_LEAK
+    if run_leak_check(roster or common.roster_dir(archive), index, log, "content/info_index.json",
+                      strict_fields=INFO_STRICT_FIELDS):
+        return EXIT_LEAK
     if not complete:
         log(f"Embeddings pending: VOYAGE_API_KEY is not set. Put it in .env, then run:\n  {RUN_CMD}")
         return EXIT_PENDING

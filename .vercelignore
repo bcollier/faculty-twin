@@ -14,6 +14,7 @@ content/
 .claude/
 .github/
 requirements-test.txt
+ruff.toml
 requirements-e2e.txt
 .hypothesis/
 .coverage

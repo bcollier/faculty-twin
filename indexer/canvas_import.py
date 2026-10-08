@@ -49,18 +49,18 @@ from __future__ import annotations
 
 import argparse
 import html
-import json
 import re
 import subprocess
 import sys
 import tempfile
 import time
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -114,11 +114,11 @@ ZOOM = re.compile(r"^https?://[^/]*zoom\.us/", re.IGNORECASE)
 
 
 class CanvasError(RuntimeError):
-    pass
+    """A Canvas request failed. The message carries the path and status, never the token."""
 
 
 class ForbiddenRequest(CanvasError):
-    pass
+    """A request for student data (submissions, grades, people) that the client refuses to send."""
 
 
 # ---------------------------------------------------------------- Canvas client (GET only)
@@ -168,7 +168,9 @@ class CanvasClient:
             except httpx.HTTPError as exc:
                 last = type(exc).__name__
             else:
-                rate_limited = resp.status_code == 429 or (resp.status_code == 403 and "rate limit" in resp.text.lower())
+                # Canvas throttles with 403 "Rate Limit Exceeded" as well as 429.
+                rate_limited = resp.status_code == 429 or (
+                    resp.status_code == 403 and "rate limit" in resp.text.lower())
                 if resp.status_code < 400:
                     return resp
                 if not rate_limited and resp.status_code < 500:
@@ -213,6 +215,7 @@ class CanvasClient:
 
 
 def read_token(archive: Path) -> str:
+    """The read-only Canvas token from the private folder (never printed or logged)."""
     path = archive / "_private" / "canvas_token"
     try:
         token = path.read_text().strip()
@@ -236,7 +239,7 @@ class _HTMLText(HTMLParser):
         self.skip = 0
         self.href: list[str | None] = []
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in self.SKIP:
             self.skip += 1
             return
@@ -249,23 +252,26 @@ class _HTMLText(HTMLParser):
         if tag == "a":
             self.href.append(dict(attrs).get("href"))
 
-    def handle_endtag(self, tag):
+    def handle_endtag(self, tag: str) -> None:
         if tag in self.SKIP:
             self.skip = max(0, self.skip - 1)
             return
         if tag == "a" and self.href:
             href = self.href.pop()
-            if href and href.startswith("http") and not ZOOM.match(href) and urlparse(href).netloc != urlparse(BASE).netloc:
+            # Keep outside links as text; Zoom recordings and Canvas's own pages are not worth citing.
+            external = href and href.startswith("http") and urlparse(href).netloc != urlparse(BASE).netloc
+            if external and not ZOOM.match(href):
                 self.parts.append(f" ({href})")
         if tag in self.BLOCK:
             self.parts.append("\n")
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         if not self.skip:
             self.parts.append(data)
 
 
 def html_to_text(raw: str | None) -> str:
+    """Readable text from Canvas HTML: block tags become line breaks, outside links stay as (url)."""
     if not raw:
         return ""
     p = _HTMLText()
@@ -275,6 +281,7 @@ def html_to_text(raw: str | None) -> str:
 
 
 def normalize(text: str) -> str:
+    """Unescaped text with runs of spaces shortened and blank lines collapsed to one."""
     text = html.unescape(text or "").replace("\r", "").replace(" ", " ").replace("﻿", "")
     lines = [re.sub(r"[ \t]+", " ", ln).strip() for ln in text.split("\n")]
     out: list[str] = []
@@ -285,10 +292,12 @@ def normalize(text: str) -> str:
 
 
 def redact_secrets(text: str) -> tuple[str, int]:
+    """(text with key-shaped strings replaced by KEY_MARKER, how many were replaced)."""
     return SECRET_TEXT.subn(KEY_MARKER, text or "")
 
 
 def fmt_due(due_at: str | None) -> str | None:
+    """A Canvas timestamp as "Monday, October 6, 2026 at 11:59 PM Eastern"; None when missing or malformed."""
     if not due_at:
         return None
     try:
@@ -360,7 +369,8 @@ class Cleaner:
         self.rules: Counter = Counter()  # which de-identification rule fired (labels only)
 
     @classmethod
-    def from_archive(cls, archive: Path) -> "Cleaner":
+    def from_archive(cls, archive: Path) -> Cleaner:
+        """A cleaner built from the archive's word lists, rosters and overrides."""
         from indexer import deidentify as d
         from indexer.leakcheck import RosterChecker
 
@@ -398,15 +408,10 @@ class Cleaner:
         """
         if self.checker is not None and self.checker.strict(title):
             return self.clean(title)
-        out, n = pg_smooth(title or "")
-        self.counts["pg_swaps"] += n
-        out, n = assessment_filter.redact(out)
-        self.counts["access_codes_removed"] += n
-        out, n = redact_secrets(out)
-        self.counts["keys_removed"] += n
-        return normalize(out)
+        return self._filter(title or "")
 
     def clean(self, text: str) -> str:
+        """De-identify `text` (names masked), then apply the PG, access-code and key filters."""
         counts: Counter = Counter()
         out = self._scrub(text or "", counts)
         if self.checker is not None:
@@ -421,7 +426,11 @@ class Cleaner:
             out = re.sub(r"(?P<mask>\[(?:student|person)\])\s+(?P<w>[A-Z][a-z]+)\b", absorb, out)
         self.counts["names_masked"] += sum(counts.values())
         self.rules.update(counts)
-        out, n = pg_smooth(out)
+        return self._filter(out)
+
+    def _filter(self, text: str) -> str:
+        """The filters every stored string gets after de-identification: PG, access codes, keys."""
+        out, n = pg_smooth(text)
         self.counts["pg_swaps"] += n
         out, n = assessment_filter.redact(out)
         self.counts["access_codes_removed"] += n
@@ -451,6 +460,7 @@ def gog_export(file_id: str, fmt: str, accounts: tuple[str, ...] = GOOGLE_ACCOUN
 
 
 def csv_to_text(raw: str) -> str:
+    """A Google Sheet export as text: non-empty cells joined with " | ", one row per line."""
     import csv
     import io
 
@@ -492,6 +502,8 @@ def extract_file_text(path: Path) -> str:
 
 @dataclass
 class Report:
+    """What one course import kept as stubs, skipped, and counted (titles cleaned, reasons only)."""
+
     counts: Counter = field(default_factory=Counter)
     stubs: list[dict[str, str]] = field(default_factory=list)
     skipped: list[dict[str, str]] = field(default_factory=list)
@@ -501,6 +513,8 @@ class Report:
 
 
 class Importer:
+    """Walks one course's modules, then the pages, assignments, syllabus and announcements outside them."""
+
     def __init__(self, course: str, canvas: CanvasClient, cleaner: Cleaner, cache_dir: Path,
                  gdrive: Callable[[str, str], str | None] | None = gog_export,
                  extract: Callable[[Path], str] = extract_file_text,
@@ -512,6 +526,10 @@ class Importer:
         self.items: dict[str, dict[str, Any]] = {}
         self.report = Report()
         self.pdf_stems: set[str] = set()
+        # Filled by run() from the course's listings before any item is imported.
+        self.pages: dict[str, dict[str, Any]] = {}
+        self.by_id: dict[int, dict[str, Any]] = {}
+        self.by_quiz: dict[int, dict[str, Any]] = {}
 
     def skip(self, title: str, why: str) -> None:
         self.report.skip(self.cleaner.clean_title(title or ""), why)
@@ -538,6 +556,7 @@ class Importer:
             position: int | None = None, section: str | None = None, source_url: str | None = None,
             due_at: str | None = None, updated_at: str | None = None, student_list_title: bool = False,
             header: list[str] | None = None) -> None:
+        """Clean and chunk one item, or store a stub when it lists students. Each key is added once."""
         if key in self.items:
             return
         title = normalize(title)
@@ -579,6 +598,7 @@ class Importer:
 
     # -- Canvas objects -----------------------------------------------------------
     def page(self, url_slug: str, meta: dict[str, Any] | None = None, **kw) -> None:
+        """A published Canvas page, from the cache when Canvas says it has not changed."""
         key = f"page-{url_slug}"
         if key in self.items:
             return
@@ -597,6 +617,7 @@ class Importer:
                  updated_at=body.get("updated_at"), **kw)
 
     def assignment(self, a: dict[str, Any], **kw) -> None:
+        """A published assignment with its due date, points and close date as a header."""
         key = f"assignment-{a['id']}"
         if key in self.items:
             return
@@ -615,6 +636,7 @@ class Importer:
                  due_at=a.get("due_at"), updated_at=a.get("updated_at"), header=header, **kw)
 
     def quiz(self, quiz_id: int, item: dict[str, Any], **kw) -> None:
+        """A quiz, through its assignment when it has one, else from the quizzes API."""
         a = self.by_quiz.get(int(quiz_id))
         if a is not None:
             self.assignment(a, **kw)
@@ -631,6 +653,7 @@ class Importer:
         self.assignment(q, **kw)
 
     def file(self, item: dict[str, Any], **kw) -> None:
+        """A course file: text for PDFs, Word and text files; a title-only link for decks and everything else."""
         title = item.get("title") or ""
         fid = item.get("content_id")
         key = f"file-{fid}"
@@ -653,7 +676,8 @@ class Importer:
             self.skip(title, "Word copy of a PDF that is imported")
             return
         if ext not in TEXT_FILE_EXT or ((SLIDES_FILE.search(name) or SLIDES_FILE.search(title)) and kind != "syllabus"):
-            why = "slide deck or case file (slides are in the slide index)" if ext in TEXT_FILE_EXT else f"{ext or 'no'} file: title only"
+            why = ("slide deck or case file (slides are in the slide index)" if ext in TEXT_FILE_EXT
+                   else f"{ext or 'no'} file: title only")
             self.skip(title, why + "; kept as a link")
             self.add(key, kind="file", title=title, raw=f"File posted on Canvas: {name}", canvas_url=canvas_url,
                      updated_at=updated, **kw)
@@ -675,6 +699,7 @@ class Importer:
                  student_list_title=True, **kw)
 
     def link(self, item: dict[str, Any], **kw) -> None:
+        """An external link: Google Docs and Sheets are exported as text, Zoom links become a note."""
         url = item.get("external_url") or ""
         title = item.get("title") or url
         key = f"link-{item.get('id')}"
@@ -704,6 +729,7 @@ class Importer:
 
     # -- the run ----------------------------------------------------------------------
     def run(self) -> list[dict[str, Any]]:
+        """Import every student-facing item once, module items first. Returns the item records."""
         cid = self.cid
         me = self.canvas.get("/users/self")
         self.pages = {p["url"]: p for p in self.canvas.get(f"/courses/{cid}/pages", {"per_page": 100})}
@@ -718,47 +744,60 @@ class Importer:
                 if it.get("type") == "File" and t.endswith(".pdf"):
                     self.pdf_stems.add(t[:-4].strip())
         for m in sorted(modules, key=lambda m: m.get("position") or 0):
-            mname = normalize(m.get("name") or "")
-            if not m.get("published", True):
-                self.skip(mname, "unpublished module")
-                continue
-            items = m.get("items")
-            if items is None:
-                items = self.canvas.get(f"/courses/{cid}/modules/{m['id']}/items",
-                                        {"include[]": ["content_details"], "per_page": 100})
-            section = None
-            for it in items:
-                typ, title = it.get("type"), it.get("title") or ""
-                if typ == "SubHeader":
-                    section = normalize(title) if it.get("published", True) else section
-                    continue
-                if not it.get("published", True):
-                    self.skip(title, "unpublished module item")
-                    continue
-                kw = {"module": mname, "position": it.get("position"), "section": section}
-                try:
-                    if typ == "Page":
-                        self.page(it["page_url"], **kw)
-                    elif typ == "Assignment":
-                        a = self.by_id.get(int(it["content_id"]))
-                        if a is None:
-                            self.skip(title, "assignment not visible in the assignments list")
-                        else:
-                            self.assignment(a, **kw)
-                    elif typ == "Quiz":
-                        self.quiz(int(it["content_id"]), it, **kw)
-                    elif typ == "File":
-                        self.file(it, **kw)
-                    elif typ in ("ExternalUrl", "ExternalTool"):
-                        self.link(it, **kw)
-                    elif typ == "Discussion":
-                        self.skip(title, "discussion (student posts are never imported)")
-                    else:
-                        self.skip(title, f"module item type {typ}")
-                except CanvasError as exc:
-                    self.skip(title, f"Canvas error: {exc}")
+            self._import_module(m)
+        self._import_loose_items(assignments)
+        self._import_syllabus()
+        self._import_announcements(me)
+        return list(self.items.values())
 
-        # Published pages and assignments that are not in a module.
+    def _import_module(self, m: dict[str, Any]) -> None:
+        """Every published item of one published module, with its module and class section."""
+        mname = normalize(m.get("name") or "")
+        if not m.get("published", True):
+            self.skip(mname, "unpublished module")
+            return
+        items = m.get("items")
+        if items is None:
+            items = self.canvas.get(f"/courses/{self.cid}/modules/{m['id']}/items",
+                                    {"include[]": ["content_details"], "per_page": 100})
+        section = None
+        for it in items:
+            typ, title = it.get("type"), it.get("title") or ""
+            if typ == "SubHeader":
+                section = normalize(title) if it.get("published", True) else section
+                continue
+            if not it.get("published", True):
+                self.skip(title, "unpublished module item")
+                continue
+            kw = {"module": mname, "position": it.get("position"), "section": section}
+            try:
+                self._import_module_item(typ, title, it, kw)
+            except CanvasError as exc:
+                self.skip(title, f"Canvas error: {exc}")
+
+    def _import_module_item(self, typ: str | None, title: str, it: dict[str, Any], kw: dict[str, Any]) -> None:
+        """Dispatch one module item by its Canvas type. Discussions are never imported (student posts)."""
+        if typ == "Page":
+            self.page(it["page_url"], **kw)
+        elif typ == "Assignment":
+            a = self.by_id.get(int(it["content_id"]))
+            if a is None:
+                self.skip(title, "assignment not visible in the assignments list")
+            else:
+                self.assignment(a, **kw)
+        elif typ == "Quiz":
+            self.quiz(int(it["content_id"]), it, **kw)
+        elif typ == "File":
+            self.file(it, **kw)
+        elif typ in ("ExternalUrl", "ExternalTool"):
+            self.link(it, **kw)
+        elif typ == "Discussion":
+            self.skip(title, "discussion (student posts are never imported)")
+        else:
+            self.skip(title, f"module item type {typ}")
+
+    def _import_loose_items(self, assignments: list[dict[str, Any]]) -> None:
+        """Published pages and assignments that are not in a module."""
         for slug, meta in self.pages.items():
             if not meta.get("published", True) or meta.get("hide_from_students"):
                 if f"page-{slug}" not in self.items:
@@ -771,14 +810,18 @@ class Importer:
         for a in assignments:
             self.assignment(a)
 
-        course = self.canvas.get(f"/courses/{cid}", {"include[]": ["syllabus_body"]})
+    def _import_syllabus(self) -> None:
+        course = self.canvas.get(f"/courses/{self.cid}", {"include[]": ["syllabus_body"]})
         syllabus = html_to_text(course.get("syllabus_body"))
         if syllabus:
             self.add("syllabus", kind="syllabus", title=f"Syllabus: {course.get('name') or COURSE_LABELS[self.course]}",
-                     raw=syllabus, canvas_url=f"{BASE}/courses/{cid}/assignments/syllabus",
+                     raw=syllabus, canvas_url=f"{BASE}/courses/{self.cid}/assignments/syllabus",
                      updated_at=course.get("updated_at"))
 
-        topics = self.canvas.get(f"/courses/{cid}/discussion_topics", {"only_announcements": "true", "per_page": 100})
+    def _import_announcements(self, me: dict[str, Any]) -> None:
+        """Posted announcements written by Ben (the token's own user); anyone else's are counted, not read."""
+        topics = self.canvas.get(f"/courses/{self.cid}/discussion_topics",
+                                 {"only_announcements": "true", "per_page": 100})
         for t in topics:
             author = (t.get("author") or {}).get("id") or t.get("user_id")
             if str(author) != str(me.get("id")):
@@ -791,13 +834,13 @@ class Importer:
                      raw=html_to_text(t.get("message")), canvas_url=t.get("html_url"),
                      updated_at=t.get("posted_at") or t.get("updated_at"),
                      header=[f"Posted: {fmt_due(t.get('posted_at'))}"] if t.get("posted_at") else None)
-        return list(self.items.values())
 
 
 def import_course(course: str, archive: Path, canvas: CanvasClient, cleaner: Cleaner,
                   gdrive: Callable[[str, str], str | None] | None = gog_export,
                   extract: Callable[[Path], str] = extract_file_text,
                   log: Callable[[str], None] = print) -> tuple[list[dict[str, Any]], Report]:
+    """Import one course, then write items.json and a counts-only report.json next to its cache."""
     out_dir = common.build_dir(archive) / "canvas" / course
     imp = Importer(course, canvas, cleaner, out_dir / "cache", gdrive, extract, log)
     items = imp.run()

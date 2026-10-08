@@ -60,7 +60,11 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from indexer import align as A
+if __package__ in (None, ""):  # run as a script (python indexer/clips.py, as the worker does)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from indexer import align as A  # noqa: E402
+from indexer.layout import NO_CLIP_FLAGS, NO_CLIP_SESSIONS, read_json, write_json  # noqa: E402
 
 CLIPS_VERSION = 2  # bump only when the encoding changes
 
@@ -87,9 +91,6 @@ def pg_problem(c: dict) -> bool:
     """True when a cue was softened by the PG filter or still contains a listed word."""
     return bool(c.get("pg")) or bool(PROFANITY.search(c.get("text") or ""))
 
-NO_CLIP_SESSIONS = {("45884", 11), ("45884", 12)}
-NO_CLIP_FLAGS = ("student_names_possible", "in_the_news", "student_presentation_possible",
-                 "no_clips_private_case")
 
 ENCODE = ["-c:v", "libx264", "-preset", "medium", "-crf", "26", "-tune", "stillimage",
           "-pix_fmt", "yuv420p", "-vf", "scale=-2:720", "-r", "25",
@@ -130,7 +131,8 @@ def window_problem(cues: list[dict], a: float, b: float, pad: float = PAD_S) -> 
     return None
 
 
-def merge_frame_windows(windows: list[tuple[float, float]], gap: float = MERGE_GAP_S):
+def merge_frame_windows(windows: list[tuple[float, float]], gap: float = MERGE_GAP_S) -> list[tuple[float, float]]:
+    """Join windows less than `gap` seconds apart (the spec's 5 s merge)."""
     out: list[list[float]] = []
     for a, b in sorted(windows):
         if out and a - out[-1][1] < gap:
@@ -185,6 +187,8 @@ def clean_segments(cues: list[dict], a: float, b: float, pad: float = PAD_S,
 
 @dataclass
 class Candidate:
+    """A clip window considered for one slide: kept when `reason` is None."""
+
     slide_id: str
     start: float
     end: float
@@ -193,6 +197,7 @@ class Candidate:
 
 
 def slide_block(slide: dict, session_key: tuple[str, int], pulled: set[str]) -> str | None:
+    """Why a slide may never have a clip, whatever its windows look like; None when it may."""
     if session_key in NO_CLIP_SESSIONS:
         return "private_case_session"
     for f in NO_CLIP_FLAGS:
@@ -286,7 +291,7 @@ def decide_slide(slide: dict, rec: dict, cues: list[dict], meta: dict,
 # --------------------------------------------------------------------------- encoding
 
 
-def locate(t0: float, t1: float, videos: list, durations: list[float]):
+def locate(t0: float, t1: float, videos: list[Path], durations: list[float]) -> tuple[Path, float] | None:
     """Map a timeline span to (video, local start) or None when it crosses a part boundary."""
     off = 0.0
     for v, d in zip(videos, durations):
@@ -297,6 +302,7 @@ def locate(t0: float, t1: float, videos: list, durations: list[float]):
 
 
 def encode(src: Path, local_start: float, dur: float, out: Path, extra: list[str] | None = None) -> None:
+    """Encode one clip with ffmpeg; `extra` (["-crf", N]) overrides the quality setting."""
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(out.stem + ".part.mp4")
     args = list(ENCODE)
@@ -320,35 +326,57 @@ def read_pulled(s: A.Session) -> set[str]:
     out: set[str] = set()
     for p in (A.build_dir() / "overrides" / s.course / f"{s.key}.json",
               A.ARCHIVE / "_private" / "deid_overrides" / s.course / f"{s.key}.json"):
-        d = A.load_json(p, {}) or {}
+        d = read_json(p, {}) or {}
         if isinstance(d, dict):
             out.update(str(x) for x in d.get("no_clips", []) or [])
     return out
 
 
 def reason_kept(c: Candidate) -> str:
+    """The manifest's plain-language reason a clip passed every rule."""
     return (f"frame-matched {c.end - c.start:.0f} s ({c.note}), instructor only, "
             f"no [student]/[person] within 5 s, slide not flagged")
 
 
 def encode_clip(src: Path, local_start: float, dur: float, out: Path) -> None:
+    """Encode a clip, re-encoding at lower quality when the first pass is over TARGET_BYTES."""
     encode(src, local_start, dur, out)
     if out.stat().st_size > TARGET_BYTES:
         encode(src, local_start, dur, out, ENCODE_SMALL)
 
 
+# Manifest rows from the previous run, by slide id (main fills it): a clip whose window,
+# source and encoding are unchanged and whose file exists is not encoded again.
+_previous: dict[str, dict] = {}
+
+
+def _rejected_row(s: A.Session, slide_id: str, start: float, end: float, reason: str | None) -> dict:
+    """A rejected.json row: ids, times and a reason code only, never transcript text."""
+    return {"slide_id": slide_id, "course": s.course, "session": s.session,
+            "start": round(start, 2), "end": round(end, 2), "reason": reason}
+
+
+def _final_check_passes(transcript: Path, clip: Candidate) -> bool:
+    """Re-read the transcript file right before encoding and check the padded window once more."""
+    fresh = read_json(transcript, {}).get("cues", [])
+    if window_problem(fresh, clip.start, clip.end) is not None:
+        return False
+    return all(c.get("speaker") == "instructor" for c in overlapping(fresh, clip.start - PAD_S, clip.end + PAD_S))
+
+
 def clips_for_session(s: A.Session, dry_run: bool = False, force: bool = False,
                       verbose: bool = True, jobs: int = 1) -> tuple[list[dict], list[dict]]:
+    """Decide, encode and prune one session's clips. Returns (manifest rows, rejected rows)."""
     p = A.session_paths(s)
     b = A.build_dir()
-    recs = A.load_json(p["out"], None)
-    meta = A.load_json(p["meta"], {}) or {}
-    slides = A.load_json(p["slides"], [])
+    recs = read_json(p["out"], None)
+    meta = read_json(p["meta"], {}) or {}
+    slides = read_json(p["slides"], [])
     if recs is None or not slides:
         if verbose:
             print(f"{s.label}: no alignment or no deck, no clips")
         return [], []
-    tr = A.load_json(p["transcript"], None)
+    tr = read_json(p["transcript"], None)
     cues = sorted(tr["cues"], key=lambda c: float(c["start"])) if tr else []
     by_id = {r["slide_id"]: r for r in recs}
     pulled = read_pulled(s)
@@ -358,25 +386,15 @@ def clips_for_session(s: A.Session, dry_run: bool = False, force: bool = False,
     for sl in slides:
         rec = by_id.get(sl["slide_id"], {"windows": [], "methods": []})
         clip, rej = decide_slide(sl, rec, cues, meta, (s.course, s.session), pulled)
-        rejected += [{"slide_id": r.slide_id, "course": s.course, "session": s.session,
-                      "start": round(r.start, 2), "end": round(r.end, 2), "reason": r.reason}
-                     for r in rej]
+        rejected += [_rejected_row(s, r.slide_id, r.start, r.end, r.reason) for r in rej]
         if clip is None:
             continue
         loc = locate(clip.start, clip.end, s.videos, durations)
         if loc is None:
-            rejected.append({"slide_id": clip.slide_id, "course": s.course, "session": s.session,
-                             "start": round(clip.start, 2), "end": round(clip.end, 2),
-                             "reason": "spans_video_parts"})
+            rejected.append(_rejected_row(s, clip.slide_id, clip.start, clip.end, "spans_video_parts"))
             continue
-        # Final check, straight from the transcript file, right before writing.
-        fresh = A.load_json(p["transcript"], {}).get("cues", [])
-        if window_problem(fresh, clip.start, clip.end) is not None or \
-                not all(c.get("speaker") == "instructor"
-                        for c in overlapping(fresh, clip.start - PAD_S, clip.end + PAD_S)):
-            rejected.append({"slide_id": clip.slide_id, "course": s.course, "session": s.session,
-                             "start": round(clip.start, 2), "end": round(clip.end, 2),
-                             "reason": "final_check_failed"})
+        if not _final_check_passes(p["transcript"], clip):
+            rejected.append(_rejected_row(s, clip.slide_id, clip.start, clip.end, "final_check_failed"))
             continue
         src, local = loc
         out = b / "clips" / f"{clip.slide_id}.mp4"
@@ -391,14 +409,7 @@ def clips_for_session(s: A.Session, dry_run: bool = False, force: bool = False,
                 jobs_todo.append((src, local, clip.end - clip.start, out))
         kept.append(row)
     if not dry_run:
-        with ThreadPoolExecutor(max(1, jobs)) as pool:
-            list(pool.map(lambda j: encode_clip(*j), jobs_todo))
-        for row in kept:
-            row["bytes"] = (b / "clips" / f"{row['slide_id']}.mp4").stat().st_size
-        keep_ids = {r["slide_id"] for r in kept}
-        for f in (b / "clips").glob(f"{s.course}-{s.key}-*.mp4"):
-            if f.stem not in keep_ids:
-                f.unlink()
+        _encode_and_prune(s, b / "clips", jobs_todo, kept, jobs)
     if verbose:
         c = Counter(r["reason"] for r in rejected)
         print(f"{s.label}: {len(kept)} clips kept, {len(rejected)} candidates rejected "
@@ -406,7 +417,16 @@ def clips_for_session(s: A.Session, dry_run: bool = False, force: bool = False,
     return kept, rejected
 
 
-_previous: dict[str, dict] = {}
+def _encode_and_prune(s: A.Session, clip_dir: Path, jobs_todo: list[tuple], kept: list[dict], jobs: int) -> None:
+    """Encode the new clips in parallel, record each kept clip's size, and delete this session's stale clips."""
+    with ThreadPoolExecutor(max(1, jobs)) as pool:
+        list(pool.map(lambda j: encode_clip(*j), jobs_todo))
+    for row in kept:
+        row["bytes"] = (clip_dir / f"{row['slide_id']}.mp4").stat().st_size
+    keep_ids = {r["slide_id"] for r in kept}
+    for f in clip_dir.glob(f"{s.course}-{s.key}-*.mp4"):
+        if f.stem not in keep_ids:
+            f.unlink()
 
 
 def summarize(manifest: list[dict], rejected: list[dict]) -> dict:
@@ -447,8 +467,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     b = A.build_dir()
     man_path, rej_path = b / "clips" / "manifest.json", b / "clips" / "rejected.json"
-    manifest = A.load_json(man_path, []) or []
-    old_rej = (A.load_json(rej_path, {}) or {}).get("rejected", [])
+    manifest = read_json(man_path, []) or []
+    old_rej = (read_json(rej_path, {}) or {}).get("rejected", [])
     _previous.update({r["slide_id"]: r for r in manifest})
     done = {(s.course, s.session) for s in sessions}
     manifest = [r for r in manifest if (r["course"], int(r["session"])) not in done]
@@ -464,8 +484,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"dry run: {len(manifest)} clips would be kept; slides without a clip "
               f"{report['slides_without_clip']}")
         return 0
-    A.write_json(man_path, manifest)
-    A.write_json(rej_path, report)
+    write_json(man_path, manifest)
+    write_json(rej_path, report)
     total = sum(r.get("bytes", 0) for r in manifest)
     print(f"{len(manifest)} clips, {total / 1e6:.1f} MB; slides without a clip "
           f"{report['slides_without_clip']}; rejected windows {report['counts']}")

@@ -1,0 +1,51 @@
+# Lint rules for the Python code (docs/CODE_STYLE.md). CI runs `ruff check .` on every pull request.
+#
+#   uvx ruff check .          # what CI runs
+#   uvx ruff check --fix .    # apply the safe fixes
+#
+# Ruff is a lint gate only: the code is not machine-formatted, so `ruff format` is not run.
+
+target-version = "py312"
+line-length = 120
+
+# Areas not yet brought in line with these rules. Each clean-code pull request removes its
+# area from this list, so the list shrinks to the permanent entries below.
+extend-exclude = [
+    "app/",
+    "evals/",
+    "localvoice/",
+    "tests/",
+]
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes: unused imports and names, undefined names
+    "I",    # import order
+    "B",    # bugbear: likely bugs
+    "UP",   # modern syntax for the target Python
+    "SIM",  # simpler equivalent code
+]
+ignore = [
+    # zip() here walks lists built from the same source. strict=True would turn a length
+    # mismatch into an exception (a behavior change), and strict=False on every call is noise.
+    "B905",
+]
+
+[lint.per-file-ignores]
+# Ben's hand-written retrieval (AGENTS.md, "Code Ben writes by hand"): agents never edit it,
+# so it is not held to rules an agent would have to fix.
+"app/retrieval.py" = ["ALL"]
+
+[lint.flake8-bugbear]
+# FastAPI's dependency markers are meant to be called in argument defaults.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Body",
+]
+
+[lint.isort]
+known-first-party = ["app", "evals", "indexer", "scripts", "localvoice"]

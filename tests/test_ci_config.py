@@ -38,6 +38,16 @@ def test_workflow_installs_what_the_documented_command_installs():
     assert "enable-cache: true" in text  # uv cache keeps runs short
 
 
+def test_workflow_lints_with_the_repo_ruff_rules():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "ruff" in text and "check" in text  # the rules live in ruff.toml (docs/CODE_STYLE.md)
+    rules = (ROOT / "ruff.toml").read_text(encoding="utf-8")
+    for code in ['"E"', '"F"', '"I"', '"B"', '"UP"', '"SIM"']:
+        assert code in rules, code
+    assert '"app/retrieval.py" = ["ALL"]' in rules  # Ben's hand-written retrieval is never linted into edits
+    assert "ruff.toml" in _lines(ROOT / ".vercelignore")
+
+
 def test_python_version_comes_from_the_repo():
     assert (ROOT / ".python-version").read_text().strip() == "3.12"
     assert "uv python install" in WORKFLOW.read_text(encoding="utf-8")

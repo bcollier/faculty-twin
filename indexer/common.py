@@ -1,8 +1,10 @@
 """Shared helpers for the index, upload, pregenerate, and worker stages.
 
-Paths, `.env` loading, course and session facts from the inventory, hashing,
-atomic writes, and a tiny Supabase REST client (Storage + PostgREST) that takes
-an injectable `httpx.Client`, so tests run against a fake.
+`.env` loading, course and session facts from the inventory, hashing, and a tiny
+Supabase REST client (Storage + PostgREST) that takes an injectable `httpx.Client`,
+so tests run against a fake. The archive layout and the JSON file helpers live in
+`indexer/layout.py` (standard library only, so stages 1 to 4 can use them without
+httpx) and are re-exported here, so a stage needs one import.
 
 Nothing here prints or logs course content, roster data, or key values.
 """
@@ -14,48 +16,31 @@ import hashlib
 import json
 import os
 import re
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 from urllib.parse import quote
 
 import httpx
 
+from indexer.layout import (  # noqa: F401  (re-exported for the stages that import common)
+    COURSE_FOLDERS,
+    DEFAULT_ARCHIVE,
+    EXCLUDE_FLAGS,
+    NO_CLIP_FLAGS,
+    NO_CLIP_SESSIONS,
+    TERM,
+    archive_dir,
+    build_dir,
+    dump_json,
+    read_json,
+    roster_dir,
+    session_tag,
+    write_bytes_atomic,
+    write_json,
+)
+
 REPO = Path(__file__).resolve().parents[1]
-DEFAULT_ARCHIVE = Path(os.environ.get("LECTURE_ARCHIVE", "~/Lecture Archive")).expanduser()
-TERM = "2026 Fall"
-
-# Archive folder names (the slides stage uses the same table).
-COURSE_FOLDERS = {
-    "70445": "70-445 AI for Business Leaders",
-    "45884": "45-884 AI Methods for Social and Visual Data",
-}
-# Sessions whose slides are indexed but must never get class clips (Tesla vs Waymo case).
-NO_CLIP_SESSIONS = {("45884", 11), ("45884", 12)}
-# Slide flags (from indexer/slides.py) that rule out a clip.
-NO_CLIP_FLAGS = {
-    "student_names_possible",
-    "in_the_news",
-    "student_presentation_possible",
-    "no_clips_private_case",
-}
-# Slide flags that keep a slide out of the index entirely.
-EXCLUDE_FLAGS = {"student_names_possible"}
-
-
-def archive_dir(override: str | Path | None = None) -> Path:
-    return Path(override).expanduser() if override else DEFAULT_ARCHIVE
-
-
-def build_dir(archive: Path) -> Path:
-    return archive / "_build"
-
-
-def roster_dir(archive: Path) -> Path:
-    return archive / "_private" / "rosters"
-
-
-def session_tag(session: int) -> str:
-    return f"s{int(session):02d}"
 
 
 # ---------------------------------------------------------------- env
@@ -88,44 +73,25 @@ def load_env(path: Path | None = None) -> list[str]:
 
 
 def env(name: str, default: str | None = None) -> str | None:
+    """An environment variable with surrounding space removed; `default` when unset or blank."""
     value = (os.environ.get(name) or "").strip()
     return value or default
 
 
-# ---------------------------------------------------------------- hashing and files
+# ---------------------------------------------------------------- hashing
 
 def sha256_bytes(data: bytes) -> str:
+    """Hex sha256 of `data` (cache keys, upload state, manifests)."""
     return hashlib.sha256(data).hexdigest()
 
 
 def sha256_file(path: Path) -> str:
+    """Hex sha256 of a file, read in 1 MB chunks (class videos are large)."""
     h = hashlib.sha256()
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
-
-
-def write_bytes_atomic(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_bytes(data)
-    os.replace(tmp, path)
-
-
-def dump_json(obj: Any) -> bytes:
-    return json.dumps(obj, indent=1, ensure_ascii=False).encode("utf-8")
-
-
-def write_json(path: Path, obj: Any) -> None:
-    write_bytes_atomic(path, dump_json(obj))
-
-
-def read_json(path: Path, default: Any = None) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
 
 
 # ---------------------------------------------------------------- course facts
@@ -168,7 +134,7 @@ def session_folder(archive: Path, course: str, session: int) -> Path | None:
 # ---------------------------------------------------------------- Supabase REST
 
 class SupabaseError(RuntimeError):
-    pass
+    """A Storage or PostgREST call failed. The message names the call and status, never the key."""
 
 
 class Supabase:
@@ -192,6 +158,7 @@ class Supabase:
 
     @classmethod
     def configured(cls) -> bool:
+        """True when the URL and the service role key are both in the environment."""
         return bool(env("SUPABASE_URL") and env("SUPABASE_SERVICE_ROLE_KEY"))
 
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -202,7 +169,7 @@ class Supabase:
     def _obj(self, path: str) -> str:
         return f"{self.base}/storage/v1/object/{self.bucket}/{quote(path.lstrip('/'), safe='/')}"
 
-    def _req(self, method: str, url: str, what: str, **kw) -> httpx.Response:
+    def _req(self, method: str, url: str, what: str, **kw: Any) -> httpx.Response:
         try:
             resp = self.client.request(method, url, **kw)
         except httpx.HTTPError as exc:
@@ -214,6 +181,7 @@ class Supabase:
 
     # Storage
     def upload(self, path: str, data: bytes, content_type: str, sha256: str, cache_seconds: int = 3600) -> None:
+        """Upsert one object, with its sha256 in the object metadata (upload.py compares it)."""
         meta = json.dumps({"sha256": sha256}).encode()
         self._req(
             "POST",
@@ -261,6 +229,7 @@ class Supabase:
         return n
 
     def delete(self, paths: list[str]) -> None:
+        """Delete objects by path. An empty list is a no-op."""
         if paths:
             self._req(
                 "DELETE",
@@ -272,9 +241,12 @@ class Supabase:
 
     # PostgREST
     def select(self, table: str, params: dict[str, str]) -> list[dict[str, Any]]:
-        return self._req("GET", f"{self.base}/rest/v1/{table}", f"select {table}", params=params, headers=self._headers()).json()
+        """GET rows with PostgREST query parameters ({"status": "eq.uploaded", ...})."""
+        url = f"{self.base}/rest/v1/{table}"
+        return self._req("GET", url, f"select {table}", params=params, headers=self._headers()).json()
 
     def update(self, table: str, match: dict[str, str], values: dict[str, Any]) -> list[dict[str, Any]]:
+        """PATCH the rows matching `match`; returns the updated rows (empty when none matched)."""
         return self._req(
             "PATCH",
             f"{self.base}/rest/v1/{table}",
@@ -285,6 +257,7 @@ class Supabase:
         ).json()
 
     def upsert(self, table: str, rows: list[dict[str, Any]], on: str) -> list[dict[str, Any]]:
+        """Insert rows, merging into existing ones on the `on` conflict column."""
         return self._req(
             "POST",
             f"{self.base}/rest/v1/{table}",
