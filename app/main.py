@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from . import (
     auth,
     config,
+    course_info,
     edge_voice,
     embed,
     faq,
@@ -165,7 +166,7 @@ class RetrievalNotReady(Exception):
 # What answered a question, as written to question_log.kind (docs/SPEC.md, Data formats).
 STORED_TOPIC = "stored_topic"
 NOT_COVERED = "not_covered"
-LOG_KINDS = (logistics.COURSE_CONTENT, STORED_TOPIC, faq.KIND, logistics.LOGISTICS, NOT_COVERED)
+LOG_KINDS = (logistics.COURSE_CONTENT, STORED_TOPIC, faq.KIND, course_info.KIND, logistics.LOGISTICS, NOT_COVERED)
 
 
 def answer(
@@ -206,12 +207,13 @@ def answer(
         return faq.reply(question, course, hit, _suggested_questions(content, course)), info
 
     records, matrix = playlist.searchable(content, course)
+    info_records, info_matrix = course_info.searchable(content, course)
     _check_retrieval_ready(retriever, matrix.shape[1])
-    if not records:
+    if not records and not info_records:
         info["kind"] = NOT_COVERED
         return playlist.not_covered(question), info
     try:
-        qvec = embedder(question)
+        qvec = embedder(question)  # once: the same vector scores the slides and the course-info chunks
     except embed.EmbeddingCapReached as exc:
         config.log.warning("embedding cap reached")
         raise HTTPException(
@@ -220,15 +222,40 @@ def answer(
     except embed.EmbeddingError as exc:
         config.log.warning("embedding failed: %s", exc)
         raise HTTPException(503, "The search service is not available right now. Please try again shortly.") from exc
-    if qvec.shape[-1] != matrix.shape[1]:
+    if records and qvec.shape[-1] != matrix.shape[1]:
         config.log.error("question vector dim %s != index dim %s", qvec.shape, matrix.shape)
         raise HTTPException(503, "The search index does not match the embedding model. Ben needs to rebuild it.")
+    if info_matrix is not None and qvec.shape[-1] != info_matrix.shape[1]:
+        config.log.error("question vector dim %s != course-info index dim %s", qvec.shape, info_matrix.shape)
+        info_records, info_matrix = [], None  # a stale info index never blocks slide answers
     try:
-        ranked = retriever.rank(qvec, matrix)
+        ranked = retriever.rank(qvec, matrix) if records else []
+        info_ranked = retriever.rank(qvec, info_matrix) if info_records else []
+    except NotImplementedError as exc:
+        raise RetrievalNotReady() from exc
+    best_slide = float(ranked[0][1]) if ranked else None
+    info["top_score"] = best_slide
+
+    # Course info from Canvas (spec step 6a): wins when it clears INFO_THRESHOLD and beats every slide.
+    hits = course_info.top_hits(info_ranked, info_records)
+    if hits and hits[0].score >= course_info.threshold() and (best_slide is None or hits[0].score > best_slide):
+        used_model()
+        result = course_info.answer(
+            question, course, hits, _suggested_questions(content, course), completer, provider=provider, model=model
+        )
+        info["kind"] = course_info.KIND
+        info["top_score"] = hits[0].score
+        info["narration"] = result.source
+        info["errors"] = result.errors
+        return result.reply, info
+
+    if not records:
+        info["kind"] = NOT_COVERED
+        return playlist.not_covered(question), info
+    try:
         chosen = retriever.select_segments(ranked, records, retriever.threshold)
     except NotImplementedError as exc:
         raise RetrievalNotReady() from exc
-    info["top_score"] = float(ranked[0][1]) if ranked else None
     if not chosen:
         info["kind"] = NOT_COVERED
         return playlist.not_covered(question), info

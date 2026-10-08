@@ -18,6 +18,11 @@ does this after rebuilding the index), every warm instance notices within about
 Optional extras the backend reads if present (missing files are fine):
 - `topics/topics.json`: suggested questions, `[{question, course, playlist?}]`
 - `clips/manifest.json`: `[{slide_id, start, end, ...}]` for clip time windows
+- `content/info_index.json` + `content/info_embeddings.npy`: the course-info index
+  (Canvas syllabus, policies, assignments, FAQ doc), one record per chunk,
+  `{id, course, title, kind, canvas_url, due_at, text}`; row i of the matrix
+  belongs to record i. Both files missing (or not matching) turns the
+  course-info answers off; nothing else changes. See app/course_info.py.
 """
 
 from __future__ import annotations
@@ -56,6 +61,9 @@ class Content:
     source: str = ""  # "local" or "supabase"
     version: str | None = None
     by_id: dict[str, int] = field(default_factory=dict)
+    # Course-info index (Canvas pages, syllabus, assignments). Empty means the feature is off.
+    info_records: list[dict[str, Any]] = field(default_factory=list)
+    info_matrix: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         self.by_id = {r["id"]: i for i, r in enumerate(self.records)}
@@ -99,6 +107,22 @@ def _clip_windows(manifest: Any) -> dict[str, tuple[float, float]]:
     return out
 
 
+def _optional_info(read_index, read_emb) -> tuple[list[dict[str, Any]], np.ndarray | None]:
+    """The course-info index, or ([], None) when its files are missing or do not match."""
+    try:
+        index_bytes, emb_bytes = read_index(), read_emb()
+    except Exception:  # missing optional files: the feature is off
+        return [], None
+    try:
+        records, matrix, _meta = _parse(index_bytes, emb_bytes)
+    except Exception as exc:
+        config.log.warning("course-info index ignored: %s", str(exc)[:200])
+        return [], None
+    if not records:
+        return [], None
+    return records, matrix
+
+
 def load_local(root: Path) -> Content:
     index_path = root / "content" / "index.json"
     emb_path = root / "content" / "embeddings.npy"
@@ -107,7 +131,12 @@ def load_local(root: Path) -> Content:
     records, matrix, meta = _parse(index_path.read_bytes(), emb_path.read_bytes())
     topics = _optional_json(lambda: (root / "topics" / "topics.json").read_bytes()) or []
     manifest = _optional_json(lambda: (root / "clips" / "manifest.json").read_bytes())
-    return Content(records, matrix, meta, topics, _clip_windows(manifest), source="local")
+    info_records, info_matrix = _optional_info(
+        lambda: (root / "content" / "info_index.json").read_bytes(),
+        lambda: (root / "content" / "info_embeddings.npy").read_bytes(),
+    )
+    return Content(records, matrix, meta, topics, _clip_windows(manifest), source="local",
+                   info_records=info_records, info_matrix=info_matrix)
 
 
 def load_supabase() -> Content:
@@ -119,7 +148,12 @@ def load_supabase() -> Content:
     records, matrix, meta = _parse(index_bytes, emb_bytes)
     topics = _optional_json(lambda: supa.download("topics/topics.json")) or []
     manifest = _optional_json(lambda: supa.download("clips/manifest.json"))
-    return Content(records, matrix, meta, topics, _clip_windows(manifest), source="supabase")
+    info_records, info_matrix = _optional_info(
+        lambda: supa.download("content/info_index.json"),
+        lambda: supa.download("content/info_embeddings.npy"),
+    )
+    return Content(records, matrix, meta, topics, _clip_windows(manifest), source="supabase",
+                   info_records=info_records, info_matrix=info_matrix)
 
 
 class Store:
@@ -150,7 +184,8 @@ class Store:
         else:
             raise ContentUnavailable("No content source: set CONTENT_DIR or the Supabase variables")
         content.version = settings_store.index_version()
-        config.log.info("loaded %d records from %s", len(content.records), content.source)
+        config.log.info("loaded %d records (%d course-info chunks) from %s",
+                        len(content.records), len(content.info_records), content.source)
         return content
 
     def get(self) -> Content:

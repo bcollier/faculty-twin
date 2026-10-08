@@ -276,8 +276,8 @@ def log_question(
 ) -> None:
     """One question-log row. See docs/TESTING_AND_SCORES.md for what each field means.
 
-    `kind` is what answered: "course_content", "stored_topic", "faq", "logistics",
-    or "not_covered". `provider` and `model` are None when no model was called.
+    `kind` is what answered: "course_content", "stored_topic", "faq", "course_info",
+    "logistics", or "not_covered". `provider` and `model` are None when no model was called.
     """
     increment(f"{'covered' if covered else 'not_covered'}:{_today()}", 1)
     row = {

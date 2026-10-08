@@ -439,6 +439,7 @@ def status(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
             "source": loaded.source if loaded else None,
             "records": len(loaded.records) if loaded else 0,
             "slides": sum(1 for r in loaded.records if r.get("kind", "slide") == "slide") if loaded else 0,
+            "info_chunks": len(loaded.info_records) if loaded else 0,
             "index_version": loaded.version if loaded else None,
         },
         "today": {

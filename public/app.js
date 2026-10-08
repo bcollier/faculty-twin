@@ -128,7 +128,7 @@ const ui = {
   loginForm: $('#login-form'), passcode: $('#passcode'), loginError: $('#login-error'), loginNote: $('#login-note'),
   idleForm: $('#idle-form'), idleQ: $('#idle-q'), idleCount: $('#idle-count'), idleChips: $('#idle-chips'),
   idleCourse: $('#idle-course'), dockCourse: $('#dock-course'),
-  stageMsg: $('#stage-message'), stageSpinner: $('#stage-spinner'), stageTitle: $('#stage-message-title'),
+  stageMsg: $('#stage-message'), stageSpinner: $('#stage-spinner'), stageTitle: $('#stage-message-title'), stageLabel: $('#stage-message-label'),
   stageText: $('#stage-message-text'), stageActions: $('#stage-message-actions'), stageChips: $('#stage-message-chips'),
   player: $('#player'), media: $('#media'), slideImg: $('#slide-img'), slideAlt: $('#slide-alt'), clipVideo: $('#clip-video'),
   clipBtn: $('#clip-btn'), clipBack: $('#clip-back'), clipNote: $('#clip-note'),
@@ -356,8 +356,10 @@ ui.dockToggle.addEventListener('click', () => {
    Stage messages (loading, not covered, errors)
    ===================================================================== */
 
-function showStageMessage({ title, text, spinner = false, actions = [], chips = [] }) {
+function showStageMessage({ title, text, spinner = false, actions = [], chips = [], label = '' }) {
   ui.player.hidden = true;
+  ui.stageLabel.textContent = label || '';
+  ui.stageLabel.hidden = !label;
   ui.stageMsg.hidden = false;
   ui.stageSpinner.hidden = !spinner;
   ui.stageTitle.textContent = title || '';
@@ -402,10 +404,11 @@ function answerActions(answer) {
   return actions;
 }
 
-function showFaqAnswer(answer) {
+/* FAQ answers and course-info answers from Canvas share this card: my words, link buttons, chips. */
+function showFaqAnswer(answer, label = '') {
   clearSourcesToggle();
   const chips = topicsForCourse().slice(0, 6);
-  showStageMessage({ title: answer.title || 'From my course FAQ', text: answer.message || '', actions: answerActions(answer), chips });
+  showStageMessage({ title: answer.title || 'From my course FAQ', text: answer.message || '', actions: answerActions(answer), chips, label });
   addTwinMessage(answer.message || '');
   ui.followups.hidden = true;
   const firstBtn = ui.stageActions.querySelector('button') || ui.stageChips.querySelector('button');
@@ -551,6 +554,8 @@ async function ask(raw, { resumeAt = 0, quiet = false } = {}) {
   const answer = res.data;
   // My own FAQ answers (meetings, missed class, late work...): my written words, never narrated slides.
   if (answer.kind === 'faq') return showFaqAnswer(answer);
+  // Syllabus, policies, assignments and due dates, answered from my Canvas pages, with links to them.
+  if (answer.kind === 'course_info') return showFaqAnswer(answer, 'From Canvas');
   // Meetings, absences, grades, deadlines: a referral to me, never narrated slides.
   if (answer.kind === 'logistics') return showStageError('logistics', question, answer);
   if (!answer.covered || !Array.isArray(answer.segments) || answer.segments.length === 0) {
