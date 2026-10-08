@@ -132,6 +132,26 @@ def test_curated_list_without_key():
     assert out["source"] == "curated" and out["models"][0]["id"] == "claude-sonnet-5-5"
 
 
+@pytest.mark.parametrize("provider,model", [("anthropic", "claude-sonnet-5-5"), ("openai", "gpt-6.1-sol"),
+                                            ("openrouter", "anthropic/claude-sonnet-5.5")])
+@pytest.mark.parametrize("body", [b"<html>Bad gateway</html>", b"", b"[1, 2]", b'"just a string"'])
+def test_a_2xx_reply_that_is_not_a_json_object_is_an_llm_error(monkeypatch, provider, model, body):
+    # Oct 8 code review: resp.json() raised ValueError, which narration (catching LLMError) let through,
+    # so a gateway's 200 HTML page became a 500 on /api/ask instead of the speaker-notes fallback.
+    for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"):
+        monkeypatch.setenv(name, "k")
+    client = mock_client(lambda r: httpx.Response(200, content=body))
+    with pytest.raises(llm.LLMError):
+        llm.complete_json("s", "u", 10, provider=provider, model=model, client=client)
+
+
+@pytest.mark.parametrize("body", [b"<html>Bad gateway</html>", b"", b"[1, 2]"])
+def test_a_2xx_voyage_reply_that_is_not_json_is_an_embedding_error(monkeypatch, body):
+    monkeypatch.setenv("VOYAGE_API_KEY", "voy-test")
+    with pytest.raises(embed.EmbeddingError):
+        embed.embed_question("q", client=mock_client(lambda r: httpx.Response(200, content=body)))
+
+
 def test_voyage_request(monkeypatch):
     monkeypatch.setenv("VOYAGE_API_KEY", "voy-test")
     seen = {}

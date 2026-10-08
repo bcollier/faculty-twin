@@ -246,7 +246,12 @@ def complete_json(
     if resp.status_code >= 400:
         raise LLMError(f"{provider} returned {resp.status_code}: {resp.text[:300]}")
     config.log.info("llm %s/%s answered in %.1fs", provider, model, time.monotonic() - started)
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError as exc:  # a gateway's HTML or empty 200: model trouble, so callers fall back
+        raise LLMError(f"{provider} returned a reply that is not JSON") from exc
+    if not isinstance(data, dict):
+        raise LLMError(f"{provider} returned an unexpected reply")
     usage.record_llm(provider, model, data)  # tokens in/out for Settings > Analytics; never raises
     return PARSERS[provider](data)
 
