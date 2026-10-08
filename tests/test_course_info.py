@@ -147,9 +147,10 @@ def test_info_beats_slides_returns_course_info_card(with_info, student, monkeypa
     assert model.calls == ["course_info"]  # one call, no logistics check, no narration
     assert model.kwargs[-1] == {"provider": "anthropic", "model": "fake-model"}
     assert len(TEST_FAKE_embedder.calls) == 1
-    # Top 3 chunks went to the model, best first.
+    # The top 3 chunks went to the model, best first, minus the one from the other course (Oct 8 review).
     sent = json.loads(model.info_users[0].split("Canvas material:\n", 1)[1])
-    assert len(sent) == 3 and sent[0]["title"] == "Syllabus: AI use policy"
+    assert len(sent) == 2 and sent[0]["title"] == "Syllabus: AI use policy"
+    assert {c["course"] for c in sent} == {"70-445"}
     row = limits._mem_log[-1]
     assert row["kind"] == "course_info" and row["covered"] is True
     assert row["provider"] == "anthropic" and row["model"] == "fake-model"
@@ -242,6 +243,30 @@ def test_course_filter(with_info, student):
     assert {c["course"] for c in sent} <= {"45-884"}
     assert sent[0]["due"] == "Friday, October 9, 2026 at 11:59 PM ET"
     assert _ask(student, "What is homework 2 about?")["kind"] == "course_info"  # all courses
+
+
+def test_all_courses_answer_stays_in_the_top_chunks_course():
+    # Oct 8 code review: with "All courses", the top 3 chunks could come from both courses, so one answer
+    # (labelled with one course) mixed the other course's policies, due dates, and Canvas links.
+    model = FakeModel(info_reply=json.dumps({"answer": GOOD_ANSWER}))
+    hits = _hits("info-70445-syllabus-1", "info-45884-hw2-1", "info-70445-lab-1")
+    result = course_info.answer("What does the syllabus say about AI tools?", None, hits, [], model)
+    sent = json.loads(model.info_users[-1].split("Canvas material:\n", 1)[1])
+    assert {c["course"] for c in sent} == {"70-445"}
+    assert [l["url"] for l in result.reply["links"]] == [
+        "https://canvas.cmu.edu/courses/55124/assignments/syllabus",
+        "https://canvas.cmu.edu/courses/55124/pages/fruit-lab",
+    ]
+    assert result.reply["answers"][0]["course"] == "70445"
+
+
+def test_chunks_without_a_course_still_join_either_course():
+    shared = {"id": "info-all-faq-1", "course": "", "title": "Course FAQ", "kind": "page",
+              "canvas_url": "https://canvas.cmu.edu/courses/55124/pages/faq", "due_at": None, "text": "Office hours."}
+    hits = _hits("info-45884-hw2-1", "info-70445-syllabus-1") + [course_info.Hit(shared, 0.8)]
+    kept = course_info.one_course(hits, None)
+    assert [h.record["id"] for h in kept] == ["info-45884-hw2-1", "info-all-faq-1"]
+    assert course_info.one_course(hits, "45884") == hits  # a course filter already did the work
 
 
 def test_no_student_token_in_output(with_info, student):
