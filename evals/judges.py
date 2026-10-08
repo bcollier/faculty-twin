@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import httpx
 
-from app import llm, usage
+from app import eval_core, llm, usage
 
 from . import rubric
 
@@ -42,6 +43,34 @@ class JudgeError(RuntimeError):
     def __init__(self, message: str, retryable: bool = True):
         super().__init__(message)
         self.retryable = retryable
+
+
+class ProviderOutages:
+    """Providers that refused a call for billing reasons in this process. Once one is down, no more calls go
+    to it for the rest of the run: its answers and judgements are marked `provider_error` instead."""
+
+    def __init__(self) -> None:
+        self._down: dict[str, str] = {}
+        self._lock = threading.Lock()
+
+    def mark(self, provider: str, reason: str) -> None:
+        with self._lock:
+            self._down.setdefault(provider, reason[:300])
+
+    def reason(self, provider: str) -> str | None:
+        with self._lock:
+            return self._down.get(provider)
+
+    def down(self) -> dict[str, str]:
+        with self._lock:
+            return dict(self._down)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._down.clear()
+
+
+OUTAGES = ProviderOutages()
 
 
 @dataclass
@@ -75,6 +104,9 @@ class Judge:
         if self.call is not None:
             return self.call(system, user)
         provider, model = route_of(self.provider, self.model)
+        if OUTAGES.reason(provider):
+            raise JudgeError(f"{eval_core.PROVIDER_ERROR}: {provider} is refusing calls ({OUTAGES.reason(provider)})",
+                             retryable=False)
         req = llm.BUILDERS[provider](model, system, user, max_tokens)
         if provider != self.provider and self.model.startswith(llm._EFFORT_PREFIXES):
             req.body["reasoning"] = {"effort": "low"}  # what the direct Anthropic request sets (output_config.effort)
@@ -86,6 +118,10 @@ class Judge:
         finally:
             if self.client is None:
                 client.close()
+        if resp.status_code >= 400 and (resp.status_code == 402 or eval_core.is_billing_error(resp.text)):
+            OUTAGES.mark(provider, f"returned {resp.status_code}: {resp.text[:160]}")
+            raise JudgeError(f"{eval_core.PROVIDER_ERROR}: {provider} returned {resp.status_code}: {resp.text[:160]}",
+                             retryable=False)
         if resp.status_code == 429 or resp.status_code >= 500:
             raise JudgeError(f"{self.name} returned {resp.status_code} (retryable)")
         if resp.status_code >= 400:
@@ -118,7 +154,10 @@ class Judge:
                     break
                 if attempt + 1 < RETRIES:
                     sleep(2.0 * (attempt + 1))
-        return {"judge": self.name, "error": last}
+        out = {"judge": self.name, "error": last}
+        if last.startswith(eval_core.PROVIDER_ERROR):
+            out[eval_core.PROVIDER_ERROR] = True  # says nothing about the answer: left out of scores, asked again later
+        return out
 
 
 def direct_complete(system: str, user: str, max_tokens: int, provider: str | None = None,

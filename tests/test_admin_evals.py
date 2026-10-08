@@ -648,3 +648,18 @@ def test_six_answering_models_run_with_usage_and_route_metrics(evals):
     assert len(by_gen) == 6 and all("route_accuracy" in m and "pass_rate_excluding_same_family" in m for m in by_gen.values())
     limits = evals.get("/api/admin/evals/limits").json()
     assert limits["max_generators"] == 6 and limits["max_judges"] == 3
+
+
+def test_a_judge_refused_for_billing_is_a_provider_error_not_a_judge_error(evals):
+    """A provider with no credit or quota says nothing about the answer: marked provider_error, left out of scores."""
+    def no_quota(user):
+        raise llm.LLMError('openai returned 429: {"error": {"code": "insufficient_quota"}}')
+
+    evals.judges.replies["openai:gpt-6-luna"] = no_quota
+    run_id = evals.post("/api/admin/evals/runs", json=run_body(top=1)).json()["run"]["id"]
+    out = drive(evals, run_id)
+    assert out["progress"]["finished"]
+    row = evals.get(f"/api/admin/evals/runs/{run_id}").json()["rows"][0]
+    assert row["judgements"][0]["provider_error"] is True
+    m = evals.get(f"/api/admin/evals/runs/{run_id}").json()["run"]["summary"]["by_generator"]["anthropic:claude-haiku-4-5"]
+    assert m["judge_errors"] == 0 and m["judgements"] == 0 and m["pass_rate"] is None

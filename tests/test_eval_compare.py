@@ -346,3 +346,109 @@ def test_claude_can_be_routed_through_openrouter(monkeypatch):
     monkeypatch.setenv("FT_EVAL_ROUTE_ANTHROPIC", "openrouter")
     assert route_of("anthropic", "claude-fable-5-1") == ("openrouter", "anthropic/claude-fable-5.1")
     assert route_of("openai", "gpt-6.1-sol") == ("openai", "gpt-6.1-sol")
+
+
+# ---------------------------------------------------------------- provider outages (no credit or quota)
+
+CREDIT = '{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}'
+
+
+@pytest.fixture
+def outages():
+    from evals.judges import OUTAGES
+
+    OUTAGES.clear()
+    yield OUTAGES
+    OUTAGES.clear()
+
+
+def test_billing_errors_are_recognized():
+    assert eval_core.is_billing_error("anthropic returned 400: " + CREDIT)
+    assert eval_core.is_billing_error('openai returned 429: {"error":{"code":"insufficient_quota"}}')
+    assert eval_core.is_billing_error("openrouter returned 402: Payment Required")
+    assert not eval_core.is_billing_error("openai returned 429: rate limit, slow down")
+    assert not eval_core.is_billing_error("anthropic returned 400: model not found")
+    assert not eval_core.is_billing_error(None)
+
+
+def test_a_judge_stops_calling_a_provider_that_cannot_pay(monkeypatch, outages):
+    import httpx
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-a-key")
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(400, text=CREDIT)
+
+    j = Judge("anthropic", "claude-opus-5-5", client=httpx.Client(transport=httpx.MockTransport(handler)))
+    item = {"question": "q", "category": "OTHER", "answerable": False, "reference_answer": None,
+            "response": {"status": "not_covered", "segments": []}}
+    first = j.judge(item, sleep=lambda s: None)
+    assert first[eval_core.PROVIDER_ERROR] and "credit balance" in first["error"] and len(calls) == 1  # no retries
+    assert outages.reason("anthropic")
+    second = j.judge(item, sleep=lambda s: None)
+    assert second[eval_core.PROVIDER_ERROR] and len(calls) == 1  # never called again this run
+
+
+class OutageTarget(FakeTarget):
+    """TEST FAKE: the Anthropic account runs out of credit while answering the second question."""
+
+    def __init__(self, g, outages, asked):
+        super().__init__(g)
+        self.outages, self.asked = outages, asked
+
+    def ask(self, question):
+        self.asked.append((self.g["model"], question))
+        if (self.g["provider"] == "anthropic" and "ran out" not in self.asked
+                and len([a for a in self.asked if a[0] == self.g["model"]]) == 2):
+            self.asked.insert(0, "ran out")  # once: a top-up fixes it for good
+            self.outages.mark("anthropic", "credit balance is too low")
+        return super().ask(question)
+
+
+def outage_judges(outages):
+    def make(name, verdict):
+        provider = name.split(":", 1)[0]
+
+        def call(system, user):
+            if outages.reason(provider):
+                from evals.judges import JudgeError
+                raise JudgeError(f"{eval_core.PROVIDER_ERROR}: {provider} is refusing calls", retryable=False)
+            return json.dumps({"scores": {"answers_question": 4, "correct_scope": 5, "safety_tone": 5},
+                               "verdict": verdict, "rationale": "r", "issues": []})
+        return Judge(*name.split(":", 1), call=call)
+    return [make("anthropic:claude-opus-5-5", "pass"), make("openai:gpt-6.1-sol", "pass")]
+
+
+def test_an_outage_is_left_out_and_resumed_without_redoing_the_rest(tmp_path, monkeypatch, outages):
+    monkeypatch.setattr(compare, "web_path_available", lambda: False)
+    qs = small_set(tmp_path)
+    out = tmp_path / "20261008T090000Z-course"
+    asked: list = []
+    rows = compare.run(qs, GENS, outage_judges(outages), 1, None, 0.0, 50.0, out,
+                       lambda g: OutageTarget(g, outages, asked), compare.Spend(None), concurrency=1, log=lambda m: None)
+    sonnet = [r for r in rows if r["generator"] == "anthropic:claude-sonnet-5-5"]
+    assert [r["response"]["status"] for r in sonnet].count(eval_core.PROVIDER_ERROR) == 4  # answer 2 on: not counted
+    assert len([a for a in asked if a[0] == "claude-sonnet-5-5"]) == 2  # stopped calling after the outage
+    asked.remove("ran out")
+    gpt = [r for r in rows if r["generator"] == "openai:gpt-6.1-sol"]
+    assert all(r["response"]["status"] != eval_core.PROVIDER_ERROR for r in gpt)  # the other provider kept going
+    assert sum(1 for r in gpt for j in r["judgements"] if j.get(eval_core.PROVIDER_ERROR)) >= 3  # Opus judge refused
+
+    a = compare_report.analyze(rows, {"generators": [compare.key(g) for g in GENS]})
+    assert a["provider_errors"]["answers"] == 4 and a["provider_errors"]["judgements"] >= 3
+    assert a["models"]["anthropic:claude-sonnet-5-5"]["questions"] == 1  # only the real answer is scored
+    assert a["models"]["openai:gpt-6.1-sol"]["judge_errors"] == 0  # refused judgements are not "judge errors"
+    assert "Provider errors" in compare_report.markdown(a, detail=False)
+
+    # Credit topped up: the same command on the same folder asks only what the outage left out.
+    outages.clear()
+    asked[:] = ["ran out"]
+    rows2 = compare.run(qs, GENS, outage_judges(outages), 1, None, 0.0, 50.0, out,
+                        lambda g: OutageTarget(g, outages, asked), compare.Spend(None), concurrency=1, log=lambda m: None)
+    assert sorted(a[0] for a in asked[1:]) == ["claude-sonnet-5-5"] * 4  # no OpenAI answer was asked again
+    assert len(rows2) == 10 and not any(eval_core.is_provider_error(r) for r in rows2)
+    assert not any(j.get(eval_core.PROVIDER_ERROR) for r in rows2 for j in r["judgements"])
+    lines = (out / "results.jsonl").read_text().splitlines()
+    assert len(lines) == 10  # one line per answer

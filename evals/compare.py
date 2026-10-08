@@ -46,7 +46,7 @@ import numpy as np
 from app import eval_core, pricing
 
 from . import dataset
-from .judges import Judge, JudgeError, direct_complete
+from .judges import OUTAGES, Judge, JudgeError, direct_complete, route_of
 from .run import PRIVATE, ROOT, load_dotenv
 
 REPORTS = ROOT / "evals" / "reports"
@@ -270,14 +270,23 @@ def run(questions: list[dataset.Question], generators: list[dict[str, str]], jud
         retest_types: set[str] | None, judge_retest: float, budget: float, out_dir: Path,
         make_target: Callable[[dict[str, str]], Any], spend: Spend, seed: int = 8, concurrency: int = 5,
         log=print) -> list[dict[str, Any]]:
-    """Answer and judge every task, appending each row to `out_dir/results.jsonl` (resumable)."""
+    """Answer and judge every task, appending each row to `out_dir/results.jsonl` (resumable).
+
+    A provider that refuses calls for billing reasons (`evals.judges.OUTAGES`) is not called again in this
+    run: its answers are written with status `provider_error` and its judgements carry `provider_error`.
+    Both are left out of every score, and a later run on the same folder asks exactly those again (the
+    answer, or only the judges that could not score), without redoing anything else.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "results.jsonl"
     done: dict[tuple[str, str, int], dict[str, Any]] = {}
+    outage_rows: dict[tuple[str, str, int], dict[str, Any]] = {}
     if path.exists():
         for line in path.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 r = json.loads(line)
+                if eval_core.is_provider_error(r):
+                    continue  # never answered: ask again
                 done[(r["qid"], r["generator"], r["rep"])] = r
                 for jj in r.get("judgements", []) + r.get("judgements_retest", []):
                     spend.add(jj.get("judge", "?"), (jj.get("usage") or {}).get("cost_usd"))
@@ -303,8 +312,15 @@ def run(questions: list[dataset.Question], generators: list[dict[str, str]], jud
             stop.set()
             log(f"Stopped: spend ${spend.total:.2f} reached the budget ${budget:.2f}.")
             return
-        response = target_for(g).ask(q.question)
-        spend.add(key(g), (response.get("usage") or {}).get("cost_usd"))
+        gen_route = route_of(g["provider"], g["model"])[0]
+        if OUTAGES.reason(gen_route):
+            response = outage_response(gen_route)  # not called: the provider is refusing calls
+        else:
+            response = target_for(g).ask(q.question)
+            spend.add(key(g), (response.get("usage") or {}).get("cost_usd"))
+            if OUTAGES.reason(gen_route):
+                # The provider went down while this answer was made: its narration may be a fallback, not the model.
+                response = outage_response(gen_route, response)
         row = {"qid": q.qid, "rep": rep, "generator": key(g), **q.as_dict(), "web_path": web_path,
                "response": response, "judgements": []}
         row["qid"] = q.qid
@@ -313,7 +329,10 @@ def run(questions: list[dataset.Question], generators: list[dict[str, str]], jud
         with lock:
             with path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
-            done[(q.qid, key(g), rep)] = row
+            if response["status"] == eval_core.PROVIDER_ERROR:
+                outage_rows[(q.qid, key(g), rep)] = row
+            else:
+                done[(q.qid, key(g), rep)] = row
             counter["n"] += 1
             verdicts = " ".join(j.get("verdict", "err")[0] for j in row["judgements"])
             log(f"[{counter['n']}/{len(tasks)}] {q.qid} rep{rep} {key(g)}: {eval_core.route_of(response) or response['status']}"
@@ -322,6 +341,28 @@ def run(questions: list[dataset.Question], generators: list[dict[str, str]], jud
     # One worker per generator keeps each provider at a polite rate.
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
         list(pool.map(one, tasks))
+
+    # Judgements a provider outage left out (now or in an earlier session): ask only those judges again.
+    q_by_id = {q.qid: q for q in questions}
+    redo = [(r, field) for r in done.values() for field in ("judgements", "judgements_retest")
+            if any(eval_core.is_provider_error(j) for j in r.get(field) or []) and r["qid"] in q_by_id]
+    if redo and not stop.is_set():
+        def rejudge(item: tuple[dict[str, Any], str]) -> None:
+            r, field = item
+            if spend.total >= budget:
+                stop.set()
+                return
+            missing = {j["judge"] for j in r[field] if eval_core.is_provider_error(j)}
+            todo = [j for j in judges if j.name in missing and not OUTAGES.reason(route_of(j.provider, j.model)[0])]
+            if not todo:
+                return
+            fresh = {j["judge"]: j for j in judge_all(item_for(q_by_id[r["qid"]], r["response"],
+                                                               r.get("web_path", web_path)), todo, spend)}
+            r[field] = [fresh.get(j["judge"], j) for j in r[field]]
+
+        with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
+            list(pool.map(rejudge, redo))
+        log(f"Re-judged {len(redo)} answers whose judge had a provider error. Spend ${spend.total:.2f}.")
 
     rows = sorted(done.values(), key=lambda r: (r["rep"], r["qid"], r["generator"]))
     # Judge retest: the same judge scores a random share of the run-1 answers again.
@@ -343,10 +384,23 @@ def run(questions: list[dataset.Question], generators: list[dict[str, str]], jud
         with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
             list(pool.map(again, sample))
         log(f"Judge retest: {len(sample)} answers scored again by every judge. Spend ${spend.total:.2f}.")
-        with path.open("w", encoding="utf-8") as f:
-            for r in rows:
-                f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    return rows
+    # One line per answer: the results, plus this session's provider_error rows (asked again next time).
+    with path.open("w", encoding="utf-8") as f:
+        for r in rows + [r for k, r in outage_rows.items() if k not in done]:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    if OUTAGES.down():
+        log("Provider errors (no credit or quota): " + "; ".join(f"{p}: {why}" for p, why in OUTAGES.down().items())
+            + ". Those answers and judgements are marked provider_error and left out of the scores; run the same "
+            "command again with --out on this folder once the account is topped up.")
+    return rows + [r for k, r in outage_rows.items() if k not in done]
+
+
+def outage_response(provider: str, made: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The response of an answer a provider outage spoiled: no score, asked again on the next run."""
+    return {"status": eval_core.PROVIDER_ERROR, "message": f"{provider}: {OUTAGES.reason(provider)}",
+            "segments": [], "follow_ups": [], "narration_source": None, "top_score": None,
+            "latency_ms": (made or {}).get("latency_ms", 0), "outcome": None,
+            "usage": (made or {}).get("usage")}
 
 
 # ---------------------------------------------------------------- main
