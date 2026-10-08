@@ -183,17 +183,19 @@ flowchart TD
     C -- yes --> INFO["From Canvas card<br/>short answer from the chunks + links<br/>kind course_info"]
     C -- no --> SEL["select_segments() with threshold 0.52<br/>Ben's code"]
     SEL --> COV{"Any slide selected?"}
-    COV -- no --> NC["I don't have course material on that<br/>kind not_covered"]
+    COV -- no --> X{"Course filter set?<br/>select_segments() on the other course's<br/>slides, same threshold"}
+    X -- "slides picked" --> L
+    X -- "no filter, or nothing picked" --> NC["Beyond my slides (web answer)<br/>or I don't have course material on that<br/>kind web or not_covered"]
     COV -- yes --> L{"Logistics?<br/>keyword pre-check, then one small model call"}
     L -- yes --> LOG["That one is for me directly<br/>Calendly button<br/>kind logistics"]
-    L -- "no, or the check failed" --> N["Narration call, validators,<br/>signed audio links<br/>kind course_content"]
+    L -- "no, or the check failed" --> N["Narration call, validators,<br/>signed audio links<br/>kind course_content, or cross_course<br/>with 'My 45-884 slides don't cover that...'"]
 
-    class R,SEL ben
+    class R,SEL,X ben
     class TOPIC,FAQ,INFO,N out
     class NC,LOG stop
 ```
 
-Every question takes exactly one path, and the path is saved with it in the question log as its **kind** (the badge in Settings > Activity). The order is cheapest first: stored topics and the FAQ need no embedding and no model. After one embedding, the Canvas course-info index wins only when its best chunk clears its own threshold (0.55 by default) and beats every slide, so a concept question still gets slides. Ben's `select_segments()` decides between slides and "not covered" using the slide threshold (0.52, Ben's value, overridable in Settings > Answer thresholds). The logistics check exists because meeting, absence and grade emails scored just above 0.52 in the October 7 eval; if that check fails for any reason the question is treated as course content, so it can never block a real answer. More detail: [TESTING_AND_SCORES.md](TESTING_AND_SCORES.md#how-a-question-is-answered).
+Every question takes exactly one path, and the path is saved with it in the question log as its **kind** (the badge in Settings > Activity). The order is cheapest first: stored topics and the FAQ need no embedding and no model. After one embedding, the Canvas course-info index wins only when its best chunk clears its own threshold (0.55 by default) and beats every slide, so a concept question still gets slides. Ben's `select_segments()` decides between slides and "not covered" using the slide threshold (0.52, Ben's value, overridable in Settings > Answer thresholds). When a course filter is set and nothing in that course clears it, the same function gets the other course's slides before the question is declined or sent to the web (added Oct 8: the filter on 45-884 hid 70-445's frames and semantic networks slides); the student is told the slides are from the other course. The logistics check exists because meeting, absence and grade emails scored just above 0.52 in the October 7 eval; if that check fails for any reason the question is treated as course content, so it can never block a real answer. More detail: [TESTING_AND_SCORES.md](TESTING_AND_SCORES.md#how-a-question-is-answered).
 
 ## 4. The content pipeline
 

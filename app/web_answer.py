@@ -73,6 +73,11 @@ MAX_CHARS = 1200
 MAX_LINKS = 4
 MIN_CITED_LINKS = 2  # fill from the search results when the citations give fewer than this
 RELATED_SLIDES = 3
+# Added Oct 8 (frames question filtered to 45-884: three unrelated slides at 0.397 to 0.412 were shown as
+# "Closest material"). Slides that relate to a course-adjacent question no slide covers scored 0.416 to 0.443
+# on the live index (MCP, agent toolkits). 0.42 clears the unrelated ones by 0.008 and keeps all but the two
+# lowest related ones: like the slide threshold, it leans toward showing nothing. docs/SPEC.md step 7b.
+RELATED_MIN = 0.42
 MAX_FOLLOW_UPS = 3
 DEFAULT_DAILY_CAP = 200
 CLASSIFY_MAX_TOKENS = 200
@@ -596,9 +601,13 @@ class Result:
 
 
 def related_slides(content: Any, ranked: list[tuple[int, float]], records: list[dict[str, Any]],
-                   n: int = RELATED_SLIDES) -> list[dict[str, Any]]:
-    """The best-scoring slides for this course filter, even under the threshold, with signed thumbnails."""
-    picked = [records[i] for i, _score in ranked[:n] if 0 <= i < len(records)]
+                   n: int = RELATED_SLIDES, floor: float = RELATED_MIN) -> list[dict[str, Any]]:
+    """The best-scoring slides (at most `n`, each at least `floor`), under the slide threshold, with signed thumbnails.
+
+    `ranked` and `records` cover every course whatever the filter (main._beyond_the_slides). An empty list
+    means the card has no "Closest material" section.
+    """
+    picked = [records[i] for i, score in ranked[:n] if 0 <= i < len(records) and score >= floor]
     urls = storage.media_urls([r.get("image") for r in picked])
     out = []
     for rec in picked:

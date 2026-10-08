@@ -58,7 +58,7 @@ def test_krippendorff_alpha_and_pairwise_agreement():
 
 def test_course_set_is_complete_and_checked():
     qs = dataset.load(COURSE_SET)
-    assert Counter(q.qtype for q in qs) == {"concept": 20, "beyond": 8, "off_topic": 6, "logistics": 9}
+    assert Counter(q.qtype for q in qs) == {"concept": 21, "beyond": 8, "off_topic": 6, "logistics": 9}
     # Added Oct 8 (live bug): "where is it on Canvas" questions expect a Canvas answer.
     assert sum(1 for q in qs if q.expected_kind == ("course_info",)) == 3
     for q in qs:

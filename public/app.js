@@ -54,7 +54,7 @@ const COPY = {
   captionsOnly: 'Captions only',
   webLabel: 'Beyond my slides: from the web',
   webSources: 'Sources (open in a new tab)',
-  webRelated: 'Closest material in my course',
+  webRelated: 'Closest material in my courses',
 };
 
 /* =====================================================================
@@ -180,7 +180,7 @@ const ui = {
   player: $('#player'), media: $('#media'), slideImg: $('#slide-img'), slideAlt: $('#slide-alt'), clipVideo: $('#clip-video'),
   clipBtn: $('#clip-btn'), clipBack: $('#clip-back'), clipNote: $('#clip-note'),
   caption: $('#caption'), btnPrev: $('#btn-prev'), btnPlay: $('#btn-play'), btnNext: $('#btn-next'),
-  btnMute: $('#btn-mute'), dots: $('#dots'), audioNote: $('#audio-note'),
+  btnMute: $('#btn-mute'), dots: $('#dots'), audioNote: $('#audio-note'), crossNote: $('#cross-note'),
   codePanel: $('#code-panel'), codeBody: $('#code-body'), codeMarked: $('#code-marked'),
   srcThumb: $('#source-thumb'), srcCourse: $('#src-course'), srcSession: $('#src-session'), srcDate: $('#src-date'), srcSlide: $('#src-slide'),
   dock: $('#dock'), dockToggle: $('#dock-toggle'), log: $('#log'), dockLog: $('#dock-log'),
@@ -642,6 +642,8 @@ function scrollLog() { ui.dockLog.scrollTop = ui.dockLog.scrollHeight; }
 
 /** One sentence for the log: how many slides, and from which session, course, or both courses. */
 function summarize(answer) {
+  // The course filter had nothing and the other course answered: the server's intro says so plainly.
+  if (crossCourseIntro(answer)) return crossCourseIntro(answer);
   const segs = answer.segments;
   const sessions = new Set(segs.map(s => `${s.course}-${s.session}`));
   const n = segs.length;
@@ -653,6 +655,11 @@ function summarize(answer) {
   const courses = new Set(segs.map(s => s.course));
   if (courses.size === 1) return `Here are ${slides} from ${sessions.size} sessions of ${courseCode(segs[0].course)}. I'll walk you through them in order.`;
   return `Here are ${slides} from both courses. I'll walk you through them in order.`;
+}
+
+/** The intro of an answer from the other course ("My 45-884 slides don't cover that, but ..."), or ''. */
+function crossCourseIntro(answer) {
+  return answer && answer.kind === 'cross_course' && typeof answer.message === 'string' ? answer.message : '';
 }
 
 /** "Slides used in this answer" under the log message; the newest list also feeds the phone's Sources toggle. */
@@ -860,6 +867,8 @@ function loadAnswer(answer, start = 0) {
   player.sentPlayed = false; // usage events: once per answer
   player.sentCompleted = false;
   ui.audioNote.hidden = !player.captionsOnly;
+  ui.crossNote.textContent = crossCourseIntro(answer);
+  ui.crossNote.hidden = !ui.crossNote.textContent;
   buildDots();
   ui.stageMsg.hidden = true;
   ui.player.hidden = false;

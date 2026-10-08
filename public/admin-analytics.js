@@ -252,7 +252,7 @@ const empty = (text) => el('p', { class: 'an-empty', text });
 function tiles(d) {
   const k = d.kpis, by = k.by_kind || {};
   const tile = (label, value, sub) => el('div', { class: 'an-tile' }, el('dt', { text: label }), el('dd', {}, value, sub ? el('span', { class: 'an-sub', text: sub }) : null));
-  const walk = (by.course_content || 0) + (by.stored_topic || 0);
+  const walk = (by.course_content || 0) + (by.stored_topic || 0) + (by.cross_course || 0);
   const tt = d.test_traffic || {};
   const testNote = tt.rows ? (tt.included ? `includes ${fmtInt(tt.rows)} test rows` : `${fmtInt(tt.rows)} test rows hidden`) : null;
   return el('dl', { class: 'an-tiles' },

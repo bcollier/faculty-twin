@@ -459,6 +459,11 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   animation: dot-glow 1.6s ease-in-out infinite;
 }
 @keyframes dot-glow { 0%, 100% { transform: scale(1.3); opacity: .9; } 50% { transform: scale(2); opacity: .35; } }
+/* The other course answered (the course filter had nothing): said plainly above the slide. */
+.cross-note {
+  margin: 0 0 .7rem; font-size: .95rem; color: var(--ink); padding: .45rem .75rem .45rem 1.1rem; border-radius: var(--radius-sm);
+  background: var(--legal-bg) linear-gradient(90deg, transparent 6px, var(--legal-margin) 6px 8px, transparent 8px);
+}
 .audio-note {
   margin: .6rem 0 0; font-size: .88rem; color: var(--ink); padding: .45rem .75rem .45rem 1.1rem; border-radius: var(--radius-sm);
   background: var(--legal-bg) linear-gradient(90deg, transparent 6px, var(--legal-margin) 6px 8px, transparent 8px);
@@ -554,6 +559,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
       repeating-linear-gradient(transparent 0 31px, var(--legal-rule) 31px 32px); }
   /* spec: on a phone the source card sits directly under the slide, above the caption */
   .player { display: flex; flex-direction: column; }
+  .player > .cross-note { order: -1; }
   .player > .media { order: 0; }
   .player > .clip-row { order: 1; }
   .player > .source-card { order: 2; margin-top: .8rem; }

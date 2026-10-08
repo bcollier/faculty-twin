@@ -71,6 +71,7 @@ ROUTES = ("slides", "course_info", "faq", "logistics", "web", "declined")
 ROUTE_OF_KIND = {
     "course_content": "slides",
     "stored_topic": "slides",
+    "cross_course": "slides",  # added Oct 8: the other course's slides, when the filter had none
     "course_info": "course_info",
     "faq": "faq",
     "logistics": "logistics",

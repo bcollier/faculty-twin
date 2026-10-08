@@ -128,7 +128,12 @@ def test_ask_not_covered(student):
 def test_ask_course_filter(student):
     use_fakes()
     r = student.post("/api/ask", json={"question": "apple", "course": "45884"})
-    assert r.json()["covered"] is False  # the fruit slides are all in 70445
+    # Changed Oct 8 (spec step 7c): the fruit slides are all in 70445, so the 45884 filter finds none and the
+    # other course answers, labeled as such. Before, this was covered: false.
+    body = r.json()
+    assert body["covered"] is True and body["kind"] == "cross_course" and body["asked_course"] == "45884"
+    assert {s["course"] for s in body["segments"]} == {"70445"}
+    assert body["message"].startswith("My 45-884 slides don't cover that, but I taught it in 70-445")
 
 
 def test_ask_without_voice_has_no_audio(student):

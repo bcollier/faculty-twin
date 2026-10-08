@@ -472,10 +472,17 @@ async function route(url, method, body) {
         message: 'Placeholder web answer (mock). Install it with one command, open the editor in your browser, and build a workflow from a trigger node and a few action nodes.',
         answers: [{ text: 'Placeholder web answer (mock).' }],
         links: [{ label: 'Example docs page', url: 'https://example.com/docs' }, { label: 'Example guide', url: 'https://example.org/guide' }],
-        related: [1, 2, 3].map(n => ({ slide_id: `70445-s06-00${n}`, course: '70445', session: 6, slide_number: n,
+        // 'norelated': no slide cleared the related-slide floor, so the card has sources only (spec step 7b).
+        related: q.includes('norelated') ? [] : [1, 2, 3].map(n => ({ slide_id: `70445-s06-00${n}`, course: '70445', session: 6, slide_number: n,
           title: `Mock related slide ${n}`, date: '2026-09-15', image: slideSvg({ course: '70445', session: 6, slide: n, title: `Mock related slide ${n}` }) })),
         audio: spoken ? '/api/audio?t=bW9jaw&v=mock&s=mock' : null,
         voice: spoken ? { kind: 'free', label: 'AI voice (a stock voice, not mine).' } : null });
+    }
+    if (q.includes('crosscourse')) {
+      // The course filter had nothing and the other course answered (spec step 7c): 70-445 slides, labeled.
+      const other = await buildAnswer(body.question, '70445');
+      return json(200, { ...other, kind: 'cross_course', asked_course: '45884',
+        message: "My 45-884 slides don't cover that, but I taught it in 70-445 (AI for Business Leaders). Here are 4 slides from 2 sessions. I'll walk you through them in order." });
     }
     if (q.includes('stanley') || q.includes('weather')) {
       return json(200, { question: body.question, covered: false, segments: [], sources: [], follow_ups: [] });

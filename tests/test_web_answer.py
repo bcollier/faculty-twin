@@ -81,8 +81,14 @@ class FakeModel:
         return TEST_FAKE_llm(system, user, max_tokens, provider, model)
 
 
+def TEST_FAKE_rank_near(question_vec, matrix):
+    """TEST FAKE: test_api's fixed scores, except off-topic rows score 0.45: under the slide threshold (0.5 here)
+    and over web_answer.RELATED_MIN, so "Closest material" has slides to show (added Oct 8 with the floor)."""
+    return [(i, s if s > 0.5 else 0.45) for i, s in TEST_FAKE_rank(question_vec, matrix)]
+
+
 def _use(model: FakeModel, searcher: FakeSearch):
-    app.dependency_overrides[get_retriever] = lambda: Retriever(TEST_FAKE_rank, TEST_FAKE_select, 0.5)
+    app.dependency_overrides[get_retriever] = lambda: Retriever(TEST_FAKE_rank_near, TEST_FAKE_select, 0.5)
     app.dependency_overrides[get_embedder] = lambda: TEST_FAKE_embedder
     app.dependency_overrides[get_completer] = lambda: model
     app.dependency_overrides[get_searcher] = lambda: searcher
