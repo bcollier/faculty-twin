@@ -87,6 +87,8 @@ def merge(a: Any, b: Any) -> Any:
 MAPS = {
     "$.prompts[].variables",
     "$.runs[].metrics", "$.run.metrics", "$.metrics",
+    "$.matrix", "$.matrix.*", "$.leniency", "$.scores", "$.scores.*",
+    "$.questions[].by_generator", "$.questions[].outcomes",
 }
 
 
@@ -170,6 +172,8 @@ SCENARIOS: dict[str, tuple[str, str, Any, Any]] = {
     "evals_questions": ("GET", "/api/admin/evals/questions", None, ADMIN),
     "evals_runs": ("GET", "/api/admin/evals/runs", None, ADMIN),
     "evals_report_card": ("GET", "/api/admin/evals/report-card", None, ADMIN),
+    "evals_explore": ("GET", "/api/admin/evals/explore", None, ADMIN),
+    "evals_compare": ("GET", "/api/admin/evals/compare?run_id=all", None, ADMIN),
 }
 
 # Real requests made first (same client), so lists the mock fills have rows on the real side too.

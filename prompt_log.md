@@ -1307,3 +1307,52 @@ Prompts below are verbatim, except where noted. Screenshot-only prompts are desc
 - A leak check run with code older than #78 flagged four Canvas pages as containing a student name. They said "Andrew ID", CMU's account name. The live content was clean.
 - The 0.05 Canvas margin change (#75) was followed by a live check where "Where is the syllabus on Canvas?" went to the "for me directly" referral instead of Canvas. Fixed in #89, and the question is now in the eval set.
 - The agent restyling the twin could not retake the live screenshots, because logging in with the production passcode was blocked. They still show the old look.
+
+---
+
+## Evals views session, Wednesday October 8, 2026
+
+**Tool:** Claude Code, Claude Opus 5.5. Prompts are listed by time, because the project-wide prompt numbers are kept by the build session.
+
+### Prompt (Oct 8, 2:11 PM)
+
+> are these prompts actually in use explai n
+
+(Sent with a screenshot of Settings > Prompts.)
+
+**Response summary.** Traced the code. Every model call reads its prompt from `app/prompts.py` at the moment it runs: my saved edit if there is one, otherwise the built-in default. "Default" means no edit has been saved. Each prompt applies only to its own feature:
+- narration: every slide answer
+- logistics check: after retrieval, when the keyword check doesn't decide
+- Canvas course info: policy and due-date questions
+- student alerts: only after a keyword hit
+- web scope and web answer: when no slide clears the threshold
+- helper slide: when switched on
+- judge and baseline prompts: only in evals
+
+The safety checks are code and run whatever a prompt says.
+
+### Prompt (Oct 8, 2:16 PM)
+
+> in the evals I want to see better visuals of the comparisons, I don't see very many judges used, also what are the questions that are not passing commonly? give an additional area where you can see the questions then filter by the model who generated the answer then the scores from the models that evaluated it and their agreement
+
+### Prompt (Oct 8, 2:17 PM, sent while the previous one was running)
+
+> run a more complete suite of evals with multiple vendors as the evaluators including Jev if possible
+
+### Prompt (Oct 8, sent while the previous ones were running)
+
+> it seems like some eval graphs are under analytics and others are under evals, put them all toegehr in evals
+
+**Response summary (the three prompts above).**
+- **Compare models and judges** (Settings > Evals), for one run or all runs together:
+  - pass rate by answering model
+  - a heatmap of answering model × judge pass rates, with each judge's leniency
+  - a judge-agreement matrix: same verdict, and the mean score gap
+  - mean score per dimension
+  - Every axis starts at zero and every value shows its n.
+- **Questions, hardest first:** every eval question across runs, sorted by the share of judgements that failed it, filterable by run and by the answering model.
+  - Each row shows per-model pass rates and how often the judges agreed.
+  - Opening a question shows every answer with each judge's verdict, scores and reason, plus their agreement and score spread.
+- **Model performance moved:** the chart that was under Analytics now lives in Evals, replaced by the comparison above.
+- **More judges per run:** a Settings run can now use up to 6 judges, so it can include judges from several vendors.
+- **The multi-vendor suite with Jev:** Jev runs only from the command line, so the build session runs the suite on the local build machine with judges from OpenAI, Anthropic, Google, xAI, DeepSeek and Jev, after I approve the cost and the Jev key.

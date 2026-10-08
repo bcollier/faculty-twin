@@ -393,23 +393,6 @@ function engagementPanel(d) {
   ];
 }
 
-/** Average eval scores per answering model. */
-function modelsPanel(d) {
-  const m = d.models || {};
-  const note = 'Average judge scores (1 to 5) per generator model across every eval run, with the share of answers judged pass.';
-  if (!m.available) return card('Average eval scores', note, empty(m.error || 'No eval data yet. Runs from the Evals section show up here.'));
-  const dims = m.dimensions || [];
-  const dimName = (k) => k.replace(/_/g, ' ');
-  return card('Average eval scores', `${note} ${fmtInt(m.runs)} runs.`,
-    barsH(m.models.map(x => ({ label: x.model, values: { 'Pass rate %': x.pass_rate == null ? 0 : x.pass_rate * 100 } })), ['Pass rate %'],
-      { fmt: (v) => `${Math.round(v)}%`, title: 'Pass rate by model', labelWidth: 240, width: CW.full }),
-    el('div', { class: 'table-wrap', style: 'margin-top:.5rem' }, el('table', { class: 'data' },
-      el('thead', {}, el('tr', {}, ...['Model', 'Runs', 'Answers', 'Pass rate', ...dims.map(dimName)].map(h => el('th', { scope: 'col', text: h })))),
-      el('tbody', {}, ...m.models.map(x => el('tr', {}, el('td', { text: x.model }), el('td', { class: 'num', text: fmtInt(x.runs) }), el('td', { class: 'num', text: fmtInt(x.answers) }),
-        el('td', { class: 'num', text: x.pass_rate == null ? '' : `${Math.round(x.pass_rate * 100)}%` }),
-        ...dims.map(k => el('td', { class: 'num', text: x.scores?.[k] == null ? '' : x.scores[k].toFixed(2) }))))))));
-}
-
 /* ---------------- load ---------------- */
 
 const A = { days: 30, tests: false, loaded: false, loading: false };
@@ -460,8 +443,7 @@ async function loadOnce() {
     el('div', { class: 'an-grid' }, ...topicsPanels(d)),
     el('h3', { class: 'an-h', text: 'Engagement' }),
     el('div', { class: 'an-grid' }, ...engagementPanel(d)),
-    el('h3', { class: 'an-h', text: 'Model performance' }),
-    modelsPanel(d),
+    el('p', { class: 'an-note muted small', text: 'Eval charts (pass rates, judges, questions) are in the Evals section.' }),
   ].filter(Boolean));
 }
 

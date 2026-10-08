@@ -46,6 +46,7 @@ from . import (
     config,
     embed,
     eval_core,
+    eval_explore,
     eval_store,
     limits,
     llm,
@@ -945,6 +946,85 @@ def get_run(run_id: str, _: auth.Session = Depends(auth.require_admin),
         raise _store_error(exc) from exc
     return {"run": public_run(run), "progress": progress(run), "rows": [public_row(r) for r in rows],
             "self_grading_note": SELF_GRADING_NOTE if run.get("self_grading") else None, "legend": legend()}
+
+
+# ---------------------------------------------------------------- questions and comparisons (read-only)
+
+RunRows = list[tuple[dict[str, Any], list[dict[str, Any]]]]
+
+
+def _runs_rows(bucket: eval_store.Bucket, run_id: str | None = None) -> RunRows:
+    """Every usable run with its rows (or just `run_id`). Excluded runs and runs with no rows are left out."""
+    out = []
+    for r in current_runs(bucket):
+        if run_id and r.get("id") != run_id:
+            continue
+        if r.get("excluded") or r.get("status") == "excluded":
+            continue
+        rows = eval_store.read_results(bucket, r["id"])
+        if rows:
+            out.append((r, rows))
+    return out
+
+
+def _clean_filter(value: str | None, what: str) -> str | None:
+    value = (value or "").strip() or None
+    if value and (len(value) > 160 or not re.fullmatch(r"[A-Za-z0-9_.:/\-]+", value)):
+        raise HTTPException(400, f"{what} is not valid.")
+    return value
+
+
+@router.get("/explore")
+def explore_questions(generator: str | None = None, run_id: str | None = None,
+                      _: auth.Session = Depends(auth.require_admin),
+                      bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
+    """Every question across runs, hardest first, with per-model pass rates and judge agreement."""
+    generator, run_id = _clean_filter(generator, "Model"), _clean_filter(run_id, "Run")
+    try:
+        if run_id:
+            eval_store.check_run_id(run_id)
+        return eval_explore.questions(_runs_rows(bucket, run_id), generator=generator, run_id=run_id)
+    except eval_store.StoreError as exc:
+        raise _store_error(exc) from exc
+
+
+@router.get("/explore/{qid}")
+def explore_question(qid: str, generator: str | None = None, run_id: str | None = None,
+                     _: auth.Session = Depends(auth.require_admin),
+                     bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
+    """One question: every answer with each judge's verdict, scores and reason, and their agreement."""
+    qid = _clean_filter(qid, "Question") or ""
+    generator, run_id = _clean_filter(generator, "Model"), _clean_filter(run_id, "Run")
+    try:
+        if run_id:
+            eval_store.check_run_id(run_id)
+        detail = eval_explore.question_detail(_runs_rows(bucket, run_id), qid, generator=generator, run_id=run_id)
+    except eval_store.StoreError as exc:
+        raise _store_error(exc) from exc
+    if detail["question"] is None:
+        raise HTTPException(404, "No answers for that question with these filters.")
+    return detail
+
+
+@router.get("/compare")
+def compare_judges(run_id: str | None = None, _: auth.Session = Depends(auth.require_admin),
+                   bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
+    """One run (or every usable run with run_id=all) as model x judge matrices and judge agreement."""
+    run_id = _clean_filter(run_id, "Run")
+    try:
+        if run_id and run_id != "all":
+            eval_store.check_run_id(run_id)
+            runs_rows = _runs_rows(bucket, run_id)
+            if not runs_rows:
+                raise HTTPException(404, "That run has no results yet.")
+            return eval_explore.compare(*runs_rows[0])
+        runs_rows = _runs_rows(bucket)
+        rows = [row for _, rr in runs_rows for row in rr]
+        out = eval_explore.compare({"id": "all", "name": f"All runs ({len(runs_rows)})", "status": None}, rows)
+        out["runs"] = len(runs_rows)
+        return out
+    except eval_store.StoreError as exc:
+        raise _store_error(exc) from exc
 
 
 # ---------------------------------------------------------------- report card

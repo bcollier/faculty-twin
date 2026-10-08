@@ -84,7 +84,7 @@ export async function evalsRoute(url, method, body) {
   const path = url.pathname.replace('/api/admin/evals', '');
   let m;
   await sleep(150);
-  if (path === '/limits') return json(200, { max_questions: 30, max_generators: 3, max_judges: 3, run_call_cap: 300, daily_eval_cap: 300, eval_calls_today: 12,
+  if (path === '/limits') return json(200, { max_questions: 30, max_generators: 6, max_judges: 6, run_call_cap: 300, daily_eval_cap: 300, eval_calls_today: 12,
     daily_llm_cap: 600, llm_calls_today: 31, student_reserve: 100,
     jev: 'Jev runs from the command line only (it needs deepeval, which is not in the Vercel bundle).',
     live_model: { provider: 'anthropic', model: 'claude-sonnet-5-5' }, keys: { anthropic: true, openai: true, openrouter: false } });
@@ -154,6 +154,9 @@ export async function evalsRoute(url, method, body) {
     return json(200, { run: { ...run, generators: run.generators.map(g => ({ provider: g.split(':')[0], model: g.split(':').slice(1).join(':') })), judges: run.judges.map(j => ({ provider: j.split(':')[0], model: j.split(':')[1] })) },
       rows: results[run.id], legend: LEGEND, self_grading_note: run.self_grading.length ? LEGEND.self_grading : null });
   }
+  if (path === '/compare') return json(200, mockCompare());
+  if (path === '/explore') return json(200, mockExplore());
+  if (path.startsWith('/explore/')) return json(200, mockExploreDetail(decodeURIComponent(path.slice('/explore/'.length))));
   if (path === '/report-card') {
     const series = {};
     for (const r of [...runs].reverse()) {
@@ -179,4 +182,63 @@ export async function evalsRoute(url, method, body) {
     return json(200, { judge: key, result: c });
   }
   return json(404, { detail: `mock: no evals route for ${method} ${path}` });
+}
+
+/* ---------------- Compare models and judges, Questions hardest first (placeholder data only) ---------------- */
+
+const X_GENS = ['anthropic:claude-sonnet-5-5', 'openai:gpt-6.1-sol'];
+const X_JUDGES = ['anthropic:claude-opus-5-5', 'openai:gpt-6.1-sol', 'openrouter:google/gemini-3.8-flash'];
+const X_DIMS = ['grounded', 'answers_question', 'correct_scope', 'matches_reference', 'speech_quality', 'safety_tone'];
+const X_QUESTIONS = [
+  { qid: 'q001', question: 'Placeholder question about meetings (mock).', category: 'MEETING_REQUEST', answerable: false, rates: [0.2, 0.4] },
+  { qid: 'q002', question: 'Placeholder question about a method (mock).', category: 'CONCEPT_QUESTION', answerable: true, rates: [0.5, 0.67] },
+  { qid: 'q003', question: 'Placeholder question about late work (mock).', category: 'LATE_OR_FAILED_SUBMISSION', answerable: false, rates: [1, 0.83] },
+];
+
+function mockCompare() {
+  const matrix = Object.fromEntries(X_GENS.map((g, gi) => [g, Object.fromEntries(X_JUDGES.map((j, ji) => [j, { n: 22, pass_rate: [0.55, 0.68, 0.41][ji] - gi * 0.05 }]))]));
+  return {
+    run: { id: 'all', name: 'All runs (3)', at: null, status: null },
+    generators: X_GENS, judges: X_JUDGES, matrix,
+    leniency: Object.fromEntries(X_JUDGES.map((j, ji) => [j, { n: 44, pass_rate: [0.52, 0.66, 0.39][ji] }])),
+    pairs: [
+      { a: X_JUDGES[0], b: X_JUDGES[1], n: 44, verdict_agreement: 0.86, mean_score_gap: 0.42 },
+      { a: X_JUDGES[0], b: X_JUDGES[2], n: 44, verdict_agreement: 0.71, mean_score_gap: 0.8 },
+      { a: X_JUDGES[1], b: X_JUDGES[2], n: 44, verdict_agreement: 0.64, mean_score_gap: 0.95 },
+    ],
+    dimensions: X_DIMS,
+    scores: Object.fromEntries(X_GENS.map((g, gi) => [g, Object.fromEntries(X_DIMS.map((d, di) => [d, { n: 66, mean: 3 + ((di + gi) % 3) * 0.6 }]))])),
+    runs: 3,
+  };
+}
+
+function mockExplore() {
+  return {
+    runs: [{ id: '20261008T010000Z', name: 'Mock run', at: '2026-10-08T01:00:00Z', judges: X_JUDGES.map(j => ({ provider: j.split(':')[0], model: j.split(':')[1] })) }],
+    generators: X_GENS, judges: X_JUDGES, filter: { generator: null, run_id: null },
+    questions: X_QUESTIONS.map(q => {
+      const rate = (q.rates[0] + q.rates[1]) / 2;
+      return {
+        qid: q.qid, question: q.question, category: q.category, course: null, answerable: q.answerable,
+        answers: 2, judgements: 6, runs: 1, pass_rate: rate, fails: Math.round(6 * (1 - rate)), agreement: 0.83, unanimous_share: 0.5,
+        outcomes: { answered: 1, declined: 1 },
+        by_generator: Object.fromEntries(X_GENS.map((g, gi) => [g, { answers: 1, judgements: 3, pass_rate: q.rates[gi] }])),
+      };
+    }),
+  };
+}
+
+function mockExploreDetail(qid) {
+  const q = X_QUESTIONS.find(x => x.qid === qid) || X_QUESTIONS[0];
+  return {
+    question: { qid: q.qid, question: q.question, category: q.category, course: null, answerable: q.answerable, reference_answer: 'Placeholder reference reply (mock).' },
+    dimensions: X_DIMS,
+    answers: X_GENS.map((g, gi) => ({
+      run_id: '20261008T010000Z', run_name: 'Mock run', at: '2026-10-08T01:00:00Z', generator: g, outcome: gi ? 'declined' : 'answered',
+      answer: `Placeholder answer from ${g} (mock).`,
+      judgements: X_JUDGES.map((j, ji) => ({ judge: j, verdict: (ji + gi) % 2 ? 'fail' : 'pass', scores: Object.fromEntries(X_DIMS.map((d, di) => [d, 2 + ((di + ji) % 4)])),
+        rationale: 'Placeholder reason (mock).', issues: [], error: null, p_pass: null })),
+      agreement: { judges: 3, verdict: 0.67, unanimous: false, majority: gi ? 'fail' : 'pass', score_spread: { grounded: 2 }, mean_spread: 1.5 },
+    })),
+  };
 }

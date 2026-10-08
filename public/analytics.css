@@ -75,3 +75,18 @@
 .an-price td input[type="text"] { width: 14rem; }
 .an-warn { background: var(--legal-bg) linear-gradient(90deg, transparent 6px, var(--legal-margin) 6px 8px, transparent 8px); color: var(--ink); border-radius: var(--radius-sm); padding: .6rem .8rem .6rem 1.1rem; margin-bottom: 1rem; font-size: .9rem; }
 .an-warn code { font-size: .82rem; }
+
+/* Settings > Evals: compare models and judges, questions hardest first (admin-evals-explore.js) */
+.evx-block { margin: 1rem 0 1.25rem; }
+.evx-bar { display: inline-block; width: 8rem; height: .7rem; background: var(--line, #ddd); border-radius: 3px; vertical-align: middle; overflow: hidden; }
+.evx-bar-fill { display: block; height: 100%; background: var(--accent, #2b6cb0); }
+.evx-bars td:nth-child(2) .evx-bar { width: 100%; min-width: 8rem; }
+.evx-heat td, .evx-heat th { white-space: nowrap; color: #1d2126; }
+.evx-heat thead th, .evx-heat tbody th { color: inherit; }
+.evx-total th, .evx-total td { border-top: 2px solid var(--line-strong, #999); }
+.evx-chip { display: inline-block; margin: .1rem .25rem .1rem 0; padding: .05rem .4rem; border-radius: 999px; font-size: .85em; color: #1d2126; }
+.evx-answer { border-top: 1px dashed var(--line, #ccc); padding-top: .75rem; margin-top: .75rem; }
+.evx-answer-text { max-width: 70ch; }
+.evx-v-pass { color: #1f6b33; font-weight: 600; }
+.evx-v-fail { color: #9b1c1c; font-weight: 600; }
+.evx-v-err { color: #7a5b00; }

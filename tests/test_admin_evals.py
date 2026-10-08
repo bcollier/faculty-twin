@@ -230,8 +230,8 @@ def test_rough_cost_uses_openrouter_prices_for_the_same_model():
 @pytest.mark.parametrize("change, status, text", [
     ({"confirm": False}, 400, "confirm"),
     ({"generators": [{"provider": "anthropic", "model": f"m{i}"} for i in range(7)]}, 400, "1 to 6 models"),
-    ({"judges": [{"provider": "openai", "model": f"j{i}"} for i in range(4)]}, 400, "1 to 3 judges"),
-    ({"judges": []}, 400, "1 to 3 judges"),
+    ({"judges": [{"provider": "openai", "model": f"j{i}"} for i in range(7)]}, 400, "1 to 6 judges"),
+    ({"judges": []}, 400, "1 to 6 judges"),
     ({"top": 31}, 400, "1 to 30"),
     ({"judges": [{"provider": "jev", "model": "jev"}]}, 400, "command line only"),
     ({"generators": [{"provider": "openrouter", "model": "x/y"}]}, 400, "OPENROUTER_API_KEY"),
@@ -738,7 +738,7 @@ def test_six_answering_models_run_with_usage_and_route_metrics(evals):
     by_gen = detail["run"]["summary"]["by_generator"]
     assert len(by_gen) == 6 and all("route_accuracy" in m and "pass_rate_excluding_same_family" in m for m in by_gen.values())
     limits = evals.get("/api/admin/evals/limits").json()
-    assert limits["max_generators"] == 6 and limits["max_judges"] == 3
+    assert limits["max_generators"] == 6 and limits["max_judges"] == 6
 
 
 def test_a_judge_refused_for_billing_is_a_provider_error_not_a_judge_error(evals):
