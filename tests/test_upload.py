@@ -253,3 +253,15 @@ def test_read_along_sidecars_are_uploaded_for_indexed_slides_only(built):
     assert "slides/70445/s01/70445-s01-002.boxes.json" not in sent
     assert "slides/70445/s01/70445-s01-003.boxes.json" not in sent  # never built: nothing to send
     assert "audio/voice123/abc123.words.json" in sent
+
+
+def test_only_prefixes_limit_the_run_and_keep_the_index_version(built):
+    build = built / "_build"
+    (build / "slides" / "70445" / "s01" / "70445-s01-001.boxes.json").write_text('{"v": 1, "src": "pdf", "words": []}')
+    fake = pf.FakeSupabase()
+    code, out = do(built, fake, only=("slides/",))
+    assert code == 0, out
+    sent = set(fake.uploads) - {upload.STATE_PATH}
+    assert sent and all(p.startswith("slides/") for p in sent)
+    assert "slides/70445/s01/70445-s01-001.boxes.json" in sent
+    assert fake.settings == {} and "index_version is unchanged" in out
