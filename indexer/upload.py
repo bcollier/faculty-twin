@@ -2,6 +2,7 @@
 
 Uploads only an allowlist, built from the index itself:
   content/index.json, content/embeddings.npy, content/manifest.json
+  content/info_index.json, content/info_embeddings.npy (Canvas course info, when built)
   slides/<course>/s<NN>/<slide_id>.webp and <slide_id>-thumb.webp, for indexed slides only
   clips/<slide_id>.mp4 for indexed slides that have a clip, and clips/manifest.json (those rows only)
   topics/topics.json and the audio/<voice_id>/<hash>.mp3 files it points to
@@ -54,7 +55,7 @@ WORKERS = 8
 EXIT_OK, EXIT_PLAN, EXIT_LEAK, EXIT_UPLOAD, EXIT_CONFIG = 0, 2, 4, 5, 6
 
 ALLOWED = [
-    re.compile(r"^content/(index\.json|embeddings\.npy|manifest\.json)$"),
+    re.compile(r"^content/(index\.json|embeddings\.npy|manifest\.json|info_index\.json|info_embeddings\.npy)$"),
     re.compile(r"^slides/\d{5}/s\d{2}/\d{5}-s\d{2}-\d{3}(-thumb)?\.webp$"),
     re.compile(r"^clips/\d{5}-s\d{2}-\d{3}\.mp4$"),
     re.compile(r"^clips/manifest\.json$"),
@@ -193,15 +194,41 @@ def plan(build: Path) -> tuple[list[Item], dict[str, Any]]:
                 if seg.get("audio_path"):
                     add_file(seg["audio_path"])
 
+    info = info_files(content)
+    for path, data in info:
+        add(path, data)
     add("content/embeddings.npy", emb_bytes)
     add("content/index.json", index_bytes)
     add("content/manifest.json", common.dump_json(manifest))
     order = {"slides": 0, "clips": 1, "audio": 2, "topics": 3}
     ordered = sorted(items.values(), key=lambda it: (order.get(it.path.split("/")[0], 4), it.path))
     # Index files last, manifest very last: a reader never sees an index whose images are missing.
-    tail = ["content/embeddings.npy", "content/index.json", "content/manifest.json"]
+    tail = [p for p, _ in info] + ["content/embeddings.npy", "content/index.json", "content/manifest.json"]
     ordered = [it for it in ordered if it.path not in tail] + [items[p] for p in tail]
+    if info:
+        # The backend reloads when settings.index_version changes, so a new course-info index
+        # (with an unchanged slide index) still gets picked up.
+        manifest = {**manifest, "index_version": f"{manifest['index_version']}+info-{common.sha256_bytes(info[1][1])[:8]}"}
     return ordered, manifest
+
+
+def info_files(content: Path) -> list[tuple[str, bytes]]:
+    """The Canvas course-info index (indexer/build_info_index.py), when it exists and is complete."""
+    index_path = content / "info_index.json"
+    if not index_path.exists():
+        return []
+    emb_bytes = _read(content / "info_embeddings.npy")
+    index_bytes = _read(index_path)
+    index = json.loads(index_bytes)
+    records = index.get("records", []) if isinstance(index, dict) else index
+    shape = np.load(io.BytesIO(emb_bytes), allow_pickle=False).shape
+    if shape[0] != len(records):
+        raise PlanError(f"info_embeddings.npy has {shape[0]} rows but info_index.json has {len(records)} records. "
+                        "Re-run build_info_index.")
+    dim = (common.read_json(content / "manifest.json", {}) or {}).get("embedding_dim")
+    if dim and len(shape) == 2 and shape[1] != dim:
+        raise PlanError(f"info_embeddings.npy has dimension {shape[1]}, the slide index {dim}. Re-run build_info_index.")
+    return [("content/info_embeddings.npy", emb_bytes), ("content/info_index.json", index_bytes)]
 
 
 def _read(path: Path) -> bytes:

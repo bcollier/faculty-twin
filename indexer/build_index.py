@@ -367,9 +367,13 @@ def embed_records(
     sleep: Callable[[float], None] = time.sleep,
     log: Callable[[str], None] = print,
     usage: dict[str, int] | None = None,
+    text_of: Callable[[dict[str, Any]], str] | None = None,
 ) -> tuple[np.ndarray | None, int, int]:
-    """Return (matrix or None, cached count, newly embedded count). Adds Voyage tokens to `usage`."""
-    texts = [embed_text(r) for r in records]
+    """Return (matrix or None, cached count, newly embedded count). Adds Voyage tokens to `usage`.
+
+    `text_of` picks the text to embed per record (default `embed_text`; the course-info index passes its own).
+    """
+    texts = [(text_of or embed_text)(r) for r in records]
     vecs: list[np.ndarray | None] = [cache.get(t) for t in texts]
     cached = sum(v is not None for v in vecs)
     todo = sorted({t for t, v in zip(texts, vecs) if v is None})

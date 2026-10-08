@@ -86,6 +86,9 @@ class Hits:
         return "\n".join(lines)
 
 
+# Fields of content/info_index.json (Canvas course info) that get the strict check.
+INFO_STRICT_FIELDS = ("title", "text")
+
 ALLOWLIST_NAME = "leak_allowlist.json"  # in _private/, next to rosters/
 
 
@@ -147,6 +150,10 @@ class RosterChecker:
         allowlist = allowlist if allowlist is not None else Path(path).parent / ALLOWLIST_NAME
         return cls(rows, english, load_allowlist(allowlist))
 
+    def is_single(self, token: str) -> bool:
+        """True when a capitalized word is a roster first name or surname (the strict list)."""
+        return re.sub(r"'s$", "", (token or "").lower()).strip("'") in self._singles
+
     # ------------------------------------------------------------ counting
 
     def strong(self, text: str) -> int:
@@ -179,8 +186,9 @@ class RosterChecker:
 
     # ------------------------------------------------------------ objects
 
-    def check_index(self, data: Any, name: str = "content/index.json", hits: Hits | None = None) -> Hits:
-        """Record-aware check: strict on transcripts, strong on every other string."""
+    def check_index(self, data: Any, name: str = "content/index.json", hits: Hits | None = None,
+                    strict_fields: tuple[str, ...] = ("transcript",)) -> Hits:
+        """Record-aware check: strict on transcripts (`strict_fields`), strong on every other string."""
         hits = hits or Hits()
         records = data.get("records", []) if isinstance(data, dict) else data
         if isinstance(data, dict):
@@ -193,7 +201,7 @@ class RosterChecker:
                 continue
             for key, value in rec.items():
                 text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-                if key == "transcript":
+                if key in strict_fields:
                     count, ok = self.strict_allowing(text, self.allow.get((rid, key), frozenset()))
                     hits.add_allowed(f"{name}#{rid}.{key}", ok)
                 else:
@@ -207,6 +215,11 @@ class RosterChecker:
         if path.endswith("content/index.json"):
             try:
                 return self.check_index(json.loads(text), path, hits)
+            except ValueError:
+                pass
+        if path.endswith("content/info_index.json"):
+            try:  # Canvas course info: de-identified prose, so titles and text get the strict check
+                return self.check_index(json.loads(text), path, hits, INFO_STRICT_FIELDS)
             except ValueError:
                 pass
         hits.add(path, self.strong(text))
