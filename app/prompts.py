@@ -30,11 +30,12 @@ import hashlib
 import json
 import re
 import threading
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Iterator
+from datetime import UTC, datetime
+from typing import Any
 
 from . import config, settings_store, supa
 
@@ -48,6 +49,8 @@ _PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 
 @dataclass(frozen=True)
 class Prompt:
+    """One editable prompt: its built-in default and where its effect shows."""
+
     name: str
     title: str
     description: str
@@ -354,6 +357,7 @@ class PromptError(ValueError):
 
 
 def spec(name: str) -> Prompt:
+    """The registered prompt with this name, or PromptError."""
     try:
         return REGISTRY[name]
     except KeyError:
@@ -457,7 +461,7 @@ def text_hash(text: str) -> str:
 
 
 def new_version(now: datetime | None = None) -> str:
-    return (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%S.%fZ")
+    return (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%S.%fZ")
 
 
 def history_path(name: str, version: str) -> str:
@@ -538,7 +542,7 @@ def save(name: str, text: str, note: str = "", *, reset: bool = False) -> dict[s
     text = p.default if reset else check(name, text)
     reset = reset or text == p.default  # saving the default text is a reset: the badge goes back to Default
     previous = raw(name)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     version = new_version(now)
     entry = {
         "text": text,
@@ -563,6 +567,7 @@ def _when(saved_at: Any, version: str) -> str:
 
 
 def restore(name: str, version: str, note: str = "") -> dict[str, Any]:
+    """Make a saved version the current text again (it is saved as a new version, with a note)."""
     spec(name)
     if not VERSION_RE.match(str(version or "")):
         raise PromptError("That version id does not look right.")
@@ -578,6 +583,7 @@ def restore(name: str, version: str, note: str = "") -> dict[str, Any]:
 # ---------------------------------------------------------------- the Settings list
 
 def view(name: str) -> dict[str, Any]:
+    """Everything the Settings prompt editor shows for one prompt: default, saved text, history."""
     p = spec(name)
     saved = override(name)
     return {

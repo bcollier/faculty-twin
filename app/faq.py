@@ -26,7 +26,7 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from . import config
 
@@ -39,6 +39,8 @@ _EMAIL = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 
 @dataclass(frozen=True)
 class Entry:
+    """One FAQ answer: the patterns that trigger it and Ben's words per course."""
+
     id: str
     title: str
     patterns: tuple[re.Pattern[str], ...]
@@ -47,7 +49,10 @@ class Entry:
     contact_ta: bool = False
 
     def courses(self) -> list[str]:
-        return list(config.COURSE_CODES) if "all" in self.answers else [c for c in config.COURSE_CODES if c in self.answers]
+        """The course codes this entry answers for ("all" means every course)."""
+        if "all" in self.answers:
+            return list(config.COURSE_CODES)
+        return [c for c in config.COURSE_CODES if c in self.answers]
 
 
 @dataclass
@@ -58,6 +63,7 @@ class Match:
 
 @lru_cache(maxsize=1)
 def entries() -> tuple[Entry, ...]:
+    """Every entry in faq_entries.json, with its patterns compiled."""
     data = json.loads(ENTRIES_FILE.read_text(encoding="utf-8"))
     out = []
     for raw in data["entries"]:
@@ -79,7 +85,7 @@ def _text(question: str) -> str:
     return re.sub(r"\s+", " ", (question or "").replace("’", "'")).strip()
 
 
-def match(question: str, course: Optional[str]) -> Optional[Match]:
+def match(question: str, course: str | None) -> Match | None:
     """The first FAQ entry whose pattern matches and that has an answer for this course filter."""
     text = _text(question)
     for entry in entries():
@@ -96,7 +102,7 @@ def match(question: str, course: Optional[str]) -> Optional[Match]:
     return None
 
 
-def ta_contacts(course: Optional[str]) -> list[dict[str, str]]:
+def ta_contacts(course: str | None) -> list[dict[str, str]]:
     """TA contact cards for this course filter (both courses for "All courses"), from TA_CONTACTS."""
     raw = config.env("TA_CONTACTS")
     if not raw:
@@ -130,7 +136,7 @@ def message(m: Match) -> str:
     return "\n\n".join(f"For {a['course_label']}: {a['text']}" for a in m.answers)
 
 
-def reply(question: str, course: Optional[str], m: Match, follow_ups: list[str]) -> dict[str, Any]:
+def reply(question: str, course: str | None, m: Match, follow_ups: list[str]) -> dict[str, Any]:
     """The 200 reply for an FAQ hit: Ben's words, link buttons, and TA cards when the answer points to the TA."""
     return {
         "question": question,

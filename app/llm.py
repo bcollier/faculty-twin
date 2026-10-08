@@ -32,10 +32,11 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 
@@ -57,7 +58,8 @@ CURATED = {
     "anthropic": [
         {"id": "claude-sonnet-5-5", "name": "Claude Sonnet 5.5 (default: fast, strong at grounded JSON)"},
         {"id": "claude-opus-5-5", "name": "Claude Opus 5.5"},
-        {"id": "claude-fable-5-1", "name": "Claude Fable 5.1 (strong, slower: about 20 s per typed answer in a live test)"},
+        {"id": "claude-fable-5-1",
+         "name": "Claude Fable 5.1 (strong, slower: about 20 s per typed answer in a live test)"},
         {"id": "claude-haiku-4-5", "name": "Claude Haiku 4.5 (cheapest)"},
         {"id": "claude-sonnet-5", "name": "Claude Sonnet 5"},
     ],
@@ -77,7 +79,40 @@ _FALLBACK_MODELS = {"claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5", "cl
 
 
 class LLMError(RuntimeError):
-    pass
+    """A model call failed (transport, HTTP status, refusal, empty reply, or the daily cap)."""
+
+
+class ReplyNotJSON(ValueError):
+    """A model reply has no JSON object in it."""
+
+
+_FENCE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.S)
+
+
+def extract_json(raw: str, whole_first: bool = True) -> Any:
+    """The JSON in a model reply. Models sometimes wrap it in a code fence or add a sentence around it.
+
+    A whole fence is unwrapped first. Then, with `whole_first`, the reply is parsed as is and only
+    on failure is the span from the first "{" to the last "}" tried; without it, that span is parsed
+    straight away (the classifiers, which only ever expect one object). Raises ReplyNotJSON.
+    """
+    text = (raw or "").strip()
+    fence = _FENCE.match(text)
+    if fence:
+        text = fence.group(1)
+    if whole_first:
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+    start, end = text.find("{"), text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError as exc:
+            if not whole_first:
+                raise ReplyNotJSON("reply was not JSON") from exc
+    raise ReplyNotJSON("reply was not JSON")
 
 
 _PROVIDER_ERROR = re.compile(r"^(\w+) returned (\d{3}): (.*)$", re.S)
@@ -138,6 +173,7 @@ def model_override(provider: str, model: str):
 
 
 def key_configured(provider: str) -> bool:
+    """Whether the provider's API key is set (never returns the key)."""
     return bool(config.env(KEY_VARS[provider]))
 
 
@@ -150,6 +186,8 @@ def _key(provider: str) -> str:
 
 @dataclass
 class Request:
+    """One provider call, ready to send: URL, headers (with the key) and JSON body."""
+
     url: str
     headers: dict[str, str]
     body: dict[str, Any]
@@ -158,6 +196,7 @@ class Request:
 # ---------------------------------------------------------------- request builders
 
 def build_anthropic(model: str, system: str, user: str, max_tokens: int) -> Request:
+    """A Messages API request; low effort and refusal fallbacks on the models that take them."""
     headers = {
         "x-api-key": _key("anthropic"),
         "anthropic-version": "2023-06-01",
@@ -178,6 +217,7 @@ def build_anthropic(model: str, system: str, user: str, max_tokens: int) -> Requ
 
 
 def build_openai(model: str, system: str, user: str, max_tokens: int) -> Request:
+    """A Chat Completions request that asks for a JSON object."""
     headers = {"Authorization": f"Bearer {_key('openai')}", "Content-Type": "application/json"}
     body = {
         "model": model,
@@ -189,6 +229,7 @@ def build_openai(model: str, system: str, user: str, max_tokens: int) -> Request
 
 
 def build_openrouter(model: str, system: str, user: str, max_tokens: int) -> Request:
+    """An OpenAI-compatible OpenRouter request, with the optional attribution headers."""
     headers = {
         "Authorization": f"Bearer {_key('openrouter')}",
         "Content-Type": "application/json",
@@ -216,6 +257,7 @@ BUILDERS: dict[str, Callable[[str, str, str, int], Request]] = {
 # ---------------------------------------------------------------- response parsers
 
 def parse_anthropic(data: dict[str, Any]) -> str:
+    """The joined text blocks of a Messages reply. A refusal or an empty reply is an LLMError."""
     if data.get("stop_reason") == "refusal":
         raise LLMError("The model declined this request")
     texts = [b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"]
@@ -226,6 +268,7 @@ def parse_anthropic(data: dict[str, Any]) -> str:
 
 
 def parse_chat(data: dict[str, Any]) -> str:
+    """The message text of a chat completion. A content filter stop or an empty reply is an LLMError."""
     try:
         choice = data["choices"][0]
         text = choice["message"].get("content") or ""
@@ -303,55 +346,18 @@ def list_models(provider: str, client: httpx.Client | None = None) -> dict[str, 
     OpenAI return the curated list, extended with the live list when a key is
     configured. Any live failure falls back to the curated list.
     """
-    global _openrouter_cache
     if provider not in PROVIDERS:
         raise LLMError(f"Unknown provider {provider!r}")
     own = client is None
     client = client or httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0))
     try:
         if provider == "openrouter":
-            now = time.monotonic()
-            if _openrouter_cache and now - _openrouter_cache[0] < 600:
-                return {"provider": provider, "models": _openrouter_cache[1], "source": "live"}
-            resp = client.get(OPENROUTER_MODELS_URL)
-            if resp.status_code >= 400:
-                raise LLMError(f"OpenRouter model list returned {resp.status_code}")
-            models = sorted(
-                (
-                    {
-                        "id": m["id"],
-                        "name": m.get("name") or m["id"],
-                        "context_length": m.get("context_length"),
-                        "pricing": m.get("pricing"),
-                    }
-                    for m in resp.json().get("data", [])
-                    if m.get("id")
-                ),
-                key=lambda m: m["id"],
-            )
-            _openrouter_cache = (now, models)
-            return {"provider": provider, "models": models, "source": "live"}
-
+            return {"provider": provider, "models": _openrouter_models(client), "source": "live"}
         curated = list(CURATED[provider])
         if not key_configured(provider):
             return {"provider": provider, "models": curated, "source": "curated"}
         try:
-            if provider == "anthropic":
-                resp = client.get(
-                    ANTHROPIC_MODELS_URL,
-                    params={"limit": 100},
-                    headers={"x-api-key": _key("anthropic"), "anthropic-version": "2023-06-01"},
-                )
-                live = [{"id": m["id"], "name": m.get("display_name") or m["id"]} for m in resp.json().get("data", [])]
-            else:
-                resp = client.get(OPENAI_MODELS_URL, headers={"Authorization": f"Bearer {_key('openai')}"})
-                live = [
-                    {"id": m["id"], "name": m["id"]}
-                    for m in resp.json().get("data", [])
-                    if str(m.get("id", "")).startswith(("gpt-", "o"))
-                ]
-            if resp.status_code >= 400:
-                raise LLMError(str(resp.status_code))
+            live = _live_models(provider, client)
         except (httpx.HTTPError, LLMError, ValueError, KeyError) as exc:
             config.log.warning("live %s model list failed: %s", provider, exc)
             return {"provider": provider, "models": curated, "source": "curated"}
@@ -363,3 +369,53 @@ def list_models(provider: str, client: httpx.Client | None = None) -> dict[str, 
     finally:
         if own:
             client.close()
+
+
+OPENROUTER_LIST_TTL = 600  # seconds the public OpenRouter model list is reused
+
+
+def _openrouter_models(client: httpx.Client) -> list[dict[str, Any]]:
+    """OpenRouter's public model list with context length and prices, cached for OPENROUTER_LIST_TTL."""
+    global _openrouter_cache
+    now = time.monotonic()
+    if _openrouter_cache and now - _openrouter_cache[0] < OPENROUTER_LIST_TTL:
+        return _openrouter_cache[1]
+    resp = client.get(OPENROUTER_MODELS_URL)
+    if resp.status_code >= 400:
+        raise LLMError(f"OpenRouter model list returned {resp.status_code}")
+    models = sorted(
+        (
+            {
+                "id": m["id"],
+                "name": m.get("name") or m["id"],
+                "context_length": m.get("context_length"),
+                "pricing": m.get("pricing"),
+            }
+            for m in resp.json().get("data", [])
+            if m.get("id")
+        ),
+        key=lambda m: m["id"],
+    )
+    _openrouter_cache = (now, models)
+    return models
+
+
+def _live_models(provider: str, client: httpx.Client) -> list[dict[str, Any]]:
+    """The provider's own model list (Anthropic, or OpenAI chat models). Raises on any failure."""
+    if provider == "anthropic":
+        resp = client.get(
+            ANTHROPIC_MODELS_URL,
+            params={"limit": 100},
+            headers={"x-api-key": _key("anthropic"), "anthropic-version": "2023-06-01"},
+        )
+        live = [{"id": m["id"], "name": m.get("display_name") or m["id"]} for m in resp.json().get("data", [])]
+    else:
+        resp = client.get(OPENAI_MODELS_URL, headers={"Authorization": f"Bearer {_key('openai')}"})
+        live = [
+            {"id": m["id"], "name": m["id"]}
+            for m in resp.json().get("data", [])
+            if str(m.get("id", "")).startswith(("gpt-", "o"))
+        ]
+    if resp.status_code >= 400:
+        raise LLMError(str(resp.status_code))
+    return live

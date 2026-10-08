@@ -56,12 +56,14 @@ def _mac(data: bytes) -> bytes:
 # ---------------------------------------------------------------- passcode hashing
 
 def hash_passcode(passcode: str, salt: bytes | None = None) -> str:
+    """A salted PBKDF2-SHA256 hash of the student passcode, as stored in settings."""
     salt = salt or secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", passcode.encode(), salt, PBKDF2_ITERATIONS)
     return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${_b64e(salt)}${_b64e(digest)}"
 
 
 def verify_passcode_hash(passcode: str, stored: str) -> bool:
+    """Whether `passcode` matches a stored hash. A malformed hash never matches."""
     try:
         algo, iters, salt, digest = stored.split("$")
         if algo != "pbkdf2_sha256":
@@ -92,6 +94,7 @@ def _stored_student_hash() -> str | None:
 
 
 def student_generation() -> str | None:
+    """A tag of the current student passcode: rotating the passcode changes it, so old cookies stop working."""
     try:
         stored = _stored_student_hash()
     except settings_store.SettingsUnavailable:
@@ -108,6 +111,7 @@ def admin_generation() -> str | None:
 
 
 def check_student_passcode(passcode: str) -> bool:
+    """Whether this is the student passcode (the stored hash, else STUDENT_PASSCODE)."""
     try:
         stored = _stored_student_hash()
     except settings_store.SettingsUnavailable as exc:
@@ -122,6 +126,7 @@ def check_student_passcode(passcode: str) -> bool:
 
 
 def check_admin_passcode(passcode: str) -> bool:
+    """Whether this is ADMIN_PASSCODE, compared in constant time."""
     code = config.env("ADMIN_PASSCODE")
     if not code:
         raise HTTPException(503, "The admin passcode is not set up yet.")
@@ -132,12 +137,15 @@ def check_admin_passcode(passcode: str) -> bool:
 
 @dataclass
 class Session:
+    """A signed-in visitor, read from a valid cookie."""
+
     kind: str  # "s" student, "a" admin
     visitor: str  # random id, never shown or stored raw
     exp: int
 
 
 def make_token(kind: str, visitor: str, ttl: int, generation: str, now: float | None = None) -> str:
+    """A signed cookie value: kind, a random visitor id, expiry and the passcode generation."""
     payload = json.dumps(
         {"k": kind, "v": visitor, "exp": int((now or time.time()) + ttl), "g": generation},
         separators=(",", ":"),
@@ -146,6 +154,7 @@ def make_token(kind: str, visitor: str, ttl: int, generation: str, now: float | 
 
 
 def read_token(token: str | None, kind: str, generation: str | None, now: float | None = None) -> Session | None:
+    """The session in a cookie value, or None if it is unsigned, expired, the wrong kind or from an old passcode."""
     if not token or "." not in token or not generation:
         return None
     body, _, sig = token.partition(".")
@@ -164,6 +173,7 @@ def read_token(token: str | None, kind: str, generation: str | None, now: float 
 
 
 def set_cookie(response: Response, name: str, token: str, ttl: int) -> None:
+    """Set an HttpOnly, SameSite=Lax cookie (Secure in production)."""
     response.set_cookie(
         name,
         token,
@@ -176,12 +186,14 @@ def set_cookie(response: Response, name: str, token: str, ttl: int) -> None:
 
 
 def issue_student(response: Response) -> None:
+    """Sign the visitor in as a student for STUDENT_TTL."""
     gen = student_generation()
     token = make_token("s", secrets.token_urlsafe(12), STUDENT_TTL, gen or "")
     set_cookie(response, STUDENT_COOKIE, token, STUDENT_TTL)
 
 
 def issue_admin(response: Response) -> None:
+    """Sign Ben in to Settings for ADMIN_TTL."""
     gen = admin_generation()
     token = make_token("a", secrets.token_urlsafe(12), ADMIN_TTL, gen or "")
     set_cookie(response, ADMIN_COOKIE, token, ADMIN_TTL)
@@ -209,6 +221,7 @@ def require_student(request: Request) -> Session:
 
 
 def require_admin(request: Request) -> Session:
+    """FastAPI dependency: the admin session, or 401."""
     session = admin_session(request)
     if session is None:
         raise HTTPException(401, "Please sign in to Settings with the admin passcode.")

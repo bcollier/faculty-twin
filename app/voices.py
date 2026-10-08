@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from . import config, edge_voice, limits, settings_store, speech
 
@@ -49,9 +49,11 @@ class BadVoice(ValueError):
 
 @dataclass(frozen=True)
 class Voice:
+    """One voice that can read answers: ElevenLabs (clone or stock) or a free edge-tts voice."""
+
     provider: str  # "elevenlabs" | "edge"
     voice_id: str  # ElevenLabs voice id, or an edge-tts ShortName
-    kind: Optional[str] = None  # "clone" | "stock" | "free"; None = ElevenLabs voice not verified
+    kind: str | None = None  # "clone" | "stock" | "free"; None = ElevenLabs voice not verified
 
     @property
     def setting(self) -> str:
@@ -81,6 +83,7 @@ class Voice:
         return self.provider == ELEVEN
 
     def public(self) -> dict[str, Any]:
+        """What the page may know about the voice: its kind and the label students see."""
         return {"kind": self.kind or "unverified", "label": self.label}
 
     def audio_prefixes(self) -> tuple[str, ...]:
@@ -93,10 +96,12 @@ class Voice:
 
 @dataclass(frozen=True)
 class Plan:
-    primary: Optional[Voice] = None  # None: captions only
-    fallback: Optional[Voice] = None  # a free voice for when the ElevenLabs voice fails or is capped
+    """Today's voices: the one that reads answers, and the free fallback when it fails or is capped."""
 
-    def match(self, tag: str) -> Optional[Voice]:
+    primary: Voice | None = None  # None: captions only
+    fallback: Voice | None = None  # a free voice for when the ElevenLabs voice fails or is capped
+
+    def match(self, tag: str) -> Voice | None:
         """The voice an audio link's tag belongs to, if it is one of today's voices."""
         for voice in (self.primary, self.fallback):
             if voice is not None and voice.tag == tag:
@@ -104,6 +109,7 @@ class Plan:
         return None
 
     def public(self) -> dict[str, Any]:
+        """What the page may know about today's voices (kinds and labels, never ids or keys)."""
         if self.primary is None:
             return {"kind": "none", "label": None, "fallback": None}
         return {**self.primary.public(), "fallback": self.fallback.public() if self.fallback else None}
@@ -111,7 +117,7 @@ class Plan:
 
 # ---------------------------------------------------------------- parsing
 
-def parse(value: Any) -> Optional[tuple[str, str]]:
+def parse(value: Any) -> tuple[str, str] | None:
     """("elevenlabs"|"edge", id), ("none", "") for captions only, or None for "not set". Raises BadVoice."""
     if value is None:
         return None
@@ -132,7 +138,7 @@ def parse(value: Any) -> Optional[tuple[str, str]]:
     return (ELEVEN, text)
 
 
-def eleven_kind(voice_id: str, lookup: bool = True) -> Optional[str]:
+def eleven_kind(voice_id: str, lookup: bool = True) -> str | None:
     """"clone" or "stock" for an ElevenLabs voice, or None when it cannot be checked.
 
     A kind saved with the voice in Settings is used first (it was checked
@@ -176,6 +182,7 @@ def fallback_mode() -> str:
 
 
 def fallback_voice_name() -> str:
+    """The free fallback voice from Settings, else the default free voice."""
     raw = settings_store.get("voice_fallback_voice")
     try:
         parsed = parse(raw)
@@ -215,13 +222,14 @@ def for_answer() -> Plan:
     """The voices an answer should use. When the ElevenLabs cap is already spent and the
     free fallback is on, the free voice speaks from the start (and is labeled as such)."""
     plan = current()
-    if plan.primary is not None and plan.primary.provider == ELEVEN and plan.fallback is not None:
-        if not eleven_budget_left():
-            return Plan(primary=plan.fallback)
+    eleven_first = plan.primary is not None and plan.primary.provider == ELEVEN
+    if eleven_first and plan.fallback is not None and not eleven_budget_left():
+        return Plan(primary=plan.fallback)
     return plan
 
 
 def daily_cap(voice: Voice) -> int:
+    """The character cap for this voice's tier (ElevenLabs or free)."""
     if voice.provider == ELEVEN:
         return settings_store.daily_voice_char_cap()
     return settings_store.daily_free_voice_char_cap()

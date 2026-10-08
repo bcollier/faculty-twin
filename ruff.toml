@@ -11,9 +11,20 @@ line-length = 120
 # Areas not yet brought in line with these rules. Each clean-code pull request removes its
 # area from this list, so the list shrinks to the permanent entries below.
 extend-exclude = [
-    "app/[!e]*",  # app/ except the eval_* modules
-    "app/edge_voice.py",
-    "app/embed.py",
+    # app/ modules another agent is changing right now, or not cleaned yet:
+    "app/main.py",
+    "app/course_info.py",
+    "app/logistics.py",
+    "app/storage.py",
+    "app/playlist.py",
+    "app/speech.py",
+    "app/admin.py",
+    "app/admin_alerts.py",
+    "app/admin_evals.py",
+    "app/alerts.py",
+    "app/analytics.py",
+    "app/helper_slide.py",
+    "app/web_answer.py",
     "localvoice/",
     "tests/",
 ]
@@ -31,12 +42,16 @@ ignore = [
     # zip() here walks lists built from the same source. strict=True would turn a length
     # mismatch into an exception (a behavior change), and strict=False on every call is noise.
     "B905",
+    # A word list written as one string and split reads and edits better than a list literal.
+    "SIM905",
 ]
 
 [lint.per-file-ignores]
 # Ben's hand-written retrieval (AGENTS.md, "Code Ben writes by hand"): agents never edit it,
 # so it is not held to rules an agent would have to fix.
 "app/retrieval.py" = ["ALL"]
+# Prompt text the models read as written: wrapping a line would change the prompt.
+"app/prompts.py" = ["E501"]
 
 [lint.flake8-bugbear]
 # FastAPI's dependency markers are meant to be called in argument defaults.
