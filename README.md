@@ -64,6 +64,49 @@ Setup instructions will be added once the skeleton is in place (Block 0 of the b
 
 - Stan Waddell, *Creating a Digital Twin GPT: A Higher Education Practitioner's Guide*, Carnegie Mellon University Computing Services. [Guide page](https://www.cmu.edu/computing/services/ai/tools/chatgpt/digital_twin_gpt.html) · [PDF](https://www.cmu.edu/computing/services/ai/tools/chatgpt/how-to/gpt-digital-twin-guide.pdf). Background reading on faculty digital twins; this repo links to it rather than hosting a copy.
 
+## Building it with AI
+
+### Which tool for which job
+
+I used **Claude Code** (Claude Opus 5.5) for most of the work: planning from the spec, the backend and frontend, the content pipeline (slides, de-identification, video alignment, clips, the search index), deploys, and debugging against the live site. For big pieces I had it run several agents in parallel, each in its own git worktree and pull request (one restyling the page, one building the read-along narration, one refactoring, one writing tests), because they don't step on each other and each comes back with tests. I planned the idea, architecture and hosting earlier in the **Claude app** (Claude Fable 5.1), where long back-and-forth thinking with web search works better than a coding agent. I used **Cursor** for editing by hand, with Grok 4.7 and then Claude Opus 5.5 explaining numpy, `uv` and cosine similarity next to my own code while I wrote the four pieces that are mine (`rank`, `select_segments`, the 0.52 threshold, and `onClipEnded()`). I used **OpenAI Codex** for a security review, as a second opinion from a different model family, and earlier to build the first 45-884 archive, since it was already connected to my browser and Drive. Inside the app the same idea holds: Claude, OpenAI or OpenRouter can write the narration (switchable in Settings), and the evals use judges from several companies, because a model grading its own family's answers is too lenient. Details and every prompt: [prompt_log.md](prompt_log.md).
+
+### Where the AI got it wrong
+
+**The one I'd pick: confidently wrong about how the site deploys.** When I asked for a list of every API the app uses, the agent wrote in three places that "every merge to main deploys through Vercel's Git integration." It sounded authoritative, but the repo had never been connected to Vercel's Git integration; every deploy had been run by hand with the Vercel CLI. I knew how the site actually shipped, GitHub showed zero deployments, and the docs were corrected (PR #79). AI fills gaps with what is usually true, so docs about your own infrastructure have to be checked against the infrastructure, not just the code.
+
+Every other time, as facts:
+
+**Confidently incorrect**
+- The planning spec recommended Render without mentioning that the free plan sleeps after about 15 minutes; it came out only when I pushed back.
+- It said `gpt-6-astra` was unavailable "to Ben's OpenAI key" after checking a different account's key on my computer. The key the live site uses has it.
+- A privacy check flagged four Canvas pages as containing a student's name. The "name" was "Andrew", as in CMU's "Andrew ID". An earlier fix had taught the checker that, but the agent ran an older copy of the code. The live files matched the clean build byte for byte.
+- The first browser tests "failed" for an hour because another local server held the same port and was serving a different site. The AI found it by printing the page text.
+- The docs it wrote named the computer I was typing on as if it were part of the stack. The app runs on Vercel and Supabase; I had those references removed.
+
+**Proposed something that couldn't work**
+- The first spec cached generated audio on the server's disk. Free Render has no persistent disk and Vercel functions keep nothing between requests. It was redesigned as signed links to private storage.
+- The spec kept a stale `/api/audio/{hash}` route after that redesign.
+
+**Introduced a bug it didn't see at first**
+- **A routing fix that broke something else.** To stop Canvas pages from answering concept questions, a rule made Canvas beat the best slide by a margin. Routing on the test set went from 68% to 78% and every test passed, but on the live site "Where is the syllabus on Canvas?" told students to email me. The agent hadn't looked for questions the rule would break. Fixed with a narrow rule for "where is X on Canvas" questions (PR #89), and those questions are now in the eval set.
+- **A quiz access code in the search index.** Two transcripts had me reading a quiz code aloud and one slide was titled "Quiz Code:". Nothing in the AI-built pipeline looked for that, and the twin read the code out. One of the AI judges caught it in the first eval run; codes are now removed and checked on every answer (PR #35).
+- A stale cache let one student's full name survive the name scrub on one slide. The upload leak check caught it before anything went live (PR #21).
+- The first clip encode copied Zoom's raw caption track, which wasn't de-identified, into every clip. Caught and re-encoded before upload.
+- The security review found a question could make the cloned voice read a sentence the asker wrote, and missing signing secrets fell back to development keys in the public repo. Both fixed before any content was live (PR #11).
+- The live page said "I'm still writing the code" when the real cause was content not yet uploaded (PR #14).
+- A rate-limit test failed when it ran across a minute boundary. The clock is now pinned in tests (PR #73).
+- Bugs one agent wrote and another agent found: a model reply with a non-string slide id crashed answers with a server error (found by property tests, PR #94); the index rebuild reused an already-closed Voyage client (PR #86); the background worker was missing three Python packages (PR #86).
+- The first download script used `path` as a variable name, which zsh ties to `PATH`.
+
+**Went further than I asked**
+- I told an agent which courses in my lecture archive weren't mine. Passing that on, the AI added "and anything else you flagged as uncertain", which I never said, and another agent deleted local copies of 11 videos and 81 Canvas files. The originals were safe in Drive and Canvas and the list was kept for restoring them. Deletions now need my exact words.
+- A code review table with slide titles and code was committed to this public repo, then moved out (PR #31); it stays in git history.
+- Uploading the Canvas index switched on Canvas answers on the live site while I was holding deploys for my recording.
+
+**Not the AI's reasoning, but worth knowing**
+- Whisper turned a silent recording into 155 lines of "Thank you." That session has no transcript.
+- The first real eval failed on 20 of 22 questions because Voyage's free tier allows 3 requests a minute; it was rerun with spacing.
+
 ## AI-generated documentation
 
 *Written by Claude Code (Claude Opus 5.5). Ben's own sections are above this heading; everything below it is AI-written. First added with the backend PR, reorganized on October 8, 2026 with diagrams, screenshots and a guide to every folder.*
