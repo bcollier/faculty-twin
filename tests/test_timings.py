@@ -346,6 +346,10 @@ def test_a_stream_that_breaks_saves_no_timings(student, monkeypatch):
 
 
 def test_timings_route_rate_limit(student, monkeypatch):
+    import time as _time
+
+    fixed = _time.gmtime(1_800_000_000)  # one minute window, even on a slow runner (as in test_api)
+    monkeypatch.setattr(_time, "gmtime", lambda *args: fixed)
     monkeypatch.setattr("app.main.TIMINGS_PER_MINUTE", 2)
     link = speech.timings_link(speech.audio_link("Words.", f"edge:{ANDREW}"))
     assert [student.get(link).status_code for _ in range(3)] == [200, 200, 429]

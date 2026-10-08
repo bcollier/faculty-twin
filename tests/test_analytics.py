@@ -262,7 +262,13 @@ def test_event_extra_fields_are_dropped(student):
     assert not [k for k in limits._mem if "free text" in k or "abc" in k.split(":")]
 
 
-def test_event_rate_limit(student):
+def test_event_rate_limit(student, monkeypatch):
+    import time as _time
+
+    # Pin the clock inside one minute (as test_api's links test does): 61 requests can cross a minute
+    # boundary, which opens a fresh per-minute window and the 429 never comes (seen once, Oct 8).
+    fixed = _time.gmtime(1_800_000_000)
+    monkeypatch.setattr(_time, "gmtime", lambda *args: fixed)
     for _ in range(main_event_cap()):
         assert student.post("/api/event", json={"name": "segment_played"}).status_code == 204
     assert student.post("/api/event", json={"name": "segment_played"}).status_code == 429
