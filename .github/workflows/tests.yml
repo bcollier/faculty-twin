@@ -36,6 +36,13 @@ jobs:
           node-version: "24"  # the contract test runs public/dev/mock.js in Node
       - name: Install Python (from .python-version)
         run: uv python install
+      - name: English word list (indexer/deidentify.py reads /usr/share/dict/words, as on macOS)
+        run: |
+          if [ ! -f /usr/share/dict/words ]; then
+            sudo apt-get install -y --no-install-recommends wamerican >/dev/null \
+              || { sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends wamerican >/dev/null; }
+          fi
+          test -f /usr/share/dict/words
       - name: Run the suite with coverage
         run: >
           uv run --no-project --with-requirements requirements.txt --with-requirements requirements-test.txt
