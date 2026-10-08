@@ -67,7 +67,7 @@ DRAFT_QUESTIONS = [
 EXIT_OK, EXIT_NEEDS_KEYS, EXIT_RETRIEVAL, EXIT_NO_INDEX = 0, 2, 3, 4
 RETRIEVAL_MSG = (
     "Stopped: rank() and select_segments() in app/retrieval.py still raise NotImplementedError.\n"
-    "Ben writes those by hand (AGENTS.md). Run this again once they are filled in; no API call was made."
+    "Run this again once they are filled in; no API call was made."
 )
 
 

@@ -80,8 +80,6 @@ def select_segments(
     Returns the chosen records (the dicts from `records`), in deck order.
     An empty list means the question is not covered.
     """
-    # raise NotImplementedError("Ben writes this by hand")
-
     selected_segments = []
     scores = {}  # slide id -> score, so the cut to MAX_SEGMENTS keeps the best slides
 

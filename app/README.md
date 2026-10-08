@@ -20,7 +20,7 @@ One FastAPI app, deployed on Vercel as a single Python function (`app/main.py`, 
 
 | File | What it does |
 | --- | --- |
-| `retrieval.py` | **Ben's hand-written code:** `rank()` (cosine similarity), `select_segments()` (top 8, threshold, fill gaps, at most 5, deck order) and `NOT_COVERED_THRESHOLD = 0.52`. Agents do not edit these bodies (see [AGENTS.md](../AGENTS.md)) |
+| `retrieval.py` | `rank()` (cosine similarity), `select_segments()` (top 8, threshold, fill gaps, best 5 by score, deck order) and `NOT_COVERED_THRESHOLD = 0.52`. First written by hand by Ben for the course assignment |
 | `embed.py` | Embeds the question with Voyage AI (input type `query`), with the daily embedding cap |
 | `playlist.py` | Everything around retrieval: which records are searchable (course filter, visible sessions), related code, building the playlist JSON, the not-covered reply |
 | `faq.py`, `faq_entries.json` | Ben's course FAQ: keyword patterns per entry, his answers word for word, the Calendly link and TA contact cards |

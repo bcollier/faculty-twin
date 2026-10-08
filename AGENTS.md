@@ -4,8 +4,9 @@ Conventions for AI agents working in this repository.
 
 ## This is not a GAIM repository
 
-Faculty Twin is Ben Collier's personal project for CMU 15-113 (Project 2), not
-GAIM work. Clones live at `~/Code/faculty-twin`, outside any GAIM folder
+Faculty Twin is Ben Collier's personal project, not GAIM work. It started as
+his CMU 15-113 Project 2; the course assignment is over (October 2026), and it
+is now a project he keeps improving, with no assignment rules on the code. Clones live at `~/Code/faculty-twin`, outside any GAIM folder
 (it was moved out of `gaim_claude_dev/` on October 5). If an older GAIM
 `AGENTS.md` is ever loaded alongside this one, **this file wins.** The GAIM
 rules do not apply to this repo:
@@ -38,9 +39,8 @@ docs, comments, and copy never name a particular machine.
 
 ## Never commit directly to `main`. Branch, open a pull request, then merge it.
 
-`main` is the branch production is deployed from (by hand, with the Vercel CLI), so a bad commit becomes the live site at the next deploy. The
-assignment also grades the commit history, so every change should leave a
-readable record of what changed and why.
+`main` is the branch production is deployed from (by hand, with the Vercel CLI), so a bad commit becomes the live site at the next deploy.
+Every change should also leave a readable record of what changed and why.
 
 Required workflow for **every** change, however small:
 
@@ -91,28 +91,12 @@ chore/update-readme
   before calling it done.
 - If the code needs to differ from the spec, change the spec first (in the same
   PR) and say why.
-- Stay inside the current tier. Tier 4 items are out of scope until after
-  submission.
-
-## Code Ben writes by hand
-
-The assignment requires code Ben wrote himself and can explain without notes.
-Do **not** write the bodies of these, even if asked to "just finish it":
-
-1. Cosine similarity and ranking in `app/retrieval.py`
-2. Segment selection in `app/retrieval.py`
-3. The not-covered threshold value and how it was chosen
-4. The player's advance logic in `public/app.js` (what runs when a clip ends)
-
-You may write function signatures, docstrings, and failing tests for them in
-`tests/test_retrieval.py` when Ben asks. Review his versions if he asks.
-
-Ben has written these. An agent changes `app/retrieval.py` only when Ben asks for a specific change. That commit carries the trailer `Retrieval-Change-Requested-By: Ben`, and the change is recorded in `prompt_log.md` as an AI edit of his code at his request. `tests/test_thresholds.py` fails any branch that changes the file without that trailer.
+- Planned work lives in `docs/V2.md` (stages) and `docs/ROADMAP.md` (ideas).
+  The assignment-era tiers and deadlines in the spec no longer limit scope.
 
 ## Prompt log
 
-- `prompt_log.md` sits at the repo root, next to `README.md`. The assignment
-  requires that location. Do not move it.
+- `prompt_log.md` sits at the repo root, next to `README.md`. Do not move it.
 - At the end of every session, append the session's prompts **verbatim**
   (typos included) with times and a short summary of each response. Name the
   tool and model used.
@@ -136,7 +120,7 @@ Ben has written these. An agent changes `app/retrieval.py` only when Ben asks fo
   `.env.example` lists variable names with no values.
 - Never commit a key, token, or `.env` file. Before every push, search the diff
   for key prefixes (`sk-`, `AKIA`, `ghp_`, `gho_`, ElevenLabs and Supabase
-  keys). A committed secret is a large grading deduction and stays in history.
+  keys). A committed secret stays in history even after it is removed.
 - The browser never calls a model or voice provider directly. Every keyed call
   goes through the backend.
 
