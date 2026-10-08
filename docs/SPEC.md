@@ -122,6 +122,7 @@ On a phone the stage stacks on top and the chat collapses to an input bar at the
 - Added Oct 5. Cookie expired or passcode rotated: any API call returns 401 and the page goes back to the passcode screen, keeping the typed question.
 - Added Oct 5. A slide image or clip link has expired (the student left the tab open): the frontend asks the same question again for fresh links instead of showing a broken image.
 - Added Oct 5. A clip fails to load: the button disappears for that segment and the slide stays.
+- Added Oct 7 (course FAQ). Question matches Ben's course FAQ (meetings, missed class, late work, rescheduling a presentation, a participation point Canvas missed, and for 45-884: R, generative AI, the final presentation): Ben's written answer, a "Book a 30-minute meeting" button for meetings, and a "Contact the TA" button that opens a card with the TA's name and email for that course. The title is the FAQ topic; the suggested chips follow. No slides, no audio.
 - Added Oct 7. Question is about logistics (meetings, office hours, missed class, absences, grades, regrades, extensions, deadlines, rescheduling a presentation, Canvas access, team problems, dropping the course): a written "That one is for me directly. My twin only explains course material. For meetings, absences, grades or deadlines, please email me or come to office hours." plus the suggested chips. No slides, no audio. See step 7a of "Inside `/api/ask`".
 
 ### Where this is in the course
@@ -613,6 +614,9 @@ Four routes. The frontend never talks to a model or voice provider directly.
 | `GET /api/admin/log` | none | `{rows: [...]}`, the last 50 question-log rows | |
 
 **Inside `/api/ask`, step by step**
+
+> **Added Oct 7 (course FAQ).** Between step 4 (stored suggested questions) and embedding, check Ben's course FAQ (`app/faq.py`, `app/faq_entries.json`): keyword patterns per entry, first match wins, course-aware. A hit returns `{"kind": "faq", "covered": false, "title", "message", "answers", "links", "contacts", "segments": []}`: Ben's written answer word for word (from his 70-445 and 45-884 FAQ docs, plus his Oct 7 answers on Calendly meetings and TA-handled presentation rescheduling), link buttons (Calendly), and TA contact cards when the answer points to the TA. No embedding, no model call, no audio. TA names and emails come only from the `TA_CONTACTS` environment variable (JSON per course code) and appear only on a contact card the student opens; the twin never says a TA's name. The logistics referral (step 7a) also carries the Calendly button and the TA cards for the course filter.
+
 
 1. Reject empty or over-length questions with a 400 and a readable message.
 2. Check the rate limit for this visitor.

@@ -309,6 +309,11 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .slide-dialog::backdrop { background: rgba(10, 12, 14, .55); }
 .dialog-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .5rem; }
 .slide-dialog img { width: 100%; background: var(--slide-bg); border-radius: var(--radius-sm); }
+.contact-dialog { width: min(420px, 92vw); }
+.contact-body p { margin: .25rem 0; overflow-wrap: anywhere; }
+.contact-name { font-weight: 600; }
+.contact-note { color: var(--ink-2, inherit); font-size: .9rem; margin-top: .75rem !important; }
+#stage-message-text { white-space: pre-line; }
 
 /* ---------- phone ---------- */
 @media (max-width: 760px) {

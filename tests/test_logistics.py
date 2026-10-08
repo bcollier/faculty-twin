@@ -163,7 +163,8 @@ def test_ask_keyword_logistics_returns_referral_without_audio(student, monkeypat
     monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice123")
     calls: list[str] = []
     _use(_routing_llm("course_content", calls))
-    r = student.post("/api/ask", json={"question": "Can I come to office hours to talk about fruit?", "course": "70445"})
+    # Office hours and meetings now get Ben's Calendly FAQ answer (app/faq.py); a regrade has no FAQ entry.
+    r = student.post("/api/ask", json={"question": "Can I get a regrade on my fruit quiz?", "course": "70445"})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["kind"] == "logistics" and body["covered"] is False and body["segments"] == []
@@ -238,4 +239,4 @@ def test_frontend_shows_the_logistics_message():
     assert "email me or come to office hours" in copy.group(1)
     assert "—" not in copy.group(1) and "–" not in copy.group(1)
     assert "answer.kind === 'logistics'" in js
-    assert "showStageError('logistics', question)" in js
+    assert "showStageError('logistics', question, answer)" in js

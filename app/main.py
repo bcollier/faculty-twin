@@ -24,6 +24,7 @@ from . import (
     config,
     edge_voice,
     embed,
+    faq,
     limits,
     llm,
     logistics,
@@ -183,6 +184,13 @@ def answer(
         info["kind"] = logistics.COURSE_CONTENT
         return _replay_topic(content, question, stored, voice), info
 
+    # Course FAQ (spec step 3a): Ben's own written answers, before any embedding or model call.
+    hit = faq.match(question, course)
+    if hit is not None:
+        info["kind"] = "faq"
+        info["faq_id"] = hit.entry.id
+        return faq.reply(question, course, hit, _suggested_questions(content, course)), info
+
     records, matrix = playlist.searchable(content, course)
     _check_retrieval_ready(retriever, matrix.shape[1])
     if not records:
@@ -214,7 +222,10 @@ def answer(
     info["kind"] = kind.kind
     info["kind_source"] = kind.source
     if kind.kind == logistics.LOGISTICS:
-        return logistics.referral(question, _suggested_questions(content, course)), info
+        referral = logistics.referral(question, _suggested_questions(content, course))
+        referral["links"] = [dict(faq.CALENDLY)]
+        referral["contacts"] = faq.ta_contacts(course)
+        return referral, info
 
     codes = {r["id"]: (playlist.related_code(content, r) or {}).get("source") for r in chosen}
     result = narration.narrate(question, chosen, codes, provider=provider, model=model, complete=completer)
