@@ -84,20 +84,9 @@ def convert_run(run_dir: Path, run_id: str, generator: dict[str, str], excluded:
     meta = summary.get("meta") or {}
     judges = [j.strip() for j in str(meta.get("judges") or "").split(",") if j.strip() and j.strip() != "none"]
     key = eval_runs.model_key(generator)
-    rows = []
-    for pair, r in enumerate(results):
-        resp = dict(r["response"])
-        # At the time every decline came from the not-covered threshold (no FAQ, no logistics routing yet).
-        resp["outcome"] = {"ok": "course_content", "not_covered": "not_covered"}.get(resp.get("status"))
-        rows.append({
-            "qid": r["qid"], "pair": pair, "category": r["category"], "course": r.get("course"),
-            "answerable": r["answerable"], "question": r["question"], "reference_answer": r.get("reference_answer"),
-            "generator": key, "outcome": resp["outcome"], "response": resp, "judgements": r.get("judgements", []),
-            "calls": None, "at": None,
-        })
+    rows = [_cli_row(r, pair, key) for pair, r in enumerate(results)]
     started = _stamp(run_id)
     minutes = float(meta.get("minutes") or 0)
-    errors = sum(1 for r in results if r["response"]["status"] == "error")
     run = {
         "id": run_id,
         "name": name
@@ -126,11 +115,30 @@ def convert_run(run_dir: Path, run_id: str, generator: dict[str, str], excluded:
         "lease": None,
     }
     if excluded:
-        run["status_note"] = (f"{errors} of {len(results)} questions errored (Voyage's free tier allows 3 embedding "
-                              f"requests a minute). Excluded from the report card; the rerun is {VALID_RUN}.")
+        run["status_note"] = _errored_note(results)
         run["notes"] = [run["status_note"]]
     run["summary"] = eval_runs.summarize(run, rows)
     return run, rows
+
+
+def _cli_row(r: dict[str, Any], pair: int, generator: str) -> dict[str, Any]:
+    """One command-line result in the Settings row format, with the outcome the CLI did not record."""
+    resp = dict(r["response"])
+    # At the time every decline came from the not-covered threshold (no FAQ, no logistics routing yet).
+    resp["outcome"] = {"ok": "course_content", "not_covered": "not_covered"}.get(resp.get("status"))
+    return {
+        "qid": r["qid"], "pair": pair, "category": r["category"], "course": r.get("course"),
+        "answerable": r["answerable"], "question": r["question"], "reference_answer": r.get("reference_answer"),
+        "generator": generator, "outcome": resp["outcome"], "response": resp, "judgements": r.get("judgements", []),
+        "calls": None, "at": None,
+    }
+
+
+def _errored_note(results: list[dict[str, Any]]) -> str:
+    """Why the October 7 first attempt is listed but never plotted."""
+    errors = sum(1 for r in results if r["response"]["status"] == "error")
+    return (f"{errors} of {len(results)} questions errored (Voyage's free tier allows 3 embedding "
+            f"requests a minute). Excluded from the report card; the rerun is {VALID_RUN}.")
 
 
 def baseline_entry() -> dict[str, Any]:
@@ -270,15 +278,7 @@ def convert_compare(run_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]
     judge_keys = meta.get("judges") or sorted({j["judge"] for r in rep1 for j in r["judgements"]})
     judges = [model_ref(j) for j in judge_keys]
     qids = sorted({r["qid"] for r in rep1})
-    by = {(r["qid"], r["generator"]): r for r in rep1}
-    questions, rows = [], []
-    for qi, qid in enumerate(qids):
-        first = next(r for r in rep1 if r["qid"] == qid)
-        questions.append({k: first.get(k) for k in QUESTION_FIELDS if first.get(k) is not None})
-        for gi, g in enumerate(gens_keys):
-            r = by.get((qid, g))
-            if r is not None:
-                rows.append(_compare_row(r, qid, qi * len(gens_keys) + gi, g))
+    questions, rows = _compare_questions_and_rows(rep1, qids, gens_keys)
     finished = meta.get("finished_at") or _stamp(run_id.split("-")[0]).isoformat(timespec="seconds")
     notes = _compare_notes(run_dir, meta)
     run = {
@@ -307,14 +307,37 @@ def convert_compare(run_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]
         "lease": None,
     }
     if meta.get("only_types"):
-        # A subset (for example only the web questions) is not comparable with full runs: listed, never plotted.
-        run["status"] = "excluded"
-        run["excluded"] = True
-        run["status_note"] = (f"Only the {', '.join(meta['only_types'])} questions of {meta.get('questions_file')}: "
-                              "listed for its results, left out of the report card's lines.")
-        run["notes"].insert(0, run["status_note"])
+        _exclude_subset(run, meta)
     run["summary"] = eval_runs.summarize(run, rows)
     return run, rows
+
+
+def _compare_questions_and_rows(rep1: list[dict[str, Any]], qids: list[str],
+                                gens_keys: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(questions, rows) for run 1: one question entry per qid, one row per question x answering model.
+
+    A row's `pair` is its slot in the full question x model grid, so a missing answer leaves a gap.
+    """
+    by = {(r["qid"], r["generator"]): r for r in rep1}
+    questions, rows = [], []
+    for qi, qid in enumerate(qids):
+        first = next(r for r in rep1 if r["qid"] == qid)
+        questions.append({k: first.get(k) for k in QUESTION_FIELDS if first.get(k) is not None})
+        for gi, g in enumerate(gens_keys):
+            r = by.get((qid, g))
+            if r is not None:
+                rows.append(_compare_row(r, qid, qi * len(gens_keys) + gi, g))
+    return questions, rows
+
+
+def _exclude_subset(run: dict[str, Any], meta: dict[str, Any]) -> None:
+    """Mark a run over only some question types as excluded, with a note saying why."""
+    # A subset (for example only the web questions) is not comparable with full runs: listed, never plotted.
+    run["status"] = "excluded"
+    run["excluded"] = True
+    run["status_note"] = (f"Only the {', '.join(meta['only_types'])} questions of {meta.get('questions_file')}: "
+                          "listed for its results, left out of the report card's lines.")
+    run["notes"].insert(0, run["status_note"])
 
 
 def import_compare(run_dir: Path, bucket: eval_store.Bucket, out: Callable[[str], None] = print) -> int:
@@ -375,6 +398,10 @@ def import_run(run_dir: Path, bucket: eval_store.Bucket, generator: dict[str, st
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: upload the October runs, or the --run / --compare folders, to the private bucket.
+
+    Needs the Supabase settings; prints counts only, never question text.
+    """
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--private", type=Path, default=PRIVATE, help="the evals/private folder that holds runs/")
     p.add_argument("--env-file", type=Path, default=ROOT / ".env")

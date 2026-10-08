@@ -188,6 +188,10 @@ def page(rows: list[dict[str, Any]], narrations: list[str]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: render the narrations in each engine, shuffle them, and write the listening page.
+
+    The answer key is a separate file, so the page can be judged blind. Exit 3 if nothing rendered.
+    """
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--narrations", type=Path, help="JSON list of strings or a stored playlist")
     p.add_argument("--text", action="append", default=[])

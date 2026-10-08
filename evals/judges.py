@@ -147,6 +147,7 @@ class Judge:
         started = time.monotonic()
 
         def attempt() -> dict[str, Any]:
+            """One judge call: the parsed judgement with the route taken and the tokens and time it used."""
             with usage.tally() as spent:
                 raw = self._send(system, user)
             out = rubric.parse(raw)

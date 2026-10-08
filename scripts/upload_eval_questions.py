@@ -70,6 +70,10 @@ def run(questions: Path, bucket: eval_store.Bucket, force: bool = False,
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: check the local eval questions and upload them to the private bucket for Settings.
+
+    Questions that exist only in the bucket are not overwritten unless --force.
+    """
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--questions", type=Path, default=PRIVATE / "questions.jsonl")
     p.add_argument("--env-file", type=Path, default=ROOT / ".env")
