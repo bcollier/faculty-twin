@@ -642,6 +642,8 @@ def _judge_one(judge: dict[str, str], item: dict[str, Any], complete: Callable[.
             return out
         except (llm.LLMError, eval_core.JudgementError, KeyError, ValueError, httpx.HTTPError) as exc:
             last = str(exc)[:300]
+            if eval_core.is_billing_error(last):  # no credit or quota: says nothing about the answer
+                return {"judge": name, "error": last, eval_core.PROVIDER_ERROR: True}
             if "cap" in last or "returned 4" in last:  # a cap or a rejected request will not fix itself
                 break
         finally:
@@ -720,6 +722,10 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
                                     gen["provider"], gen["model"])
         response = response_from(playlist, info, content, int((time.monotonic() - t0) * 1000))
         response["usage"] = answer_usage(gen, spent)
+        if any(eval_core.is_billing_error(e) for e in info.get("errors") or []):
+            # The answering model's provider refused for billing reasons: the narration is a fallback, not the model.
+            response = {**response, "status": eval_core.PROVIDER_ERROR, "segments": [],
+                        "message": next(str(e)[:300] for e in info["errors"] if eval_core.is_billing_error(e))}
     except RetrievalNotReady:
         response = {"status": "retrieval_not_ready", "message": "retrieval not implemented yet", "segments": [],
                     "follow_ups": [], "narration_source": None, "top_score": None, "latency_ms": 0,

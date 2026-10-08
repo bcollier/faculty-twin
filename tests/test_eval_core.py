@@ -26,6 +26,7 @@ def _without_new_keys(s: dict) -> dict:
     out = json.loads(json.dumps(s))
     for j in out["judges"].values():
         j.pop("score_n", None)
+        j.pop("provider_errors", None)
         for d in NEW_DIMS:
             j["scores"].pop(d, None)
     return out

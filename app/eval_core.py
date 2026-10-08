@@ -530,10 +530,12 @@ def summary(results: list[dict[str, Any]], meta: dict[str, Any] | None = None) -
     per_judge: dict[str, Any] = {}
     for name in judges:
         js = [j for _, j in _ok_judgements(results) if j["judge"] == name]
-        errors = sum(1 for r in results for j in r.get("judgements", []) if j["judge"] == name and "error" in j)
+        mine_err = [j for r in results for j in r.get("judgements", []) if j["judge"] == name and "error" in j]
+        errors = sum(1 for j in mine_err if not j.get(PROVIDER_ERROR))  # a refused call is not a judge error
         per_judge[name] = {
             "judged": len(js),
             "errors": errors,
+            "provider_errors": len(mine_err) - errors,
             "pass_rate": _avg([1.0 if j["verdict"] == "pass" else 0.0 for j in js]),
             "scores": {d: _avg([j["scores"][d] for j in js if j["scores"].get(d) is not None]) for d in DIMENSIONS},
             "score_n": {d: sum(1 for j in js if j["scores"].get(d) is not None) for d in DIMENSIONS},
@@ -623,6 +625,32 @@ def probabilistic(results: list[dict[str, Any]]) -> dict[str, Any]:
             "flag_rates": {k: _avg(v) for k, v in sorted(flags.items())},
         }
     return out
+
+
+# ---------------------------------------------------------------- provider outages
+
+# A provider refusing calls for billing reasons (no credit, quota used up). Seen on Oct 8: Anthropic returned
+# 400 "Your credit balance is too low to access the Anthropic API". OpenAI sends 429 "insufficient_quota";
+# OpenRouter sends 402. Such an answer or judgement says nothing about the model, so it is marked
+# `provider_error`, left out of every score, and asked again later.
+PROVIDER_ERROR = "provider_error"
+_BILLING = re.compile(
+    r"credit balance is too low|insufficient[_ ]quota|exceeded your current quota|insufficient credits"
+    r"|requires more credits|payment required|billing (?:hard )?limit|returned 402\b|\b402 payment",
+    re.I,
+)
+
+
+def is_billing_error(text: Any) -> bool:
+    """Whether a provider error message means the account cannot pay (credit, quota or billing)."""
+    return bool(text) and bool(_BILLING.search(str(text)))
+
+
+def is_provider_error(row_or_judgement: dict[str, Any]) -> bool:
+    if row_or_judgement.get(PROVIDER_ERROR):
+        return True
+    resp = row_or_judgement.get("response")
+    return isinstance(resp, dict) and resp.get("status") == PROVIDER_ERROR
 
 
 # ---------------------------------------------------------------- measured without a judge (Block 8c)

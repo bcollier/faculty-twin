@@ -519,6 +519,11 @@ def render(a: dict[str, Any], include_text: bool) -> str:
                           "What each model did with each invented question: the route it took and how many of the three judges passed it.",
                           table(["Id", "Question", "Type", "Expected"] + [short(g) for g in gens], qrows))
 
+    pe = a.get("provider_errors") or {}
+    outage_note = ("" if not (pe.get("answers") or pe.get("judgements")) else
+                   f'<p class="callout">{pe["answers"]} answers and {pe["judgements"]} judgements were refused by their '
+                   'provider (no credit or quota) and are left out of every number on this page: '
+                   + esc(", ".join(f"{short(k)} {v}" for k, v in pe["by_model"].items())) + '.</p>')
     rt = a.get("routed") or {}
     route_note = ("" if not (rt.get("answers") or rt.get("judgements")) else
                   f'<p class="callout">{rt["answers"]} of {a["answers"]} answers and {rt["judgements"]} of '
@@ -543,6 +548,7 @@ def render(a: dict[str, Any], include_text: bool) -> str:
   <p class="legend">{legend}</p>
   {web_note}
   {route_note}
+  {outage_note}
   <p class="note">Self-grading flagged: {esc(sg) or 'none'}. Judges: {esc(', '.join(a['judges']))}. Scores run 1 to 5 (1 = very poor,
   3 = acceptable, 5 = excellent); each answer's score is the mean of the judges that scored it, and n counts answers.
   Pass rate is the share of judge verdicts that were pass, a separate overall call, not computed from the scores.</p>

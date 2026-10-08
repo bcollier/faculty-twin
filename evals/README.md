@@ -250,6 +250,8 @@ How the command runs:
 - **Resumable.** A run folder can be resumed with `--out`; rows already there are not asked again.
 - **Its own call path.** Answering calls go straight to the providers (like the judges), so a comparison never uses the site's `DAILY_LLM_CALL_CAP`. Spend still shows in Settings > Analytics under `eval_generate` and `eval_judge`.
 - **One embedding per question.** Embeddings are made once per question, in one Voyage request, and cached in `evals/private/embed_cache/`.
+- **Provider outages.** When a provider refuses a call because the account cannot pay, the run stops calling that provider. Examples are Anthropic's "credit balance is too low", OpenAI's `insufficient_quota` and OpenRouter's 402. Its answers are marked `provider_error` and its judgements `provider_error: true`. Both are left out of every score, and the report counts them. When the account is topped up, run the same command with the same `--out`. It asks only what the outage left out: the missing answers, and only the judges that could not score.
+- **Claude through OpenRouter.** `FT_EVAL_ROUTE_ANTHROPIC=openrouter` sends Claude calls through OpenRouter (the same models) when the direct key cannot be used. Results keep the model's name and record `via`.
 
 ### Results, October 8, 2026
 

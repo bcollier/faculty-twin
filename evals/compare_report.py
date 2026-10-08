@@ -74,8 +74,30 @@ def self_grading_pairs(generators: list[str], judges: list[str]) -> list[dict[st
 
 # ---------------------------------------------------------------- analysis
 
+def without_provider_errors(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Rows minus answers and judgements a provider outage spoiled (they say nothing about a model), and counts."""
+    kept, answers, judgements = [], 0, 0
+    by: dict[str, int] = defaultdict(int)
+    for r in rows:
+        if eval_core.is_provider_error(r):
+            answers += 1
+            by[r.get("generator", "?")] += 1
+            continue
+        r2 = dict(r)
+        for field in ("judgements", "judgements_retest"):
+            if r.get(field):
+                bad = [j for j in r[field] if eval_core.is_provider_error(j)]
+                judgements += len(bad)
+                for j in bad:
+                    by[j.get("judge", "?")] += 1
+                r2[field] = [j for j in r[field] if not eval_core.is_provider_error(j)]
+        kept.append(r2)
+    return kept, {"answers": answers, "judgements": judgements, "by_model": dict(sorted(by.items()))}
+
+
 def analyze(rows: list[dict[str, Any]], meta: dict[str, Any] | None = None, include_text: bool = False) -> dict[str, Any]:
     meta = dict(meta or {})
+    rows, provider_errors = without_provider_errors(rows)
     gens = meta.get("generators") or sorted({r["generator"] for r in rows})
     judges = meta.get("judges") or sorted({j["judge"] for r in rows for j in r.get("judgements", [])})
     web_path = not any(r.get("web_path") is False for r in rows)
@@ -142,6 +164,7 @@ def analyze(rows: list[dict[str, Any]], meta: dict[str, Any] | None = None, incl
         "inter_judge": inter_judge(rep1, judges),
         "questions_detail": question_detail(rows, gens, include_text) if include_text is not None else [],
         "plain": rel.PLAIN,
+        "provider_errors": provider_errors,
         "routed": {
             "answers": sum(1 for r in rows if (r.get("response") or {}).get("via")),
             "judgements": sum(1 for r in rows for j in (r.get("judgements") or []) + (r.get("judgements_retest") or [])
@@ -349,6 +372,12 @@ def markdown(a: dict[str, Any], detail: bool) -> str:
         L.append("- **The \"beyond the slides\" web path was not in the app for this run.** Web questions were expected "
                  "to be declined (route accuracy counts a decline as right); judges were told the expected behavior "
                  "is a web answer, so their scores show what students would lose without it.")
+    pe = a.get("provider_errors") or {}
+    if pe.get("answers") or pe.get("judgements"):
+        L.append(f"- **Provider errors (no credit or quota):** {pe['answers']} answers and {pe['judgements']} judgements "
+                 "were refused by their provider and are left out of every number here ("
+                 + ", ".join(f"`{k}` {v}" for k, v in pe["by_model"].items())
+                 + "). Running the same command on this folder asks exactly those again.")
     rt = a.get("routed") or {}
     if rt.get("answers") or rt.get("judgements"):
         L.append(f"- **Routing:** {rt['answers']} of {a['answers']} answers and {rt['judgements']} of "
