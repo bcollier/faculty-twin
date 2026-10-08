@@ -66,6 +66,8 @@ class Content:
     # Course-info index (Canvas pages, syllabus, assignments). Empty means the feature is off.
     info_records: list[dict[str, Any]] = field(default_factory=list)
     info_matrix: np.ndarray | None = None
+    # playlist.searchable's read-only slices of `matrix`, by (course filter, hidden sessions).
+    views: dict[Any, Any] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self.by_id = {r["id"]: i for i, r in enumerate(self.records)}

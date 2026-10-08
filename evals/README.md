@@ -144,7 +144,7 @@ By category (pass rate, % of judgements that passed, both judges pooled), it did
 What the judges' reasons point to:
 1. **A quiz access code was read aloud from a class transcript.** This is fixed in PR #35 (quiz-code slides left out, the sentences redacted, their clips dropped, the index re-uploaded), after this run.
 2. **Logistics questions scoring just above the threshold** (meeting, missed class, reschedule) got narrated slides instead of a clean "contact Ben" decline. Candidates to try: route logistics before retrieval (see docs/EXPLORATION_JEV.md), or re-check the threshold against these categories.
-3. **Some answers mix slides from two courses.** This comes from `select_segments` (Ben's code), which doesn't keep an answer within one course.
+3. **Some answers mix slides from two courses.** This came from `select_segments` (Ben's code then), which didn't keep an answer within one course. *Fixed Oct 8:* the rebuilt selection keeps one course per answer (see "Routing and retrieval only" below).
 4. **Narration sometimes adds specifics** (numbers, policies) the judges couldn't find in the slide material they were shown. Some of this may be the judges seeing truncated material (1,500 characters per slide).
 5. **One concept question was declined** because its course (45-851 Data Mining) isn't in the twin. That was the right call for the current content.
 
@@ -308,6 +308,28 @@ Right route was 86% for every model. Almost every real question is logistics, an
 
   Each judge repeats itself well, but the judges read teaching quality differently. Teaching scores need all three judges, not one.
 
+## Routing and retrieval only
+
+Added October 8, 2026 (the retrieval rebuild). `python -m evals.retrieval_check` asks every question through the same `answer()` path, "All courses", with the real index and retriever, and reports only which route answered and which slides it showed. No judges and no narration run: the route classifiers (logistics, web scope, instructor alert) are called once per question and cached in `evals/private/routing_cache/`, every other model call is refused (narration falls back to the notes), and the web answer is a stub. A second run, or a run with another threshold (`--threshold`), costs nothing. It prints aggregates only, never question text.
+
+Besides the measures above it reports slide recall (the share of a question's expected slides the answer showed), answers showing one slide twice, slides per answer, and hit and precision where **a copy counts**: a slide with the same words as an expected slide (the same slide in another session or the other course) counts as that slide. The two courses share many slides, so in "All courses" either copy is a right answer.
+
+October 8, before (`main` at #110) and after the rebuild, threshold 0.52:
+
+| Measure | Course set, before | Course set, after | Private set, before | Private set, after |
+| --- | --- | --- | --- | --- |
+| Right route | 35/44 | 35/44 | 19/22 | 19/22 |
+| Retrieval hit | 19/21 | 17/21 | n/a | n/a |
+| Retrieval hit, a copy counts | 19/21 | 19/21 | n/a | n/a |
+| Slide precision | 0.582 | 0.604 | n/a | n/a |
+| Slide precision, a copy counts | 0.650 | 0.699 | n/a | n/a |
+| Slide recall | 0.619 | 0.595 | n/a | n/a |
+| One course only | 16/24 | 24/24 | 1/2 | 2/2 |
+| Answers showing a slide twice | 7/24 | 0/24 | 0/2 | 0/2 |
+| Slides per answer | 4.17 | 3.54 | 4.5 | 4.5 |
+
+The two hits lost are copies: the answer shows the same slide from the other course. With each question's own course filter, hits hold at 19/21 and precision rises from 0.608 to 0.668. The rules and how each number was chosen: "Slide retrieval" in [docs/SPEC.md](../docs/SPEC.md).
+
 ## Settings > Evals
 
 The same rubric, judges and summary math also run from the Settings page on the live site (admin only), so a round can be started without the local build machine. The shared code is `app/eval_core.py` (this folder re-exports it, so CLI results and Settings results are computed the same way). How to run it, what it costs, and where its data lives: [docs/TESTING_AND_SCORES.md](../docs/TESTING_AND_SCORES.md#run-evals-from-settings). Settings reads the question set from the private bucket; upload it from `evals/private/questions.jsonl` with `python -m scripts.upload_eval_questions` (it runs `dataset.py`'s checks first). The October 5 baseline and October 7 run above are imported into its report card by `python -m scripts.import_eval_history`.
@@ -327,6 +349,9 @@ uv run --no-project --with-requirements requirements.txt python -m evals.run \
 uv run --no-project --with-requirements requirements.txt python -m evals.run \
   --questions evals/private/questions.jsonl --top 25 \
   --judge openai:gpt-6.1-sol --judge anthropic:claude-opus-5-5
+
+# Routing and retrieval only: no judges, no narration, aggregates only
+uv run --no-project --with-requirements requirements.txt python -m evals.retrieval_check
 ```
 
 Until `app/retrieval.py` is written, every question comes back as "retrieval not implemented yet", and the judges don't run.
