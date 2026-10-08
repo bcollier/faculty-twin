@@ -13,9 +13,9 @@ const PAGE = {
   bg: 'var(--surface)', ink: 'var(--ink)', ink2: 'var(--ink-2)', line: 'var(--line-strong)', accent: 'var(--accent)',
   soft: 'var(--accent-soft)', mark: 'var(--mark)', code: 'var(--code-bg)', warn: 'var(--warn)',
 };
-const LIGHT = {
-  bg: '#ffffff', ink: '#1d2126', ink2: '#464c55', line: '#b9b2a3', accent: '#2b5e6e', soft: '#e0ebee',
-  mark: '#fdf1bf', code: '#f9f8f4', warn: '#85620f',
+const LIGHT = {  // the light tokens in styles.css (collier.phd palette)
+  bg: '#fffefa', ink: '#1d2633', ink2: '#4a5463', line: '#8c8270', accent: '#2447a6', soft: '#e4eafb',
+  mark: '#ffe56b', code: '#fffefa', warn: '#855200',
 };
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';

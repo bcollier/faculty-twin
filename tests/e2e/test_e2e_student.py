@@ -237,3 +237,27 @@ def test_audio_failure_falls_back_to_captions(page, base_url):
     wait_for_player(page)
     expect(page.locator("#caption")).not_to_be_empty()
     expect(page.locator("#btn-mute")).to_be_disabled()  # captions only: nothing to mute
+
+
+# ---------------------------------------------------------------- arriving from collier.phd
+
+@pytest.mark.parametrize("motion", ["no-preference", "reduce"])
+def test_arriving_from_collier_phd_shows_the_frame_then_the_passcode_screen(page, base_url, motion):
+    page.emulate_media(reduced_motion=motion)
+    open_page(page, base_url, "&from=collier.phd")
+    # html.handoff is set before the first paint; the frame then slides away and is removed
+    expect(page.locator("#screen-login")).to_be_visible()
+    expect(page.locator("#handoff")).to_have_count(0, timeout=5_000)
+    assert page.evaluate("location.search") == "?mock=1"  # replaceState dropped only the from parameter
+    assert not page.evaluate("document.documentElement.classList.contains('handoff')")
+    expect(page.locator(".ho-draw")).to_have_count(0, timeout=5_000)  # the pen outline cleans up after itself
+    page.fill("#passcode", "demo")
+    page.click("#login-form button[type=submit]")
+    expect(page.locator("#screen-app")).to_be_visible()
+
+
+def test_without_the_parameter_there_is_no_hand_off(page, base_url):
+    open_page(page, base_url)
+    expect(page.locator("#screen-login")).to_be_visible()
+    assert not page.evaluate("document.documentElement.classList.contains('handoff')")
+    expect(page.locator("#handoff")).to_be_hidden()
