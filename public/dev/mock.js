@@ -256,6 +256,21 @@ const MODELS = {
   }),
 };
 
+const MOCK_PROMPTS = [
+  { name: 'narration_system', title: 'Narration (what the voice says)', used_by: 'app', testable: true,
+    description: 'Mock: the grounding prompt for every narrated answer.',
+    variables: { max_words: 'the hard cap per segment (110), also enforced in code', target_words: 'the target length (60 to 90)' },
+    required: ['max_words'], must_mention: ['slide_id', 'narration', 'segments'],
+    default: 'Mock narration prompt.\nWrite each narration in {target_words} words, never more than {max_words}.\nReply as JSON with segments of slide_id and narration.' },
+  { name: 'logistics_classifier', title: 'Logistics check', used_by: 'app', testable: true,
+    description: 'Mock: sorts course content from logistics.', variables: {}, required: [], must_mention: ['course_content', 'logistics'],
+    default: 'Mock classifier prompt. Reply course_content or logistics.' },
+  { name: 'eval_judge', title: 'Eval judge rubric', used_by: 'evals', testable: false,
+    description: 'Mock: the rubric judges score with.', variables: { dimensions: 'the six dimensions' }, required: ['dimensions'],
+    must_mention: ['scores', 'verdict'], default: 'Mock judge prompt.\n{dimensions}\nReply with scores and a verdict.' },
+].map(p => ({ ...p, current: p.default, is_overridden: false, updated_at: null, note: null, hash: 'default', history: [] }));
+const promptView = ({ history, ...p }) => ({ ...p });
+
 const MOCK_KINDS = ['course_content', 'course_content', 'stored_topic', 'faq', 'not_covered', 'logistics'];
 const LOG = Array.from({ length: 50 }, (_, i) => {
   const kind = MOCK_KINDS[i % MOCK_KINDS.length];
@@ -435,6 +450,43 @@ async function route(url, method, body) {
     return json(200, s);
   }
   if (path === '/api/admin/log') return json(200, LOG);
+
+  /* prompts (placeholder texts; the real ones live in app/prompts.py) */
+  if (path === '/api/admin/prompts') return json(200, { prompts: MOCK_PROMPTS.map(promptView), max_chars: 12000 });
+  if ((m = path.match(/^\/api\/admin\/prompts\/([a-z_]+)(?:\/(history|reset|restore|test))?$/))) {
+    const p = MOCK_PROMPTS.find(x => x.name === m[1]);
+    if (!p) return json(404, { detail: 'There is no prompt with that name.' });
+    const action = m[2];
+    if (action === 'history') return json(200, { versions: p.history.slice().reverse() });
+    if (action === 'test' && method === 'POST') {
+      await sleep(900);
+      if (!p.testable) return json(400, { detail: 'Eval prompts are tested by an eval run, not here.' });
+      return json(200, { ok: true, provider: 'anthropic', model: 'claude-sonnet-5-5', latency_ms: 912, errors: [],
+        output: { kind: 'course_content', narration_source: 'llm', segments: [{ slide_id: '70445-s06-012', narration: NARRATION[0] }], follow_ups: [] } });
+    }
+    const write = (text, note, reset = false) => {
+      const at = new Date();
+      p.history.push({ version: at.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '.$1000Z'),
+        saved_at: at.toISOString(), note: note || (reset ? 'Reset to the default.' : ''), text, hash: String(at.getTime()), previous_hash: null, reset });
+      p.current = text; p.is_overridden = !reset && text !== p.default;
+      p.updated_at = p.is_overridden ? at.toISOString() : null; p.note = p.is_overridden ? note : null;
+      p.hash = String(at.getTime());
+    };
+    if (method === 'PUT') {
+      await sleep(300);
+      if (!String(body?.text || '').trim()) return json(400, { detail: 'The prompt is empty.' });
+      for (const v of p.required) if (!body.text.includes(`{${v}}`)) return json(400, { detail: `Keep the placeholder {${v}}: the code fills it in.` });
+      write(body.text, body.note);
+      return json(200, promptView(p));
+    }
+    if (action === 'reset' && method === 'POST') { write(p.default, body?.note, true); return json(200, promptView(p)); }
+    if (action === 'restore' && method === 'POST') {
+      const v = p.history.find(x => x.version === body?.version);
+      if (!v) return json(400, { detail: 'There is no saved version with that id.' });
+      write(v.text, body?.note || `Restored the version saved ${v.saved_at.slice(0, 16).replace('T', ' ')} UTC.`, v.reset);
+      return json(200, promptView(p));
+    }
+  }
 
   return json(404, { detail: `mock: no route for ${method} ${path}` });
 }

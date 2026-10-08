@@ -27,6 +27,8 @@ from typing import Any, Callable, Protocol
 
 import httpx
 
+from app import prompts
+
 
 class Target(Protocol):
     name: str
@@ -176,11 +178,8 @@ class HttpTarget:
         )
 
 
-BASELINE_SYSTEM = (
-    "You are an AI teaching assistant for a university business analytics and AI course. A student "
-    "emailed the question below. Answer helpfully and concisely, in under 150 words, in plain sentences "
-    "that read well aloud. Reply with JSON only: {\"answer\": \"...\"}"
-)
+BASELINE_PROMPT = "eval_baseline"
+BASELINE_SYSTEM = prompts.default(BASELINE_PROMPT)  # the built-in default; Settings can edit it (app/prompts.py)
 
 
 class BaselineTarget:
@@ -210,7 +209,7 @@ class BaselineTarget:
 
         started = time.monotonic()
         try:
-            raw = self._llm._send(BASELINE_SYSTEM, f"Student question: {question}")
+            raw = self._llm._send(prompts.get(BASELINE_PROMPT), f"Student question: {question}")
             answer = str(rubric._extract_json(raw).get("answer") or "").strip()
         except (JudgeError, rubric.JudgementError, AttributeError, _json.JSONDecodeError) as exc:
             return _result("error", f"baseline failed: {str(exc)[:120]}")

@@ -58,10 +58,11 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("ADMIN_PASSCODE", "admin-pass")
     monkeypatch.delenv("CONTENT_DIR", raising=False)
 
-    from app import edge_voice, limits, playlist, settings_store, speech, storage
+    from app import edge_voice, limits, playlist, prompts, settings_store, speech, storage
 
     storage.store.reset()
     settings_store.clear_cache()
+    prompts.clear_local()
     limits.reset_memory()
     playlist.clear_hidden_cache()
     speech.clear_cache()
