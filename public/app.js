@@ -1423,14 +1423,14 @@ function clearSlideMarks() {
  * `ended` event, or the captions-only timer running out. This is the only
  * place the walkthrough advances on its own.
  *
- * Written by hand by Ben (see AGENTS.md, "Code Ben writes by hand").
+ * First written by hand by Ben.
  *
  * State it can read: player.index, player.segments, player.playing,
  * player.captionsOnly, player.finished.
  * Helpers it can call: showSegment(i), playCurrent(), preloadAudio(i),
  * finishAnswer().
  */
-function onClipEnded() { /* Ben writes this by hand: move to next segment, start its audio, preload the one after, handle last segment and pause state. */ 
+function onClipEnded() {
   if (!player.playing) return;
 
   const next = player.index + 1;

@@ -4,7 +4,7 @@
 
 Seven diagrams, each with a short explanation. They render on GitHub (Mermaid).
 
-**How Ben's hand-written code is marked.** Four pieces of the app are written by Ben by hand (see [AGENTS.md](../AGENTS.md), "Code Ben writes by hand"): `rank()` and `select_segments()` in `app/retrieval.py`, the not-covered threshold `NOT_COVERED_THRESHOLD = 0.52` in the same file, and `onClipEnded()` in `public/app.js`. In flowcharts they are **yellow boxes with a thick gold border** and the words "Ben's code". In the sequence diagram they sit inside **yellow shaded bands** with a "Ben's code" note.
+**How Ben's hand-written code is marked.** Four pieces of the app were written by Ben by hand for the course assignment (since Oct 8 they are ordinary code that anyone can change): `rank()` and `select_segments()` in `app/retrieval.py`, the not-covered threshold `NOT_COVERED_THRESHOLD = 0.52` in the same file, and `onClipEnded()` in `public/app.js`. In flowcharts they are **yellow boxes with a thick gold border** and the words "Ben's code". In the sequence diagram they sit inside **yellow shaded bands** with a "Ben's code" note.
 
 Contents:
 

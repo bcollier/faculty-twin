@@ -6,7 +6,7 @@ The conventions the code follows, so a change reads like the code around it. The
 
 ## What is never touched
 
-- **Ben's hand-written code** ([AGENTS.md](../AGENTS.md), "Code Ben writes by hand"): `rank()`, `select_segments()` and `NOT_COVERED_THRESHOLD` in `app/retrieval.py`, and `onClipEnded()` in `public/app.js`. Refactors work around them: the helpers `onClipEnded()` calls (`showSegment`, `playCurrent`, `preloadAudio`, `finishAnswer`) keep their names and behavior. `ruff.toml` skips `app/retrieval.py` entirely, so the linter never asks for an edit there.
+- *Changed Oct 8:* `app/retrieval.py` and `onClipEnded()` in `public/app.js` were Ben's hand-written code for the course assignment. The assignment is over, so they are ordinary code now: they can be edited like anything else, and `ruff` lints `app/retrieval.py` too.
 - **Behavior.** A clean-code change keeps every output the same: the test suite, the browser tests and the mock contract test are the safety net. Where a cleaner version would change an output (a stored file format, a cache key, a log message Settings shows), the old behavior stays and a comment says why.
 
 ## Python

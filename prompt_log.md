@@ -1406,3 +1406,22 @@ Two tests were added in `tests/test_retrieval.py`:
 - **Labeling:** the card names the model.
 - **Unapproved model:** a model-knowledge part is dropped when the active model isn't on the list.
 - **Safety rules:** drafted the replacement "Safety rules for the voice" for `AGENTS.md`. It goes in with the first Stage 3 PR rather than now, because until then the code still grounds every spoken word in course material.
+
+## Post-assignment session, Thursday October 8, 2026
+
+**Tool:** Claude Code, Claude Opus 5.5.
+
+### Prompt (Oct 8)
+
+> the assignment part of ths project is over. remove any limitations in the agent script or repo such as "this is code Ben wants to write" for retrieval, this is now just a useful project I will improve not a course assignment
+
+**Response summary.** Removed the assignment-era limits:
+- **`AGENTS.md`:** dropped the "Code Ben writes by hand" section and its `Retrieval-Change-Requested-By: Ben` trailer rule, the "stay inside the current tier / until after submission" scope rule, and the grading wording. The intro now says it started as 15-113 Project 2 and is now a project I keep improving.
+- **The guard test:** removed the test in `tests/test_thresholds.py` that failed any branch editing `app/retrieval.py` without the trailer.
+- **Lint:** `ruff.toml` no longer skips `app/retrieval.py`. It passes lint as is, and `tests/test_ci_config.py` now checks that it's linted.
+- **Docs and comments:**
+  - The spec gets a "Changed Oct 8" note at the top and in "Code Ben writes by hand": that section is history, not a rule.
+  - `docs/CODE_STYLE.md`, `docs/ARCHITECTURE.md`, `app/README.md`, `public/README.md` and the AGENTS row in the README's AI-written docs table now say these pieces were first written by me, without "agents do not edit".
+  - Removed stale "Ben writes this by hand" stubs in `app/retrieval.py`, `public/app.js` and `indexer/pregenerate.py`, and the "fail until Ben writes" note in `tests/test_retrieval.py`.
+- **Left as is:** branch, PR and squash merge, secrets, privacy, the voice safety rules (those change in V2 Stage 3), the prompt log itself, the rule that I write the README, and the demo script (a record of the submission).
+- **Checked:** full test suite, 1604 passed and 5 skipped. `ruff check .` and `node --check public/app.js` pass.

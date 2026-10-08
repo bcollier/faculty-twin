@@ -44,7 +44,7 @@ def test_workflow_lints_with_the_repo_ruff_rules():
     rules = (ROOT / "ruff.toml").read_text(encoding="utf-8")
     for code in ['"E"', '"F"', '"I"', '"B"', '"UP"', '"SIM"']:
         assert code in rules, code
-    assert '"app/retrieval.py" = ["ALL"]' in rules  # Ben's hand-written retrieval is never linted into edits
+    assert '"app/retrieval.py" = ["ALL"]' not in rules  # retrieval is linted like the rest of the code
     assert "ruff.toml" in _lines(ROOT / ".vercelignore")
 
 

@@ -443,7 +443,7 @@ The pipeline, eval and CI diagrams, every endpoint with the file and function th
 | --- | --- |
 | `README.md` | This file. Ben's sections, then this AI-written guide |
 | `prompt_log.md` | The prompts used to build the project, verbatim (required next to the README) |
-| `AGENTS.md` | Rules for AI coding agents in this repo (branching, Ben's hand-written code, privacy, copy) |
+| `AGENTS.md` | Rules for AI coding agents in this repo (branching, privacy, copy) |
 | [`app/`](app/README.md) | The backend: one FastAPI app on Vercel. Routing, retrieval (`retrieval.py`, Ben's code), narration, voice, signed links, Settings API |
 | [`public/`](public/README.md) | The frontend: the student page (`index.html`, `app.js` with Ben's `onClipEnded()`), the Settings page (`admin.html` and its scripts), styles |
 | [`indexer/`](indexer/README.md) | The content pipeline and the upload worker, run on the local build machine |
