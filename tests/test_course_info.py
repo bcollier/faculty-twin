@@ -392,3 +392,17 @@ def test_frontend_reuses_faq_card_for_course_info():
     for text in (app_js, admin_js):
         line = next(l for l in text.splitlines() if "course_info" in l)
         assert "—" not in line
+
+
+def test_answer_a_few_words_over_the_cap_is_trimmed_not_thrown_away():
+    # Oct 8 code review: Opus 5.5 wrote 122-126 word answers to an O'Reilly access question, and going a
+    # few words over the 120-word cap replaced a good grounded answer with the raw Canvas text.
+    sentence = "I allow AI tools for brainstorming and debugging, and you must say how you used them in a short note."
+    long_answer = " ".join([sentence] * 7)  # 7 x 20 = 140 words
+    assert len(long_answer.split()) > course_info.MAX_WORDS
+    model = FakeModel(info_reply=json.dumps({"answer": long_answer}))
+    result = course_info.answer("What does the syllabus say about AI tools?", None, _hits("info-70445-syllabus-1"),
+                                [], model)
+    assert result.source == "llm", result.errors
+    text = result.reply["answers"][0]["text"]
+    assert len(text.split()) <= course_info.MAX_WORDS and text.endswith(".")

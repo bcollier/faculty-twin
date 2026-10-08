@@ -181,8 +181,11 @@ def validate(raw: str, ground: narration.Grounding) -> str:
     text = narration.clean_speech(data["answer"])
     if not text:
         raise ValidationError("empty answer")
-    if narration.word_count(text) > MAX_WORDS:
+    # A few words over the cap keeps its whole sentences that fit (Oct 8: Opus 5.5 wrote 122-126 words).
+    trimmed = narration.trim_to_sentences(text, MAX_WORDS)
+    if trimmed is None:
         raise ValidationError(f"answer is {narration.word_count(text)} words")
+    text = trimmed
     bad = problem(text)
     if bad:
         raise ValidationError(bad)
