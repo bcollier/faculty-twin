@@ -48,6 +48,7 @@ def cached_classifier(complete: Callable[..., str], cache_dir: Path | None = Non
 
     def completer(system: str, user: str, max_tokens: int, provider: str | None = None, model: str | None = None,
                   **_: Any) -> str:
+        """A route classifier's reply from the cache (else the model, then cached); any other call is refused."""
         purpose = usage.current_purpose()
         if purpose not in CLASSIFIERS:
             raise llm.LLMError(f"retrieval check: no {purpose} call")
@@ -163,6 +164,7 @@ def table(results: dict[str, dict[str, Any]]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Ask every question in each file through the real answer path and print the routing and retrieval scores."""
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--questions", action="append", help="a question file (default: the course set and the "
                                                         "private set when it exists)")

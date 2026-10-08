@@ -16,7 +16,7 @@ groundedness as null.
 In-process is the main mode: run it on the local build machine, which holds the
 built index, with keys from the git-ignored `.env`. It calls `app.main.answer`,
 the same function `/api/ask` calls, with the real retriever, so it reports
-`retrieval_not_ready` until Ben's hand-written retrieval lands.
+`retrieval_not_ready` if app/retrieval.py raises NotImplementedError.
 """
 
 from __future__ import annotations

@@ -238,9 +238,9 @@ def other_course_ranked(ranked: list[tuple[int, float]], records: list[dict[str,
                         course: str) -> list[tuple[int, float]]:
     """`ranked` (over every course's slides) without the pairs for `course`: indexes still point into `records`.
 
-    Added Oct 8 (the frames question filtered to 45-884): Ben's select_segments() runs on these pairs with the
-    unfiltered records list, so it can only pick the other course's slides (its gap fills come from the same
-    session as two picked slides).
+    Added Oct 8 (the frames question filtered to 45-884): select_segments() (app/retrieval.py) runs on these
+    pairs with the unfiltered records list, so it can only pick the other course's slides (its gap fills come
+    from the same session as two picked slides).
     """
     return [(i, s) for i, s in ranked if 0 <= i < len(records) and str(records[i].get("course")) != course]
 
