@@ -37,11 +37,11 @@ from . import (
     logistics,
     playlist,
     prompts,
-    retrieval,
     settings_store,
     speech,
     storage,
     supa,
+    thresholds,
     voices,
 )
 from .main import (
@@ -624,7 +624,8 @@ def infer_kind(row: dict[str, Any]) -> str:
         return STORED_TOPIC if score is None else logistics.COURSE_CONTENT
     if score is None:
         return faq.KIND
-    if retrieval.NOT_COVERED_THRESHOLD is not None and float(score) >= retrieval.NOT_COVERED_THRESHOLD:
+    threshold = thresholds.slide_threshold()  # today's effective value (Settings override, else Ben's)
+    if threshold is not None and float(score) >= threshold:
         return logistics.LOGISTICS
     return NOT_COVERED
 

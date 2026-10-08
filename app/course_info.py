@@ -7,8 +7,8 @@ index of Canvas material after the course FAQ and before slide narration:
 
 1. The question is embedded once; the same vector scores the slides and the
    info chunks, both with Ben's `rank()` (app/retrieval.py, unchanged).
-2. When the best info chunk scores at least `INFO_THRESHOLD` (env, default
-   0.55) and beats the best slide, the top 3 chunks go to one model call
+2. When the best info chunk scores at least the info threshold (Settings
+   override, else env `INFO_THRESHOLD`, else 0.55; app/thresholds.py) and beats the best slide, the top 3 chunks go to one model call
    through app/llm.py (the active provider and model) with a strict grounding
    prompt: Ben's first-person voice, at most 120 words, only from the chunks.
 3. The reply is validated (word cap, no web addresses, no `[student]`, no
@@ -31,10 +31,10 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
-from . import config, faq, narration, prompts
+from . import config, faq, narration, prompts, thresholds
 
 KIND = "course_info"
-DEFAULT_THRESHOLD = 0.55
+DEFAULT_THRESHOLD = thresholds.DEFAULT_INFO  # 0.55
 TOP_CHUNKS = 3
 MAX_WORDS = 120
 MAX_TOKENS = 600
@@ -77,14 +77,8 @@ class Result:
 
 
 def threshold() -> float:
-    raw = config.env("INFO_THRESHOLD")
-    if raw is None:
-        return DEFAULT_THRESHOLD
-    try:
-        return float(raw)
-    except ValueError:
-        config.log.warning("INFO_THRESHOLD is not a number; using %s", DEFAULT_THRESHOLD)
-        return DEFAULT_THRESHOLD
+    """The Settings override (`info_threshold`), else env `INFO_THRESHOLD`, else 0.55. Read per question."""
+    return thresholds.info_threshold()
 
 
 def searchable(content: Any, course: Optional[str]) -> tuple[list[dict[str, Any]], Optional[np.ndarray]]:

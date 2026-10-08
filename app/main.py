@@ -35,6 +35,7 @@ from . import (
     settings_store,
     speech,
     storage,
+    thresholds,
     voices,
 )
 from .storage import Content
@@ -110,7 +111,8 @@ class Retriever:
 
 
 def get_retriever() -> Retriever:
-    return Retriever(retrieval.rank, retrieval.select_segments, retrieval.NOT_COVERED_THRESHOLD)
+    # The threshold is read per request (Settings override, else Ben's value in retrieval.py).
+    return Retriever(retrieval.rank, retrieval.select_segments, thresholds.slide_threshold())
 
 
 def get_embedder() -> Callable[[str], np.ndarray]:
@@ -236,7 +238,7 @@ def answer(
     best_slide = float(ranked[0][1]) if ranked else None
     info["top_score"] = best_slide
 
-    # Course info from Canvas (spec step 6a): wins when it clears INFO_THRESHOLD and beats every slide.
+    # Course info from Canvas (spec step 6a): wins when it clears the info threshold and beats every slide.
     hits = course_info.top_hits(info_ranked, info_records)
     if hits and hits[0].score >= course_info.threshold() and (best_slide is None or hits[0].score > best_slide):
         used_model()
@@ -464,3 +466,4 @@ def dev_file(
 from .admin import router as admin_router  # noqa: E402  (admin imports answer() from here)
 
 app.include_router(admin_router)
+app.include_router(thresholds.router)

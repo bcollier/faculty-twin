@@ -138,6 +138,7 @@ async function enter(status) {
   loadCourses();
   loadActivity();
   loadPrompts();
+  loadThresholds();
 }
 
 /* ---------------- keys / status ---------------- */
@@ -736,6 +737,61 @@ $('#pass-form').addEventListener('submit', async (e) => {
     say(st, 'Passcode changed. Share the new one with the class.', 'ok');
   } catch (ex) { if (!(ex instanceof AuthError)) say(st, errText(ex), 'err'); }
 });
+
+/* ---------------- 4b. answer thresholds ---------------- */
+
+const TH = {
+  slide: { key: 'slide_threshold', input: '#slide-th', now: '#slide-th-now', status: '#slide-th-status', name: 'Slide threshold' },
+  info: { key: 'info_threshold', input: '#info-th', now: '#info-th-now', status: '#info-th-status', name: 'Course-info threshold' },
+};
+const TH_SOURCE = { code: 'my code default', env: 'the INFO_THRESHOLD environment variable', settings: 'a Settings override' };
+const fmtTh3 = (v) => (typeof v === 'number' ? String(Math.round(v * 1000) / 1000) : 'none');
+
+function renderThresholds(d) {
+  if (!d) return;
+  const s = d.slide || {}, i = d.info || {};
+  $('#slide-th').value = s.value ?? '';
+  $('#info-th').value = i.value ?? '';
+  $('#slide-th-now').textContent = `Slides scoring ${fmtTh3(s.value)} or higher are used. Source: ${TH_SOURCE[s.source] || s.source}` +
+    (s.source === 'settings' ? ` (default ${fmtTh3(s.default)}).` : '.');
+  $('#info-th-now').textContent = `A Canvas answer needs ${fmtTh3(i.value)} or higher and must beat the best slide. Source: ${TH_SOURCE[i.source] || i.source}` +
+    (i.source === 'settings' ? ` (default ${fmtTh3(i.default)}).` : '.');
+  $('#slide-th-reset').disabled = s.source !== 'settings';
+  $('#info-th-reset').disabled = i.source !== 'settings';
+  const hist = asList(d.history).slice(0, 5);
+  $('#th-history').replaceChildren(...(hist.length ? hist.map(h => el('li', {
+    text: `${fmtWhen(h.at)}, ${h.who || 'admin'}: ${h.setting === 'info_threshold' ? 'course-info' : 'slide'} threshold ${fmtTh3(h.old)} to ${fmtTh3(h.new)}` +
+      (h.source && h.source !== 'settings' ? ` (reset to ${TH_SOURCE[h.source] || h.source})` : ''),
+  })) : [el('li', { class: 'muted', text: 'No changes yet.' })]));
+}
+
+async function loadThresholds() {
+  try {
+    const r = await api('/api/admin/thresholds');
+    if (r.ok) renderThresholds(r.data);
+  } catch (e) { /* auth handled in api() */ }
+}
+
+async function saveThreshold(which, value) {
+  const t = TH[which];
+  const st = $(t.status);
+  if (value !== null && !(Number.isFinite(value) && value >= 0.3 && value <= 0.9)) { say(st, 'Use a number from 0.30 to 0.90.', 'err'); return; }
+  try {
+    const r = await api('/api/admin/thresholds', { method: 'PUT', body: { [t.key]: value } });
+    if (!r.ok) { say(st, detail(r), 'err'); return; }
+    renderThresholds(r.data);
+    say(st, value === null ? `${t.name} reset to the default. Run an eval to check it.` : `Saved. Run an eval to check the new value.`, 'ok');
+  } catch (ex) { if (!(ex instanceof AuthError)) say(st, errText(ex), 'err'); }
+}
+
+for (const which of Object.keys(TH)) {
+  $(`#${which}-th-form`).addEventListener('submit', (e) => {
+    e.preventDefault();
+    const raw = $(TH[which].input).value.trim();
+    saveThreshold(which, raw === '' ? NaN : Number(raw));
+  });
+  $(`#${which}-th-reset`).addEventListener('click', () => saveThreshold(which, null));
+}
 
 /* ---------------- 5. activity ---------------- */
 
