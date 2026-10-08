@@ -166,7 +166,7 @@ A model can now propose one small slide per answer, and Ben can draft slides in 
 2. **Mock mode only on local hosts** (L10). `app.js` and `admin.js` load `./dev/mock.js` only when `location.hostname` is `localhost`, `127.0.0.1`, or `[::1]` and `?mock=1` is present.
 3. **`/complete` after an upload** (L9). Settings calls `POST /api/admin/sources/{id}/complete` after the PUT; a 409 says storage has not confirmed the file yet (listing sources promotes it once it appears); `/rerun` stays on the Re-run button. The mock answers `/complete` too.
 4. **Model warning.** Settings shows `model_warning` next to the live model and in the save status; a refused OpenRouter price comes back as the save error.
-5. **CSP check (Ben, after deploy).** Load both pages on a preview deploy with DevTools open and confirm there are no CSP violations (the policy allows Supabase images, clips, and uploads, ElevenLabs preview audio on `storage.googleapis.com` or `*.elevenlabs.io`, and `data:`/`blob:` for the mock and the silent audio unlock). If Supabase is on a custom domain, add it to `img-src`, `media-src`, and `connect-src` in `vercel.json`.
+5. **CSP check (Ben, after deploy).** Load both pages on a preview deploy with DevTools open and confirm there are no CSP violations (the policy allows Supabase images, clips, and uploads, ElevenLabs preview audio on `storage.googleapis.com` or `*.elevenlabs.io`, `data:`/`blob:` for the mock and the silent audio unlock, and, since Oct 8, the collier.phd fonts: `https://fonts.googleapis.com` in `style-src` and `https://fonts.gstatic.com` in `font-src`). If Supabase is on a custom domain, add it to `img-src`, `media-src`, and `connect-src` in `vercel.json`.
 
 ## 7. CMU Digital Twin guide checklist
 

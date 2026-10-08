@@ -1,0 +1,85 @@
+/* The hand-off frame ("sticky note to legal pad"), team brief UPDATE 12.
+   Shared by both sides of the hand-off, so keep this file identical in bcollier/ben.collier.phd and
+   bcollier/faculty-twin: the launcher on ben.collier.phd ends on this frame, and the twin paints it
+   first when it opens with ?from=collier.phd. Every number that has to match lives here.
+
+   Markup (both sides):
+     <div class="handoff-frame" aria-hidden="true">
+       <div class="handoff-ink">
+         <svg class="handoff-text" ...>  (or <span class="handoff-text">Opening the course assistant...</span>)
+         <span class="handoff-underline"></span>
+       </div>
+     </div>
+   The text is Kalam 400, 32px on a 32px line, top-left corner at (96px, 96px), so its baseline sits at
+   y = 120.5px. The twin draws it as outlined Kalam glyphs (the same shapes, no font download) so it is
+   there on the first paint. */
+
+:root {
+  --ho-legal: #fff2ad;              /* --legal on collier.phd */
+  --ho-margin: #e7a2a0;             /* --margin: the red margin line */
+  --ho-rule: rgba(64, 120, 168, .28); /* --rule: faint blue ruled lines */
+  --ho-ink: #1d2633;                /* --ink */
+  --ho-pen: #2447a6;                /* --pen: the underline */
+  --ho-hand: "Kalam", "Comic Sans MS", cursive;
+
+  --ho-margin-x: 64px;              /* left edge of the margin line */
+  --ho-margin-w: 2px;
+  --ho-rule-top: 128px;             /* first ruled line */
+  --ho-rule-gap: 32px;              /* then one every 32px */
+  --ho-rule-w: 1px;
+  --ho-text-x: 96px;                /* top-left of the text's line box */
+  --ho-text-y: 96px;
+  --ho-text-size: 32px;
+  --ho-text-line: 32px;
+  --ho-text-w: 415px;               /* advance width of the text at 32px */
+  --ho-underline-y: 40px;           /* below the text top: 136px on the page */
+  --ho-underline-len: 360px;
+  --ho-underline-w: 3px;
+  --ho-scale: 1;                    /* text and underline scale together on narrow screens */
+
+  --ho-ease: cubic-bezier(.2, .8, .2, 1);
+  --ho-launch-ms: 650ms;            /* collier.phd: note lifts and expands into this frame */
+  --ho-reveal-ms: 450ms;            /* twin: this frame slides up and fades */
+  --ho-reduced-ms: 150ms;           /* prefers-reduced-motion: a crossfade on both sides */
+}
+/* Below 608px the 415px line would run off the page: text and underline scale to 58% (240px of text). */
+@media (max-width: 607px) {
+  :root { --ho-scale: .58; }
+}
+
+.handoff-frame {
+  position: fixed; inset: 0; z-index: 2147483000;
+  margin: 0; padding: 0; overflow: hidden; pointer-events: none;
+  color: var(--ho-ink);
+  background-color: var(--ho-legal);
+  background-image:
+    linear-gradient(90deg,
+      transparent var(--ho-margin-x),
+      var(--ho-margin) var(--ho-margin-x),
+      var(--ho-margin) calc(var(--ho-margin-x) + var(--ho-margin-w)),
+      transparent calc(var(--ho-margin-x) + var(--ho-margin-w))),
+    repeating-linear-gradient(180deg,
+      var(--ho-rule) 0, var(--ho-rule) var(--ho-rule-w),
+      transparent var(--ho-rule-w), transparent var(--ho-rule-gap));
+  background-size: 100% 100%, 100% calc(100% - var(--ho-rule-top));
+  background-position: 0 0, 0 var(--ho-rule-top);
+  background-repeat: no-repeat;
+}
+.handoff-ink {
+  position: absolute; left: var(--ho-text-x); top: var(--ho-text-y);
+  width: var(--ho-text-w); height: var(--ho-text-line);
+  transform: scale(var(--ho-scale)); transform-origin: 0 0;
+}
+.handoff-text {
+  display: block; margin: 0; padding: 0;
+  width: var(--ho-text-w); height: var(--ho-text-line); overflow: visible;
+  font: 400 var(--ho-text-size)/var(--ho-text-line) var(--ho-hand);
+  color: var(--ho-ink); fill: currentColor; white-space: nowrap; letter-spacing: 0;
+}
+.handoff-underline {
+  position: absolute; left: 0; top: var(--ho-underline-y);
+  width: var(--ho-underline-len); height: var(--ho-underline-w);
+  border-radius: var(--ho-underline-w);
+  background: var(--ho-pen);
+  transform-origin: 0 50%;
+}

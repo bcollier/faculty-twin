@@ -2,6 +2,8 @@
 
 *Taken by Claude Code (Claude Opus 5.5) on October 8, 2026, from the live site https://faculty-twin.vercel.app.*
 
+> **Older look (Oct 8, collier.phd restyle).** The student page and Settings now use the look of collier.phd (docs/SPEC.md, "Look and feel"). The shots from the live site below were taken before that change and still show the old look until they are retaken after the restyle is deployed. The mock shots at the bottom show the new look.
+
 ## How they were taken
 
 - Headless Google Chrome driven by Playwright. Desktop shots are 1440 x 900; phone shots are 390 x 844 at 2x (780 x 1688 pixels). Light mode, except the one dark-mode shot.
@@ -49,10 +51,11 @@
 
 ## Mock screenshots (placeholder content, `?mock=1`, taken headless)
 
-These come from the dev mock (`public/dev/mock.js`), not the live site: the words are placeholders and no course material is shown.
+These come from the dev mock (`public/dev/mock.js`), not the live site: the words are placeholders and no course material is shown. Retaken on October 8, 2026 in the collier.phd look (headless Chromium, 1440 x 900, light mode, `?mock=1`).
 
 | File | What it shows |
 | --- | --- |
-| [web-answer-card-mock.webp](web-answer-card-mock.webp) | "Beyond my slides: from the web": the amber label, the answer, a Listen button in a stock voice, source links, and "Closest material in my course" |
+| [web-answer-card-mock.webp](web-answer-card-mock.webp) | "Beyond my slides: from the web": the pink highlighter label, the answer, a Listen button in a stock voice, source links, and "Closest material in my course" |
 | [helper-slide-diagram-mock.webp](helper-slide-diagram-mock.webp) | An AI-drawn helper slide, diagram kind (cycle layout), drawn by `public/helper-slide.js` from a JSON spec, labeled "AI-drawn slide, not from my course" |
 | [helper-slide-code-mock.webp](helper-slide-code-mock.webp) | An AI-drawn helper slide, code kind: Python shown with line numbers and two callouts. The code is only displayed |
+| [handoff-arrival-mock.webp](handoff-arrival-mock.webp) | Arriving from collier.phd (`?from=collier.phd`), frames at 0, 150, 300 and 450 ms of the reveal: the HANDOFF FRAME (legal pad, "Opening the course assistant..."), the page sliding up and fading, and the question box drawing its border in pen. Frame 0 matches the reference frame pixel for pixel. Captured by freezing the page's animations with the Chrome DevTools Animation domain and seeking them |

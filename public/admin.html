@@ -6,6 +6,11 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="color-scheme" content="light dark">
   <title>Faculty Twin Settings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link id="site-fonts" rel="stylesheet" media="print" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Kalam:wght@400;700&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Young+Serif&display=swap">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Kalam:wght@400;700&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Young+Serif&display=swap"></noscript>
+  <script src="fonts.js"></script>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="analytics.css">
   <script type="module" src="admin.js"></script>
@@ -29,7 +34,7 @@
 
   <main id="a-login" class="screen-center" hidden>
     <form id="a-login-form" class="card narrow" novalidate>
-      <p class="eyebrow">Faculty Twin</p>
+      <p class="eyebrow logo">Faculty Twin</p>
       <h1 class="title-sm">Settings</h1>
       <p id="a-login-note" class="note" hidden></p>
       <label class="field-label" for="a-passcode">Admin passcode</label>
@@ -44,7 +49,7 @@
   <div id="a-app" class="admin" hidden>
     <header class="admin-head">
       <div>
-        <p class="eyebrow">Faculty Twin</p>
+        <p class="eyebrow logo">Faculty Twin</p>
         <h1 class="title-sm">Settings</h1>
       </div>
       <p class="muted small" id="a-index-version"></p>
@@ -446,6 +451,8 @@
         <h3 class="an-h" id="an-pricing-h">Price table</h3>
         <p class="an-note muted small">Defaults were read from each provider's public price page on the date shown and are marked "verify". Edit a price and save; models you add here are used for the estimate. OpenRouter models not listed use OpenRouter's live price.</p>
         <div id="an-pricing"></div>
+      </section>
+
       <!-- 8. Evals -->
       <section class="panel" id="sec-evals" aria-labelledby="evals-h">
         <h2 id="evals-h">Evals</h2>

@@ -10,7 +10,9 @@ Plain HTML, CSS and JavaScript, with no framework and no build step. Vercel serv
 | --- | --- |
 | `index.html` | The student page: passcode screen, idle screen (course filter, question box, chips), the stage (slide, code panel, clip, caption, controls, source card) and the chat dock |
 | `app.js` | The student page's logic: login, `ask()`, stage messages (not covered, FAQ, From Canvas, logistics), the source card and sources list, and the player. **`onClipEnded()` is Ben's hand-written code**: it runs when a narration clip ends, shows the next segment, plays it, preloads the one after, and finishes after the last |
-| `styles.css` | Styles for both pages, light and dark |
+| `styles.css` | Styles for both pages, light and dark, in the look of collier.phd (grid paper, index cards, a legal-pad caption strip, highlighter tags, sticky-note follow-ups; tokens and fonts copied from the site's `css/site.css`) |
+| `fonts.js` | Switches on the Google Fonts stylesheet without blocking the first paint (the CSP allows no inline `onload`) |
+| `handoff.css`, `handoff-text.svg`, `handoff.js` | Arriving from collier.phd: `handoff.css` is the shared HANDOFF FRAME and `handoff-text.svg` its text as Kalam glyph outlines (both byte-identical to `css/handoff.css` and `assets/handoff-text.svg` in the ben.collier.phd repo, and inlined in `index.html`; `tests/test_handoff.py` checks the inline copies); `handoff.js` shows it first when the URL has `?from=collier.phd`, then slides it away and draws the question box's border |
 | `admin.html` | The Settings page (admin passcode, never linked from the student page): Model, Voice, Courses and source material, Limits and access (with Answer thresholds), Activity, Prompts, Analytics, Evals |
 | `admin.js` | Settings: Model, Voice, Courses and uploads, Limits, thresholds, Activity, Prompts |
 | `admin-analytics.js`, `analytics.css` | Settings > Analytics: tiles, spend, tokens, topics, engagement and the price table, drawn as inline SVG with a zero baseline |
@@ -23,7 +25,7 @@ The player is a small state machine (`player` in `app.js`): the current segment,
 
 ## How it connects
 
-- Calls only `/api/*` on the same origin (the Content-Security-Policy in `vercel.json` allows nothing else except signed Supabase media links).
+- Calls only `/api/*` on the same origin (the Content-Security-Policy in `vercel.json` allows nothing else except signed Supabase media links, and the Google Fonts stylesheet and font files of the collier.phd look).
 - Sends `source` (`chip`, `typed`, `follow_up`) with each question and allowlisted usage events to `/api/event` for Settings > Analytics.
 
 ## Commands
