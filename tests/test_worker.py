@@ -111,6 +111,36 @@ def test_failed_global_stage_marks_rows_error(archive):
     assert (archive / COURSE_DIR / "2026 Fall" / "01 2026-09-01 Fruit basics" / "notebooks" / "demo.ipynb").exists()
 
 
+def test_unexpected_crash_in_a_global_stage_marks_rows_error_and_keeps_polling(archive):
+    # Oct 8 code review: only WorkerError was caught around build_index/upload, so an OSError or
+    # KeyError from either one killed the worker and left every claimed row "processing".
+    sb = FakeSB([row(10, "notebook", "demo.ipynb")], {"inbox/70445/s01/notebook/demo.ipynb": b"{}"})
+
+    def global_runner(stage):
+        raise KeyError("records")
+
+    w = worker.Worker(sb, archive, lambda *a: None, global_runner)
+    assert w.poll_once() == 1
+    assert sb.rows[0]["status"] == "error"
+    assert "KeyError" in sb.rows[0]["message"] and "records" not in sb.rows[0]["message"]
+
+
+def test_loop_survives_an_unexpected_poll_error(archive):
+    w = worker.Worker(FakeSB([], {}), archive, lambda *a: None, lambda st: None)
+    polls = []
+
+    def boom():
+        polls.append(1)
+        if len(polls) == 1:
+            raise RuntimeError("disk full")
+        w.stopper.stop.set()
+        return 0
+
+    w.poll_once = boom
+    w.loop(interval=0)
+    assert len(polls) == 2
+
+
 def test_only_uploaded_rows_are_claimed(archive):
     rows = [row(1, "transcript", "a.vtt", status="pending_upload"), row(2, "transcript", "b.vtt", status="ready")]
     sb = FakeSB(rows, {})
