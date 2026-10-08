@@ -129,12 +129,21 @@ def check_ask_rate(visitor_hash: str, address_hash: str | None = None, now: floa
             (f"rl:addr-day:{address_hash}:{day}", config.PER_ADDRESS_DAY_LIMIT, 172800,
              "Your network has reached today's question limit. Please come back tomorrow."),
         ]
+    taken: list[tuple[str, int]] = []
     for key, cap, ttl, message in checks:
         ok, _ = increment(key, 1, cap=cap, ttl_seconds=ttl)
         if not ok:
+            _give_back(taken, 1)  # a refused question uses no one's quota (Oct 8 code review)
             increment(f"rate_limited:{_today()}", 1)
             raise HTTPException(429, message)
+        taken.append((key, ttl))
     increment(f"questions:{_today()}", 1)
+
+
+def _give_back(taken: list[tuple[str, int]], amount: int) -> None:
+    """Undo increments already made for a request that was then refused. Best effort, no cap."""
+    for key, ttl in taken:
+        increment(key, -amount, ttl_seconds=ttl, fail_open=False)  # on a database error, skip (never in memory)
 
 
 # ---------------------------------------------------------------- global spend caps
@@ -262,16 +271,29 @@ def take_voice_chars(
     """
     if cap <= 0:
         return False
-    prefix = VOICE_POOLS[pool]
-    share = max(int(cap * config.VOICE_VISITOR_SHARE), 1)
-    day = _today()
-    for who in (visitor_hash and f"v:{visitor_hash}", address_hash and f"a:{address_hash}"):
-        if who:
-            ok, _ = increment(f"{prefix}_share:{who}:{day}", chars, cap=share, fail_open=False)
-            if not ok:
-                return False
-    ok, _ = increment(voice_key(pool), chars, cap=cap, fail_open=False)
-    return ok
+    taken = [(key, 172800) for key in _voice_keys(visitor_hash, address_hash, pool)]
+    for i, (key, _ttl) in enumerate(taken):
+        is_pool = i == len(taken) - 1
+        limit = cap if is_pool else max(int(cap * config.VOICE_VISITOR_SHARE), 1)
+        ok, _ = increment(key, chars, cap=limit, fail_open=False)
+        if not ok:
+            _give_back(taken[:i], chars)  # refused characters use no one's share (Oct 8 code review)
+            return False
+    return True
+
+
+def _voice_keys(visitor_hash: str | None, address_hash: str | None, pool: str) -> list[str]:
+    """The counters one voice request charges: the visitor's share, the address's share, then the pool."""
+    prefix, day = VOICE_POOLS[pool], _today()
+    keys = [f"{prefix}_share:{who}:{day}"
+            for who in (visitor_hash and f"v:{visitor_hash}", address_hash and f"a:{address_hash}") if who]
+    return keys + [voice_key(pool)]
+
+
+def give_back_voice_chars(chars: int, visitor_hash: str | None = None, address_hash: str | None = None,
+                          pool: str = "voice") -> None:
+    """Return characters taken by `take_voice_chars` when the voice service then failed before any audio."""
+    _give_back([(key, 172800) for key in _voice_keys(visitor_hash, address_hash, pool)], chars)
 
 
 def today_counters() -> dict[str, int]:
