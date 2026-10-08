@@ -40,9 +40,10 @@ import argparse
 import random
 import sys
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 import numpy as np
@@ -69,7 +70,7 @@ EXIT_OK, EXIT_PENDING, EXIT_LEAK = 0, 3, 4
 
 
 class EmbeddingError(RuntimeError):
-    pass
+    """Voyage failed or returned something unusable. Finished batches stay cached for the re-run."""
 
 
 class ReducedLimits(EmbeddingError):
@@ -84,7 +85,12 @@ SLOW_RPM = 3
 
 # ---------------------------------------------------------------- records
 
+SLIDE_EMBED_FIELDS = ("title", "text", "notes", "ocr_text", "transcript")
+CODE_EMBED_FIELDS = ("title", "text", "source")
+
+
 def _clip_text(value: Any, limit: int) -> str:
+    """At most `limit` characters, cut at a space when one falls in the last fifth."""
     text = str(value or "").strip()
     if len(text) <= limit:
         return text
@@ -103,7 +109,8 @@ def placeholder_text(rec: dict[str, Any]) -> str:
     if kind not in ("slide", "code"):  # a course-info chunk (indexer/build_info_index.py)
         return str(rec.get("title") or rec.get("id") or "Course material")
     where = f"slide {rec.get('slide_number')}" if kind == "slide" else f"cell {rec.get('cell_number')}"
-    return f"{rec.get('course_title') or rec.get('course')}, session {rec.get('session')}: {rec.get('session_title') or ''}, {where}"
+    course = rec.get("course_title") or rec.get("course")
+    return f"{course}, session {rec.get('session')}: {rec.get('session_title') or ''}, {where}"
 
 
 def is_thin(rec: dict[str, Any]) -> bool:
@@ -118,201 +125,240 @@ def usable(vec: np.ndarray | None) -> bool:
 
 def embed_text(rec: dict[str, Any]) -> str:
     """Title, slide text, notes, OCR text, then what Ben said (code: title, markdown, source)."""
-    keys = ("title", "text", "notes", "ocr_text", "transcript") if rec["kind"] == "slide" else ("title", "text", "source")
+    keys = SLIDE_EMBED_FIELDS if rec["kind"] == "slide" else CODE_EMBED_FIELDS
     parts = [_clip_text(rec.get(k), LIMITS.get(k, 3000)) for k in keys]
     text = _clip_text("\n\n".join(p for p in parts if p), EMBED_MAX_CHARS)
     return text or placeholder_text(rec)  # an image-only slide with no OCR text: Voyage rejects empty input
 
 
-def _load_align(path: Path) -> dict[str, str]:
-    rows = common.read_json(path, []) or []
-    out: dict[str, str] = {}
-    for row in rows if isinstance(rows, list) else []:
-        if isinstance(row, dict) and row.get("slide_id"):
-            out[str(row["slide_id"])] = str(row.get("transcript") or "").strip()
-    return out
-
-
-def _load_clips(build: Path) -> dict[str, dict[str, Any]]:
-    rows = common.read_json(build / "clips" / "manifest.json", []) or []
-    out = {}
+def _rows_by_slide_id(rows: Any) -> dict[str, dict[str, Any]]:
+    """{slide_id: row} for a list of JSON rows; anything malformed is skipped."""
+    out: dict[str, dict[str, Any]] = {}
     for row in rows if isinstance(rows, list) else []:
         if isinstance(row, dict) and row.get("slide_id"):
             out[str(row["slide_id"])] = row
     return out
 
 
+def _load_align(path: Path) -> dict[str, str]:
+    """{slide_id: instructor transcript} from one session's alignment file ({} when there is none)."""
+    rows = _rows_by_slide_id(common.read_json(path, []) or [])
+    return {sid: str(row.get("transcript") or "").strip() for sid, row in rows.items()}
+
+
+def _load_clips(build: Path) -> dict[str, dict[str, Any]]:
+    """{slide_id: clip manifest row} from clips/manifest.json."""
+    return _rows_by_slide_id(common.read_json(build / "clips" / "manifest.json", []) or [])
+
+
 def _load_code_map(path: Path) -> dict[str, list[str]]:
+    """{slide_id: [code cell id]} from the hand-checked map; keys starting with "_" are notes."""
     data = common.read_json(path, {}) or {}
     if not isinstance(data, dict):
         return {}
     return {str(k): [str(x) for x in v] for k, v in data.items() if isinstance(v, list) and not str(k).startswith("_")}
 
 
-def collect(build: Path, archive: Path, code_map_path: Path | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Merge the stage outputs into index records. Returns (records, stats with source hashes)."""
-    titles, sessions = common.course_meta(archive)
-    clips = _load_clips(build)
-    code_map_path = code_map_path or common.REPO / "indexer" / "code_map.json"
-    code_map = _load_code_map(code_map_path)
-    sources: dict[str, str] = {}
-    by_course: dict[str, dict[str, Any]] = {}
-    excluded = 0
-    code_redactions = 0  # access-code slides left out plus sentences replaced
+class _Collector:
+    """Folds the stage outputs into index records, counting what it kept and hashing what it read."""
 
-    def note(path: Path) -> None:
+    def __init__(self, build: Path, archive: Path) -> None:
+        self.build, self.archive = build, archive
+        self.titles, self.sessions = common.course_meta(archive)
+        self.clips = _load_clips(build)
+        self.sources: dict[str, str] = {}  # every input file -> sha256, for the manifest
+        self.by_course: dict[str, dict[str, Any]] = {}
+        self.excluded = 0
+        self.code_redactions = 0  # access-code slides left out plus sentences replaced
+
+    def note(self, path: Path) -> None:
+        """Record an input file's hash (keyed by its path under the build folder or archive)."""
         if path.exists():
             try:
-                key = str(path.relative_to(build))
+                key = str(path.relative_to(self.build))
             except ValueError:
-                key = str(path.relative_to(archive)) if archive in path.parents else path.name
-            sources[key] = common.sha256_file(path)
+                key = str(path.relative_to(self.archive)) if self.archive in path.parents else path.name
+            self.sources[key] = common.sha256_file(path)
 
-    def sess_stats(course: str, session: int) -> dict[str, int]:
-        c = by_course.setdefault(course, {"title": titles.get(course), "sessions": {}})
+    def session_stats(self, course: str, session: int) -> dict[str, int]:
+        """The per-session counters in the manifest, created on first use."""
+        c = self.by_course.setdefault(course, {"title": self.titles.get(course), "sessions": {}})
         return c["sessions"].setdefault(
             common.session_tag(session),
             {"slides": 0, "code": 0, "with_transcript": 0, "with_clip": 0, "excluded": 0, "align_file": False},
         )
 
-    def facts(course: str, session: int, deck: dict[str, Any]) -> dict[str, Any]:
-        meta = sessions.get((course, session), {})
+    def facts(self, course: str, session: int, deck: dict[str, Any]) -> dict[str, Any]:
+        """Course and session fields every record carries (the inventory wins over deck.json)."""
+        meta = self.sessions.get((course, session), {})
         return {
             "course": course,
-            "course_title": titles.get(course),
+            "course_title": self.titles.get(course),
             "session": session,
             "session_title": meta.get("title") or deck.get("session_title"),
             "date": meta.get("date") or deck.get("date"),
         }
 
-    note(archive / "_inventory" / "f26_inventory.json")
-    note(build / "clips" / "manifest.json")
+    def slide_records(self) -> list[dict[str, Any]]:
+        """One record per slide that may be indexed, in deck order, session by session."""
+        slides: list[dict[str, Any]] = []
+        build = self.build
+        for course, session, path in common.iter_session_files(build / "slides", "s[0-9][0-9]/slides.json"):
+            self.note(path)
+            deck = common.read_json(path.parent / "deck.json", {}) or {}
+            align_path = build / "align" / course / f"{common.session_tag(session)}.json"
+            self.note(align_path)
+            transcripts = _load_align(align_path)
+            st = self.session_stats(course, session)
+            st["align_file"] = align_path.exists()
+            base = self.facts(course, session, deck)
+            for row in sorted(common.read_json(path, []) or [], key=lambda r: int(r.get("slide_number") or 0)):
+                rec = self.slide_record(row, course, session, base, transcripts)
+                if rec is None:
+                    st["excluded"] += 1
+                    continue
+                slides.append(rec)
+                st["slides"] += 1
+                st["with_transcript"] += bool(rec["transcript"])
+                st["with_clip"] += bool(rec["clip"])
+        return slides
+
+    def slide_record(self, row: dict[str, Any], course: str, session: int, base: dict[str, Any],
+                     transcripts: dict[str, str]) -> dict[str, Any] | None:
+        """The index record for one slides.json row, or None when the slide must stay out."""
+        flags = set(row.get("flags") or [])
+        if flags & common.EXCLUDE_FLAGS:
+            self.excluded += 1
+            return None
+        sid = str(row["slide_id"])
+        if assessment_filter.slide_announces_code(row.get("title"), row.get("text"), row.get("ocr_text")):
+            # The slide image shows a quiz or survey access code: leave the whole slide out.
+            self.excluded += 1
+            self.code_redactions += 1
+            return None
+        tag = common.session_tag(session)
+        transcript, n_code = assessment_filter.redact(transcripts.get(sid, ""))
+        text, n_text = assessment_filter.redact(str(row.get("text") or "").strip())
+        notes, n_notes = assessment_filter.redact(str(row.get("notes") or "").strip())
+        self.code_redactions += n_code + n_text + n_notes
+        # The clip's audio may say an access code its transcript had, so a redacted transcript loses its clip.
+        clip = None if n_code else self.clip_path(sid, course, session, flags)
+        rec = {
+            "id": sid,
+            "kind": "slide",
+            **base,
+            "slide_number": int(row["slide_number"]),
+            "title": str(row.get("title") or "").strip(),
+            "text": text,
+            "notes": notes,
+            "ocr_text": assessment_filter.redact(str(row.get("ocr_text") or "").strip())[0],
+            "transcript": transcript,
+            "image": row.get("image") or f"slides/{course}/{tag}/{sid}.webp",
+            "thumb": row.get("thumb") or f"slides/{course}/{tag}/{sid}-thumb.webp",
+            "clip": clip,
+            "related_code": [],
+            "flags": sorted(flags),
+        }
+        rec["thin"] = is_thin(rec)
+        return rec
+
+    def clip_path(self, sid: str, course: str, session: int, flags: set[str]) -> str | None:
+        """The slide's class clip, unless its session or flags rule clips out or the file is missing."""
+        if sid not in self.clips or (course, session) in common.NO_CLIP_SESSIONS:
+            return None
+        if any(flag in flags for flag in common.NO_CLIP_FLAGS):
+            return None
+        return f"clips/{sid}.mp4" if (self.build / "clips" / f"{sid}.mp4").is_file() else None
+
+    def code_records(self) -> list[dict[str, Any]]:
+        """One record per notebook code cell that is not flagged for student names."""
+        code: list[dict[str, Any]] = []
+        for course, session, path in common.iter_session_files(self.build / "code", "s[0-9][0-9].json"):
+            self.note(path)
+            st = self.session_stats(course, session)
+            base = self.facts(course, session, {})
+            for cell in common.read_json(path, []) or []:
+                if not isinstance(cell, dict) or set(cell.get("flags") or []) & common.EXCLUDE_FLAGS:
+                    continue
+                source = str(cell.get("source") or "").rstrip()
+                if not source.strip():
+                    continue
+                code.append(_code_record(cell, source, base))
+                st["code"] += 1
+        return code
+
+
+def _code_record(cell: dict[str, Any], source: str, base: dict[str, Any]) -> dict[str, Any]:
+    """The index record for one notebook code cell."""
+    notebook = str(cell.get("notebook") or "notebook.ipynb")
+    number = int(cell.get("cell_index", 0)) + 1
+    return {
+        "id": str(cell["cell_id"]),
+        "kind": "code",
+        **base,
+        "slide_number": None,
+        "notebook": notebook,
+        "cell_number": number,
+        "title": f"{notebook.rsplit('.', 1)[0]}, cell {number}",
+        "text": str(cell.get("markdown_above") or "").strip(),
+        "notes": "",
+        "transcript": "",
+        "source": source,
+        "mark_lines": [],
+        "image": None,
+        "thumb": None,
+        "clip": None,
+        "related_code": [],
+        "flags": sorted(cell.get("flags") or []),
+        "thin": False,
+    }
+
+
+def collect(build: Path, archive: Path,
+            code_map_path: Path | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Merge the stage outputs into index records. Returns (records, stats with source hashes)."""
+    collector = _Collector(build, archive)
+    code_map_path = code_map_path or common.REPO / "indexer" / "code_map.json"
+    code_map = _load_code_map(code_map_path)
+    collector.note(archive / "_inventory" / "f26_inventory.json")
+    collector.note(build / "clips" / "manifest.json")
     if code_map_path.exists():
-        sources["indexer/code_map.json"] = common.sha256_file(code_map_path)
+        collector.sources["indexer/code_map.json"] = common.sha256_file(code_map_path)
 
-    slides: list[dict[str, Any]] = []
-    for course, session, path in common.iter_session_files(build / "slides", "s[0-9][0-9]/slides.json"):
-        note(path)
-        deck = common.read_json(path.parent / "deck.json", {}) or {}
-        align_path = build / "align" / course / f"{common.session_tag(session)}.json"
-        note(align_path)
-        transcripts = _load_align(align_path)
-        st = sess_stats(course, session)
-        st["align_file"] = align_path.exists()
-        base = facts(course, session, deck)
-        no_clip_session = (course, session) in common.NO_CLIP_SESSIONS
-        for row in sorted(common.read_json(path, []) or [], key=lambda r: int(r.get("slide_number") or 0)):
-            flags = set(row.get("flags") or [])
-            if flags & common.EXCLUDE_FLAGS:
-                excluded += 1
-                st["excluded"] += 1
-                continue
-            sid = str(row["slide_id"])
-            if assessment_filter.slide_announces_code(row.get("title"), row.get("text"), row.get("ocr_text")):
-                # The slide image shows a quiz or survey access code: leave the whole slide out.
-                excluded += 1
-                st["excluded"] += 1
-                code_redactions += 1
-                continue
-            tag = common.session_tag(session)
-            clip = None
-            if sid in clips and not no_clip_session and not (flags & common.NO_CLIP_FLAGS):
-                if (build / "clips" / f"{sid}.mp4").is_file():
-                    clip = f"clips/{sid}.mp4"
-            transcript, n_code = assessment_filter.redact(transcripts.get(sid, ""))
-            text, n_text = assessment_filter.redact(str(row.get("text") or "").strip())
-            notes, n_notes = assessment_filter.redact(str(row.get("notes") or "").strip())
-            if n_code:
-                clip = None  # the clip's audio may say the code
-            code_redactions += n_code + n_text + n_notes
-            rec = {
-                "id": sid,
-                "kind": "slide",
-                **base,
-                "slide_number": int(row["slide_number"]),
-                "title": str(row.get("title") or "").strip(),
-                "text": text,
-                "notes": notes,
-                "ocr_text": assessment_filter.redact(str(row.get("ocr_text") or "").strip())[0],
-                "transcript": transcript,
-                "image": row.get("image") or f"slides/{course}/{tag}/{sid}.webp",
-                "thumb": row.get("thumb") or f"slides/{course}/{tag}/{sid}-thumb.webp",
-                "clip": clip,
-                "related_code": [],
-                "flags": sorted(flags),
-            }
-            rec["thin"] = is_thin(rec)
-            slides.append(rec)
-            st["slides"] += 1
-            st["with_transcript"] += bool(transcript)
-            st["with_clip"] += bool(clip)
-
-    code: list[dict[str, Any]] = []
-    for course, session, path in common.iter_session_files(build / "code", "s[0-9][0-9].json"):
-        note(path)
-        st = sess_stats(course, session)
-        base = facts(course, session, {})
-        for cell in common.read_json(path, []) or []:
-            if not isinstance(cell, dict) or set(cell.get("flags") or []) & common.EXCLUDE_FLAGS:
-                continue
-            source = str(cell.get("source") or "").rstrip()
-            if not source.strip():
-                continue
-            notebook = str(cell.get("notebook") or "notebook.ipynb")
-            number = int(cell.get("cell_index", 0)) + 1
-            code.append(
-                {
-                    "id": str(cell["cell_id"]),
-                    "kind": "code",
-                    **base,
-                    "slide_number": None,
-                    "notebook": notebook,
-                    "cell_number": number,
-                    "title": f"{notebook.rsplit('.', 1)[0]}, cell {number}",
-                    "text": str(cell.get("markdown_above") or "").strip(),
-                    "notes": "",
-                    "transcript": "",
-                    "source": source,
-                    "mark_lines": [],
-                    "image": None,
-                    "thumb": None,
-                    "clip": None,
-                    "related_code": [],
-                    "flags": sorted(cell.get("flags") or []),
-                    "thin": False,
-                }
-            )
-            st["code"] += 1
-
+    slides = collector.slide_records()
+    code = collector.code_records()
     code_ids = {r["id"] for r in code}
     for rec in slides:
         rec["related_code"] = [cid for cid in code_map.get(rec["id"], []) if cid in code_ids]
 
     records = slides + code
     for rec in records:
-        rec["hash"] = common.sha256_bytes(embed_text(rec).encode("utf-8"))
+        rec["hash"] = common.sha256_bytes(embed_text(rec).encode())
     stats = {
         "records": len(records),
         "slides": len(slides),
         "code": len(code),
-        "excluded_student_names": excluded,
-        "access_code_redactions": code_redactions,
+        "excluded_student_names": collector.excluded,
+        "access_code_redactions": collector.code_redactions,
         "with_transcript": sum(1 for r in slides if r["transcript"]),
         "with_clip": sum(1 for r in slides if r["clip"]),
         "with_related_code": sum(1 for r in slides if r["related_code"]),
         "thin": sum(1 for r in slides if r["thin"]),
-        "by_course": by_course,
+        "by_course": collector.by_course,
     }
-    return records, {"counts": stats, "sources": dict(sorted(sources.items()))}
+    return records, {"counts": stats, "sources": dict(sorted(collector.sources.items()))}
 
 
 # ---------------------------------------------------------------- embeddings
 
 def cache_key(model: str, text: str) -> str:
-    return common.sha256_bytes(f"{model}\x00{INPUT_TYPE}\x00{text}".encode("utf-8"))
+    """The cache file name for one text: a hash of the model, the input type and the text."""
+    return common.sha256_bytes(f"{model}\x00{INPUT_TYPE}\x00{text}".encode())
 
 
 class EmbedCache:
+    """One .npy file per embedded text, so a re-run only pays for records that changed."""
+
     def __init__(self, root: Path, model: str) -> None:
         self.dir = root / model.replace("/", "_")
         self.model = model
@@ -321,6 +367,7 @@ class EmbedCache:
         return self.dir / f"{cache_key(self.model, text)}.npy"
 
     def get(self, text: str) -> np.ndarray | None:
+        """The cached vector for a text, or None when it is missing or unreadable."""
         p = self.path(text)
         if not p.exists():
             return None
@@ -330,6 +377,7 @@ class EmbedCache:
             return None
 
     def put(self, text: str, vec: np.ndarray) -> None:
+        """Cache a vector, written atomically."""
         p = self.path(text)
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_name(p.name + ".tmp.npy")
@@ -358,7 +406,8 @@ def voyage_embed(
             if resp.status_code < 400:
                 payload = resp.json()
                 if usage is not None:
-                    usage["tokens"] = usage.get("tokens", 0) + int((payload.get("usage") or {}).get("total_tokens") or 0)
+                    spent = int((payload.get("usage") or {}).get("total_tokens") or 0)
+                    usage["tokens"] = usage.get("tokens", 0) + spent
                 data = sorted(payload.get("data", []), key=lambda d: d.get("index", 0))
                 if len(data) != len(texts):
                     raise EmbeddingError(f"Voyage returned {len(data)} embeddings for {len(texts)} inputs")
@@ -377,6 +426,7 @@ def voyage_embed(
 
 
 def batches(items: list[str], max_chars: int = BATCH_CHARS) -> list[list[str]]:
+    """Split texts into request-sized batches: at most BATCH_SIZE texts and `max_chars` characters."""
     out: list[list[str]] = []
     cur: list[str] = []
     size = 0
@@ -404,6 +454,7 @@ def embed_records(
     """Return (matrix or None, cached count, newly embedded count). Adds Voyage tokens to `usage`.
 
     `text_of` picks the text to embed per record (default `embed_text`; the course-info index passes its own).
+    The matrix is None when some texts are not cached and there is no key to embed them.
     """
     texts = [(text_of or embed_text)(r) for r in records]
     # A cached zero (or broken) vector is not trusted: it is embedded again (Oct 8).
@@ -415,41 +466,8 @@ def embed_records(
     if todo:
         own = client is None
         client = client or httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0))
-        slow = bool(common.env("VOYAGE_SLOW"))
         try:
-            groups = batches(todo, SLOW_BATCH_CHARS if slow else BATCH_CHARS)
-            done = 0
-            while groups:
-                group = groups.pop(0)
-                before = usage.get("tokens", 0) if usage is not None else 0
-                try:
-                    got = voyage_embed(group, cache.model, key or "", client, sleep, usage)
-                except ReducedLimits:
-                    if slow and len(group) == 1:
-                        raise
-                    if not slow:
-                        rest = group + [t for g in groups for t in g]
-                        est = sum(map(len, rest)) // 3
-                        log(
-                            "  Voyage says this account has reduced limits (no payment method yet): 3 requests and\n"
-                            f"  10K tokens per minute. Switching to paced mode: about {est // SLOW_TPM + 1} minutes for the rest.\n"
-                            "  Adding a payment method at https://dashboard.voyageai.com lifts the limit."
-                        )
-                        slow, groups = True, batches(rest, SLOW_BATCH_CHARS)
-                    else:  # still too big for one minute's budget: split it
-                        half = len(group) // 2
-                        groups = [group[:half], group[half:]] + groups
-                    sleep(61.0)
-                    continue
-                for text, vec in zip(group, got):
-                    if usable(vec):  # a zero vector is never cached; the placeholder retry below handles it
-                        cache.put(text, vec)
-                done += 1
-                log(f"  embedded batch {done} ({len(group)} texts, {len(groups)} batches left)")
-                if slow and groups:
-                    spent = (usage.get("tokens", 0) - before) if usage is not None else 0
-                    spent = spent or sum(map(len, group)) // 3
-                    sleep(max(60.0 / SLOW_RPM, 60.0 * spent / SLOW_TPM) + 1.0)
+            _embed_into_cache(todo, cache, key or "", client, sleep, log, usage)
         finally:
             if own:
                 client.close()
@@ -466,6 +484,52 @@ def embed_records(
     if len(dims) != 1:
         raise EmbeddingError(f"embeddings have mixed dimensions {sorted(dims)}; clear the cache for this model")
     return np.stack(vecs).astype(np.float32), cached, len(todo)
+
+
+def _embed_into_cache(
+    texts: list[str],
+    cache: EmbedCache,
+    key: str,
+    client: httpx.Client,
+    sleep: Callable[[float], None],
+    log: Callable[[str], None],
+    usage: dict[str, int] | None,
+) -> None:
+    """Embed `texts` batch by batch into the cache, so an interrupted run resumes where it stopped.
+
+    Voyage accounts without a payment method answer 429 "reduced rate limits". Then the rest
+    is re-batched small and paced to 3 requests and 10K tokens a minute (VOYAGE_SLOW=1 starts
+    paced). A batch still too big for one minute's budget is halved until it fits.
+    """
+    slow = bool(common.env("VOYAGE_SLOW"))
+    groups = batches(texts, SLOW_BATCH_CHARS if slow else BATCH_CHARS)
+    done = 0
+    while groups:
+        group = groups.pop(0)
+        before = usage.get("tokens", 0) if usage is not None else 0
+        try:
+            got = voyage_embed(group, cache.model, key, client, sleep, usage)
+        except ReducedLimits:
+            if slow and len(group) == 1:
+                raise
+            if slow:  # still too big for one minute's budget: split it
+                half = len(group) // 2
+                groups = [group[:half], group[half:]] + groups
+            else:
+                rest = group + [t for g in groups for t in g]
+                log(_paced_mode_message(rest))
+                slow, groups = True, batches(rest, SLOW_BATCH_CHARS)
+            sleep(61.0)
+            continue
+        for text, vec in zip(group, got):
+            if usable(vec):  # a zero vector is never cached; the placeholder retry in embed_records handles it
+                cache.put(text, vec)
+        done += 1
+        log(f"  embedded batch {done} ({len(group)} texts, {len(groups)} batches left)")
+        if slow and groups:
+            spent = (usage.get("tokens", 0) - before) if usage is not None else 0
+            spent = spent or sum(map(len, group)) // 3  # no usage reported: about 3 characters a token
+            sleep(max(60.0 / SLOW_RPM, 60.0 * spent / SLOW_TPM) + 1.0)
 
 
 def _trusted(vec: np.ndarray | None) -> np.ndarray | None:
@@ -499,15 +563,56 @@ def _placeholder_vector(
     return np.asarray(vec, dtype=np.float32)
 
 
+def _paced_mode_message(rest: list[str]) -> str:
+    est = sum(map(len, rest)) // 3
+    return (
+        "  Voyage says this account has reduced limits (no payment method yet): 3 requests and\n"
+        f"  10K tokens per minute. Switching to paced mode: about {est // SLOW_TPM + 1} minutes for the rest.\n"
+        "  Adding a payment method at https://dashboard.voyageai.com lifts the limit."
+    )
+
+
 # ---------------------------------------------------------------- versions and output
 
 def content_hash(records: list[dict[str, Any]], model: str) -> str:
+    """A hash of the records and the model: what decides whether an index changed."""
     return common.sha256_bytes(common.dump_json({"model": model, "records": records}))
 
 
 def new_version(chash: str, now: datetime | None = None) -> str:
-    now = now or datetime.now(timezone.utc)
+    """A version id: UTC build time plus the start of the content hash."""
+    now = now or datetime.now(UTC)
     return f"{now.strftime('%Y%m%dT%H%M%SZ')}-{chash[:8]}"
+
+
+def embedding_state(complete: bool) -> str:
+    """The manifest's "embeddings" field."""
+    return "complete" if complete else "pending"
+
+
+def keep_or_new_version(previous: dict[str, Any], version_key: str, chash: str, complete: bool) -> tuple[str, str]:
+    """(version, built_at) for this build.
+
+    Same records, same model, same embedding state as the previous manifest: keep its version
+    and time, so an unchanged re-run uploads nothing and does not make the backend reload.
+    """
+    same = previous.get("content_hash") == chash and previous.get("embeddings") == embedding_state(complete)
+    version = previous[version_key] if same and previous.get(version_key) else new_version(chash)
+    built_at = (same and previous.get("built_at")) or datetime.now(UTC).isoformat(timespec="seconds")
+    return version, built_at
+
+
+def save_matrix(path: Path, matrix: np.ndarray | None) -> None:
+    """Write the embedding matrix atomically, or delete the old one when there is none.
+
+    Never leaves a matrix that does not match the index written next to it.
+    """
+    if matrix is not None:
+        tmp = path.with_name(f"{path.stem}.tmp.npy")
+        np.save(tmp, matrix)
+        tmp.replace(path)
+    elif path.exists():
+        path.unlink()
 
 
 def build(
@@ -521,6 +626,7 @@ def build(
     sleep: Callable[[float], None] = time.sleep,
     log: Callable[[str], None] = print,
 ) -> int:
+    """Build content/index.json, embeddings.npy and the manifest. Returns an EXIT_* code."""
     build_root = build_root or common.build_dir(archive)
     out = build_root / "content"
     records, info = collect(build_root, archive, code_map)
@@ -536,13 +642,8 @@ def build(
         log(f"Embedding failed: {exc}. Re-run the same command; finished batches are cached.")
         return 2
     complete = matrix is not None
-    # Same records, same model, same embedding state: keep the version, so an
-    # unchanged re-run uploads nothing and does not make the backend reload.
     previous = common.read_json(out / "manifest.json", {}) or {}
-    same = previous.get("content_hash") == chash and previous.get("embeddings") == ("complete" if complete else "pending")
-    version = previous["index_version"] if same and previous.get("index_version") else new_version(chash)
-
-    now = (same and previous.get("built_at")) or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    version, now = keep_or_new_version(previous, "index_version", chash, complete)
     index = {
         "index_version": version,
         "built_at": now,
@@ -555,12 +656,7 @@ def build(
     index_bytes = common.dump_json(index)
     common.write_bytes_atomic(out / "index.json", index_bytes)
     emb_path = out / "embeddings.npy"
-    if complete:
-        tmp = out / "embeddings.tmp.npy"
-        np.save(tmp, matrix)
-        tmp.replace(emb_path)
-    elif emb_path.exists():
-        emb_path.unlink()  # never leave a matrix that does not match index.json
+    save_matrix(emb_path, matrix)
 
     manifest = {
         "index_version": version,
@@ -568,7 +664,7 @@ def build(
         "content_hash": chash,
         "embedding_model": model,
         "embedding_dim": index["embedding_dim"],
-        "embeddings": "complete" if complete else "pending",
+        "embeddings": embedding_state(complete),
         "embeddings_cached": cached + fresh if complete else cached,
         "counts": info["counts"],
         "sources": info["sources"],
@@ -602,13 +698,24 @@ def build(
     return EXIT_OK
 
 
-def run_leak_check(roster: Path, index: dict[str, Any], log: Callable[[str], None]) -> int:
+def run_leak_check(
+    roster: Path,
+    index: dict[str, Any],
+    log: Callable[[str], None],
+    name: str = "content/index.json",
+    strict_fields: tuple[str, ...] = ("transcript",),
+) -> int:
+    """Check a freshly built index against the rosters. EXIT_LEAK on any hit.
+
+    Without rosters the check is skipped here (with a note), because upload.py runs it again
+    and refuses to upload without them: the gate that matters is at the upload.
+    """
     try:
         checker = RosterChecker.from_dir(roster)
     except RosterMissing as exc:
         log(f"leak check skipped here: {exc}. indexer/upload.py will refuse to upload without it.")
         return EXIT_OK
-    hits = checker.check_index(index)
+    hits = checker.check_index(index, name, strict_fields=strict_fields)
     log(hits.summary())
     return EXIT_LEAK if hits.total else EXIT_OK
 

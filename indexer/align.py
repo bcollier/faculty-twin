@@ -58,11 +58,18 @@ from pathlib import Path
 
 import numpy as np
 
+if __package__ in (None, ""):  # run as a script (python indexer/align.py): make `indexer` importable
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from indexer import layout  # noqa: E402
+from indexer.layout import TERM, read_json, slide_text, write_json  # noqa: E402
+
 ALIGN_VERSION = 2
 
-ARCHIVE = Path(os.environ.get("LECTURE_ARCHIVE", "~/Lecture Archive")).expanduser()
-TERM = "2026 Fall"
-COURSE_PREFIX = {"70445": "70-445", "45884": "45-884"}
+# A module attribute (not read through layout at call time) so tests can point it at a fixture archive.
+ARCHIVE = layout.DEFAULT_ARCHIVE
+# Course code -> the "70-445" prefix its archive folder starts with.
+COURSE_PREFIX = {code: folder.split(" ", 1)[0] for code, folder in layout.COURSE_FOLDERS.items()}
 
 # Sampling
 STEP = 2.0  # seconds between sampled frames
@@ -96,7 +103,8 @@ MOTION_CORR = 0.985
 
 
 def build_dir() -> Path:
-    return Path(os.environ.get("FT_BUILD_DIR", ARCHIVE / "_build")).expanduser()
+    """The build folder: $FT_BUILD_DIR when set (calibration runs and tests), else <archive>/_build."""
+    return Path(os.environ.get("FT_BUILD_DIR", layout.build_dir(ARCHIVE))).expanduser()
 
 
 # --------------------------------------------------------------------------- sessions
@@ -104,6 +112,8 @@ def build_dir() -> Path:
 
 @dataclass
 class Session:
+    """One class session: its course, number, archive folder and recording parts."""
+
     course: str
     session: int
     folder: Path | None
@@ -119,6 +129,7 @@ class Session:
 
 
 def discover_sessions(course: str | None = None, session: int | None = None) -> list[Session]:
+    """Every `<NN> ...` session folder of the known courses, with its videos in part order."""
     out: list[Session] = []
     for code, prefix in COURSE_PREFIX.items():
         if course and code != course:
@@ -150,34 +161,15 @@ def session_videos(folder: Path) -> list[Path]:
 
 
 def fingerprint(*paths: Path | None) -> list:
-    out = []
-    for p in paths:
-        if p is not None and p.exists():
-            st = p.stat()
-            out.append([p.name, st.st_size, int(st.st_mtime)])
-        else:
-            out.append([p.name if p else None, None, None])
-    return out
-
-
-def load_json(path: Path, default=None):
-    try:
-        return json.loads(path.read_text())
-    except (OSError, ValueError):
-        return default
-
-
-def write_json(path: Path, obj) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, indent=1, ensure_ascii=False))
-    tmp.replace(path)
+    """Change key for the alignment cache. A missing file counts too, so a transcript that appears later re-aligns."""
+    return layout.file_fingerprint(*paths, include_missing=True)
 
 
 # --------------------------------------------------------------------------- video
 
 
 def probe(path: Path) -> tuple[float, int, int]:
+    """(duration in seconds, width, height) of a video's first stream, from ffprobe."""
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
          "stream=width,height:format=duration", "-of", "json", str(path)],
@@ -211,7 +203,7 @@ def session_frames(s: Session, cache_dir: Path) -> tuple[np.ndarray, np.ndarray,
             if str(z["fp"]) == fp:
                 return z["times"], z["frames"], [float(x) for x in z["durations"]]
         except (OSError, ValueError, KeyError):
-            pass
+            pass  # an unreadable or old-format cache is rebuilt below
     times, frames, durs = [], [], []
     offset = 0.0
     height = None
@@ -250,6 +242,7 @@ def feature(gray: np.ndarray) -> np.ndarray:
 
 
 def slide_features(thumbs: list[Path]) -> np.ndarray:
+    """One feature row per slide thumbnail (see `feature`)."""
     from PIL import Image
 
     rows = []
@@ -290,7 +283,8 @@ def slide_boxes(gray: np.ndarray, k: int = 3) -> list[tuple[int, int, int, int]]
     return [b for _, b in found[:k]]
 
 
-def crop(gray: np.ndarray, box) -> np.ndarray:
+def crop(gray: np.ndarray, box: tuple[int, int, int, int]) -> np.ndarray:
+    """The (y0, y1, x0, x1) region of a frame."""
     y0, y1, x0, x1 = box
     return gray[y0:y1, x0:x1]
 
@@ -300,6 +294,8 @@ def crop(gray: np.ndarray, box) -> np.ndarray:
 
 @dataclass
 class FrameMatch:
+    """Per-frame best slide, its score and margin, and which crop won."""
+
     best: np.ndarray  # slide index per frame (argmax), -1 when nothing scored
     score: np.ndarray  # best correlation
     margin: np.ndarray  # best minus best non-duplicate runner-up
@@ -312,7 +308,7 @@ def duplicate_groups(S: np.ndarray, thr: float = DUP_SIM) -> np.ndarray:
     """Boolean [n, n]: slides that look the same (including the slide itself)."""
     if len(S) == 0:
         return np.zeros((0, 0), bool)
-    return (S @ S.T) >= thr
+    return thr <= (S @ S.T)
 
 
 def _score(F: np.ndarray, S: np.ndarray, dup: np.ndarray):
@@ -326,6 +322,7 @@ def _score(F: np.ndarray, S: np.ndarray, dup: np.ndarray):
 
 
 def match_frames(frames: np.ndarray, S: np.ndarray, dup: np.ndarray | None = None) -> FrameMatch:
+    """Score every sampled frame against every slide, trying the whole frame, the slide region and the session box."""
     n = len(frames)
     if dup is None:
         dup = duplicate_groups(S)
@@ -404,6 +401,7 @@ def resolve_duplicates(lab: np.ndarray, dup: np.ndarray) -> np.ndarray:
 
 
 def smooth_labels(lab: np.ndarray, step: float = STEP, min_run_s: float = MIN_RUN_S) -> np.ndarray:
+    """Bridge one-frame dropouts inside a run, then drop runs shorter than min_run_s."""
     lab = lab.copy()
     n = len(lab)
     # bridge one-frame dropouts inside a run of the same slide (a confident match to a
@@ -469,7 +467,9 @@ def subtract(intervals: list[tuple[float, float]], total: tuple[float, float]) -
     return [(a, b) for a, b in out if b > a]
 
 
-def chunk_stretches(stretches, chunk_s: float = CHUNK_S, min_s: float = MIN_CHUNK_S):
+def chunk_stretches(stretches: list[tuple[float, float]], chunk_s: float = CHUNK_S,
+                    min_s: float = MIN_CHUNK_S) -> list[tuple[float, float]]:
+    """Cut each stretch into equal chunks of at most chunk_s seconds, dropping chunks under min_s."""
     out = []
     for a, b in stretches:
         n = max(1, int(np.ceil((b - a) / chunk_s)))
@@ -481,11 +481,8 @@ def chunk_stretches(stretches, chunk_s: float = CHUNK_S, min_s: float = MIN_CHUN
     return out
 
 
-def slide_doc(s: dict) -> str:
-    return "\n".join(str(s.get(k) or "") for k in ("title", "text", "notes", "ocr_text"))
-
-
 def tfidf_scores(slide_docs: list[str], chunk_texts: list[str]) -> np.ndarray:
+    """Cosine similarity of each speech chunk to each slide's text, TF-IDF fit on both."""
     from sklearn.feature_extraction.text import TfidfVectorizer
 
     if not slide_docs or not chunk_texts:
@@ -532,7 +529,8 @@ def monotone_dp(C: np.ndarray, lo: int = 0, hi: int | None = None,
     return path[::-1]
 
 
-def text_align(slides: list[dict], cues: list[dict], stretches, frame_runs_t,
+def text_align(slides: list[dict], cues: list[dict], stretches: list[tuple[float, float]],
+               frame_runs_t: list[tuple[int, float, float]],
                text_min: float = TEXT_MIN) -> list[tuple[int, float, float, float]]:
     """Assign uncovered chunks to slides. Returns [(slide index, start, end, cosine)].
 
@@ -548,7 +546,7 @@ def text_align(slides: list[dict], cues: list[dict], stretches, frame_runs_t,
             keep.append((a, b))
     if not keep:
         return []
-    C = tfidf_scores([slide_doc(s) for s in slides], texts)
+    C = tfidf_scores([slide_text(s) for s in slides], texts)
     out = []
     # Group consecutive chunks that sit between the same pair of frame matches.
     anchors = sorted(frame_runs_t, key=lambda r: r[1])
@@ -591,7 +589,8 @@ def merge_windows(wins: list[tuple[float, float, str]], gap: float = 0.0) -> lis
     return [tuple(x) for x in out]
 
 
-def instructor_text(cues: list[dict], windows) -> str:
+def instructor_text(cues: list[dict], windows: list[tuple[float, float]]) -> str:
+    """The instructor cues whose midpoint falls inside the windows, joined. Student and unclear cues never."""
     parts = []
     for c in cues:
         if c.get("speaker") != "instructor":
@@ -603,7 +602,7 @@ def instructor_text(cues: list[dict], windows) -> str:
 
 
 def build_alignment(slides: list[dict], times: np.ndarray, lab: np.ndarray, total: float,
-                    cues: list[dict], step: float = STEP):
+                    cues: list[dict], step: float = STEP) -> tuple[list[dict], list[tuple], list[tuple]]:
     """Return (records, frame windows with indices, text assignments)."""
     n = len(slides)
     wins: list[list[tuple[float, float, str]]] = [[] for _ in range(n)]
@@ -635,6 +634,7 @@ def build_alignment(slides: list[dict], times: np.ndarray, lab: np.ndarray, tota
 
 
 def session_paths(s: Session) -> dict:
+    """Every file one session's alignment reads or writes."""
     b = build_dir()
     return {
         "slides": b / "slides" / s.course / s.key / "slides.json",
@@ -646,7 +646,26 @@ def session_paths(s: Session) -> dict:
     }
 
 
+def _match_session(s: Session, p: dict) -> tuple[list[dict], np.ndarray, np.ndarray, np.ndarray, list[float],
+                                                  FrameMatch]:
+    """Sample the session's video and match every frame: (slides, dup groups, times, frames, durations, match)."""
+    slides = read_json(p["slides"], [])
+    S = slide_features([p["slide_dir"] / f"{sl['slide_id']}-thumb.webp" for sl in slides])
+    dup = duplicate_groups(S)
+    times, frames, durs = session_frames(s, p["cache"])
+    return slides, dup, times, frames, durs, match_frames(frames, S, dup)
+
+
+def _alignment_fingerprint(s: Session, p: dict) -> dict:
+    """What an alignment depends on: videos, deck, transcript, and every threshold."""
+    return {"version": ALIGN_VERSION, "videos": fingerprint(*s.videos),
+            "slides": fingerprint(p["slides"]), "transcript": fingerprint(p["transcript"]),
+            "params": [STEP, FRAME_W, MATCH_MIN, MARGIN_MIN, STRONG_MIN, LOW_MARGIN_MIN, DUP_SIM,
+                       MIN_RUN_S, TEXT_MIN]}
+
+
 def align_session(s: Session, force: bool = False, verbose: bool = True) -> dict | None:
+    """Align one session and write its records and meta file. Returns the meta, or None when it cannot run."""
     p = session_paths(s)
     if not p["slides"].exists():
         if verbose:
@@ -656,32 +675,40 @@ def align_session(s: Session, force: bool = False, verbose: bool = True) -> dict
         if verbose:
             print(f"{s.label}: no video, nothing to align")
         return None
-    fp = {"version": ALIGN_VERSION, "videos": fingerprint(*s.videos),
-          "slides": fingerprint(p["slides"]), "transcript": fingerprint(p["transcript"]),
-          "params": [STEP, FRAME_W, MATCH_MIN, MARGIN_MIN, STRONG_MIN, LOW_MARGIN_MIN, DUP_SIM,
-                     MIN_RUN_S, TEXT_MIN]}
-    old = load_json(p["meta"], {})
+    fp = _alignment_fingerprint(s, p)
+    old = read_json(p["meta"], {})
     if not force and old.get("fingerprint") == fp and p["out"].exists():
         if verbose:
             print(f"{s.label}: up to date")
         return old
 
-    slides = load_json(p["slides"], [])
-    S = slide_features([p["slide_dir"] / f"{sl['slide_id']}-thumb.webp" for sl in slides])
-    dup = duplicate_groups(S)
-    times, frames, durs = session_frames(s, p["cache"])
+    slides, dup, times, frames, durs, fm = _match_session(s, p)
     total = float(sum(durs))
-    fm = match_frames(frames, S, dup)
     raw = raw_labels(fm, dup)
     lab = smooth_labels(raw)
-    tr = load_json(p["transcript"], None)
+    tr = read_json(p["transcript"], None)
     cues = tr["cues"] if tr else []
     records, frame_runs, texts = build_alignment(slides, times, lab, total, cues)
     write_json(p["out"], records)
+    meta = _alignment_meta(s, fp, slides, records, fm, raw, lab, times, durs, frame_runs, texts, bool(cues))
+    write_json(p["meta"], meta)
+    if verbose:
+        c = meta["coverage"]
+        print(f"{s.label}: {meta['frames_matched']}/{meta['frames']} frames matched, "
+              f"frame {c['frame']:.0%} text {c['text']:.0%} of {total / 60:.0f} min, "
+              f"{meta['slides_with_frame']}/{len(slides)} slides seen"
+              + ("" if cues else " (no transcript yet)"))
+    return meta
 
+
+def _alignment_meta(s: Session, fp: dict, slides: list[dict], records: list[dict], fm: FrameMatch,
+                    raw: np.ndarray, lab: np.ndarray, times: np.ndarray, durs: list[float],
+                    frame_runs: list, texts: list, has_transcript: bool) -> dict:
+    """The <session>.meta.json contents: coverage, thresholds, and per-window frame stats for clips.py."""
+    total = float(sum(durs))
     frame_s = sum(e - st for _, st, e, _, _ in frame_runs)
     text_s = sum(e - st for _, st, e, _ in texts)
-    meta = {
+    return {
         "course": s.course, "session": s.session, "fingerprint": fp,
         "duration": round(total, 2), "parts": [round(d, 2) for d in durs],
         "frames": int(len(times)), "frames_matched": int((lab >= 0).sum()),
@@ -692,7 +719,7 @@ def align_session(s: Session, force: bool = False, verbose: bool = True) -> dict
                      "text": round(text_s / total, 4) if total else 0},
         "slides_with_frame": sum(1 for r in records if "frame" in r["methods"]),
         "slides_with_any": sum(1 for r in records if r["windows"]),
-        "transcript": bool(cues),
+        "transcript": has_transcript,
         "thresholds": {"match_min": MATCH_MIN, "margin_min": MARGIN_MIN, "strong_min": STRONG_MIN,
                        "low_margin_min": LOW_MARGIN_MIN, "dup_sim": DUP_SIM,
                        "min_run_s": MIN_RUN_S, "text_min": TEXT_MIN},
@@ -706,14 +733,6 @@ def align_session(s: Session, force: bool = False, verbose: bool = True) -> dict
             for j, st, e, a, b in frame_runs
         ],
     }
-    write_json(p["meta"], meta)
-    if verbose:
-        c = meta["coverage"]
-        print(f"{s.label}: {meta['frames_matched']}/{meta['frames']} frames matched, "
-              f"frame {c['frame']:.0%} text {c['text']:.0%} of {total / 60:.0f} min, "
-              f"{meta['slides_with_frame']}/{len(slides)} slides seen"
-              + ("" if cues else " (no transcript yet)"))
-    return meta
 
 
 # --------------------------------------------------------------------------- calibration
@@ -727,11 +746,7 @@ def dump_check(s: Session, out_dir: Path, n: int = 30, seed: int = 0, low_only: 
     from PIL import Image, ImageDraw
 
     p = session_paths(s)
-    slides = load_json(p["slides"], [])
-    S = slide_features([p["slide_dir"] / f"{sl['slide_id']}-thumb.webp" for sl in slides])
-    dup = duplicate_groups(S)
-    times, frames, _ = session_frames(s, p["cache"])
-    fm = match_frames(frames, S, dup)
+    slides, dup, times, frames, _, fm = _match_session(s, p)
     lab = frame_labels(fm, dup)
     rng = np.random.default_rng(seed)
     matched = np.flatnonzero((lab >= 0) & ((fm.score < STRONG_MIN) if low_only else True))

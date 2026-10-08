@@ -55,6 +55,7 @@ unless ``--force`` is given.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -68,27 +69,22 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
-try:  # run as a script (python indexer/slides.py) or with indexer/ on sys.path
-    from pg_filter import smooth as pg_smooth
-    from roster import person as roster_person
-    from roster import read_people
-except ImportError:  # imported as a package module
-    from indexer.pg_filter import smooth as pg_smooth
-    from indexer.roster import person as roster_person
-    from indexer.roster import read_people
+if __package__ in (None, ""):  # run as a script (python indexer/slides.py): make `indexer` importable
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from indexer import layout  # noqa: E402
+from indexer.layout import NO_CLIP_SESSIONS, TERM, file_fingerprint, write_json  # noqa: E402
+from indexer.pg_filter import smooth as pg_smooth  # noqa: E402
+from indexer.roster import lowercase_dictionary_words, names_pattern, read_people  # noqa: E402
+from indexer.roster import person as roster_person  # noqa: E402
 
 # 8: PG filter on text, title, notes and OCR text (re-extracts text, never re-renders)
 # 9: rosters with other column names (name/login_id, Student, SIS Login ID) join the name scrub
 PIPELINE_VERSION = 9
 
-ARCHIVE = Path(os.environ.get("LECTURE_ARCHIVE", "~/Lecture Archive")).expanduser()
-TERM = "2026 Fall"
-COURSES = {
-    "70445": "70-445 AI for Business Leaders",
-    "45884": "45-884 AI Methods for Social and Visual Data",
-}
-# Sessions whose slides may be indexed but must never be cut into video clips.
-NO_CLIP_SESSIONS = {("45884", 11), ("45884", 12)}
+# A module attribute (not read through layout at call time) so tests can point it at a fixture archive.
+ARCHIVE = layout.DEFAULT_ARCHIVE
+COURSES = layout.COURSE_FOLDERS
 
 IMAGE_WIDTH = 1600
 THUMB_WIDTH = 320
@@ -102,15 +98,19 @@ STUDENT = "[student]"
 
 
 def build_dir() -> Path:
-    return ARCHIVE / "_build"
+    """The private build folder under the current ARCHIVE."""
+    return layout.build_dir(ARCHIVE)
 
 
 def slide_id(course: str, session: int, n: int) -> str:
+    """The stable id of page `n` of a session's deck, e.g. "70445-s06-012"."""
     return f"{course}-s{session:02d}-{n:03d}"
 
 
 @dataclass
 class Session:
+    """One session folder of the archive."""
+
     course: str
     number: int
     date: str
@@ -123,6 +123,7 @@ class Session:
 
 
 def discover_sessions(course_filter: str | None, session_filter: int | None) -> list[Session]:
+    """Session folders `<NN> <date> <title>` of the known courses, optionally filtered."""
     out = []
     for code, name in COURSES.items():
         if course_filter and code != course_filter.replace("-", ""):
@@ -140,33 +141,14 @@ def discover_sessions(course_filter: str | None, session_filter: int | None) -> 
 
 
 def inventory_notes() -> dict[tuple[str, int], str]:
-    path = ARCHIVE / "_inventory" / "f26_inventory.json"
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, ValueError):
-        return {}
+    """The inventory's note per session (why a deck is missing), for missing.json."""
+    data = layout.read_json(ARCHIVE / "_inventory" / "f26_inventory.json", {}) or {}
     notes = {}
     for name, course in data.get("courses", {}).items():
         code = name.split()[0].replace("-", "")
         for s in course.get("sessions", []):
             notes[(code, int(s["number"]))] = s.get("notes", "")
     return notes
-
-
-def write_json(path: Path, obj) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, indent=1, ensure_ascii=False))
-    os.replace(tmp, path)
-
-
-def fingerprint(*paths: Path | None) -> list:
-    fp = []
-    for p in paths:
-        if p and p.exists():
-            st = p.stat()
-            fp.append([p.name, st.st_size, int(st.st_mtime)])
-    return fp
 
 
 # --------------------------------------------------------------------------- roster scrub
@@ -206,17 +188,12 @@ class NameScrubber:
                 self.ids.add(email)
                 self.ids.add(email.split("@")[0])
         self.full.discard("")
-        self._full_re = _alternation(self.full, flags=re.I) if self.full else None
+        self._full_re = names_pattern(self.full)
 
     @classmethod
-    def from_dir(cls, roster_dir: Path) -> "NameScrubber":
-        rows = read_people(roster_dir)
-        dictionary = set()
-        words = Path("/usr/share/dict/words")
-        if words.exists():
-            # Lowercase entries only: ordinary words, not proper nouns.
-            dictionary = {w for w in words.read_text().split() if w.islower()}
-        return cls(rows, dictionary)
+    def from_dir(cls, roster_dir: Path) -> NameScrubber:
+        """A scrubber for every roster CSV in `roster_dir`, ignoring ordinary English words."""
+        return cls(read_people(roster_dir), lowercase_dictionary_words())
 
     def check(self, text: str) -> tuple[str, list[str]]:
         """Return (scrubbed text, flags). Never returns or logs a matched name."""
@@ -248,13 +225,10 @@ def _norm_name(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
-def _alternation(words: set[str], flags=0) -> re.Pattern:
-    parts = sorted((re.escape(w).replace(r"\ ", r"\s+") for w in words), key=len, reverse=True)
-    return re.compile(r"(?<![A-Za-z])(?:" + "|".join(parts) + r")(?![A-Za-z])", flags)
-
-
 # --------------------------------------------------------------------------- content flags
 
+# API-key-shaped strings in slides and notebooks. canvas_import.py has its own, wider pattern
+# with a different marker; both markers are in built outputs, so they are kept apart.
 SECRET_RE = re.compile(
     r"(sk-[A-Za-z0-9_\-]{16,}|sk-ant-[A-Za-z0-9_\-]{16,}|AKIA[0-9A-Z]{16}|gh[po]_[A-Za-z0-9]{20,}"
     r"|eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{5,}|pa-[A-Za-z0-9_\-]{20,}"
@@ -265,11 +239,16 @@ CONTENT_RULES = [
     ("in_the_news", re.compile(r"\bA[Il1](?:\s+Methods)?\s+in\s+the\s+News\b", re.I)),
     (
         "student_presentation_possible",
-        re.compile(r"\bpresented\s+by\b|\bteam\s+members?\b|\bgroup\s+\d+\b|\bour\s+team\b|\bstudent\s+presentations?\b", re.I),
+        re.compile(
+            r"\bpresented\s+by\b|\bteam\s+members?\b|\bgroup\s+\d+\b|\bour\s+team\b|\bstudent\s+presentations?\b",
+            re.I,
+        ),
     ),
     (
         "copyright_notice",
-        re.compile(r"©|\(c\)\s*\d{4}|\bcopyright\b|all\s+rights\s+reserved|used\s+with\s+permission|\breprinted\b", re.I),
+        re.compile(
+            r"©|\(c\)\s*\d{4}|\bcopyright\b|all\s+rights\s+reserved|used\s+with\s+permission|\breprinted\b", re.I
+        ),
     ),
     (
         "third_party_source",
@@ -284,10 +263,12 @@ CONTENT_RULES = [
 
 
 def content_flags(text: str) -> list[str]:
+    """The CONTENT_RULES flags whose pattern appears in `text`."""
     return [name for name, rx in CONTENT_RULES if rx.search(text or "")]
 
 
 def redact_secrets(text: str) -> tuple[str, bool]:
+    """(text with key-shaped strings replaced by [REDACTED_KEY], whether anything changed)."""
     new = SECRET_RE.sub("[REDACTED_KEY]", text or "")
     return new, new != (text or "")
 
@@ -296,11 +277,12 @@ def redact_secrets(text: str) -> tuple[str, bool]:
 
 
 def pdf_page_count(pdf: Path) -> int:
+    """Pages in a PDF: pypdf when it can read the file, else poppler's pdfinfo."""
     try:
         from pypdf import PdfReader
 
         return len(PdfReader(str(pdf)).pages)
-    except Exception:
+    except Exception:  # pypdf missing, or a PDF it cannot parse: pdfinfo is the fallback, not a skip
         out = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True, check=True).stdout
         return int(re.search(r"^Pages:\s+(\d+)", out, re.M).group(1))
 
@@ -321,6 +303,7 @@ def pdf_page_texts(pdf: Path, n_pages: int) -> list[str]:
 
 
 def clean_text(s: str) -> str:
+    """Page text with runs of spaces shortened and blank lines collapsed to one."""
     lines = [re.sub(r"[ \t ]{2,}", "  ", ln).strip() for ln in s.replace("\f", "").splitlines()]
     out, blank = [], False
     for ln in lines:
@@ -351,14 +334,40 @@ def render_page(pdf: Path, page: int, full: Path, thumb: Path) -> bool:
             im = im.convert("RGB")
             if im.width != IMAGE_WIDTH:
                 im = im.resize((IMAGE_WIDTH, round(im.height * IMAGE_WIDTH / im.width)), Image.LANCZOS)
-            tmp = full.with_suffix(".tmp.webp")
-            im.save(tmp, "WEBP", quality=WEBP_QUALITY, method=4)
-            os.replace(tmp, full)
+            _save_webp(im, full, WEBP_QUALITY)
             th = im.resize((THUMB_WIDTH, round(im.height * THUMB_WIDTH / im.width)), Image.LANCZOS)
-            tmp = thumb.with_suffix(".tmp.webp")
-            th.save(tmp, "WEBP", quality=THUMB_QUALITY, method=4)
-            os.replace(tmp, thumb)
+            _save_webp(th, thumb, THUMB_QUALITY)
     return True
+
+
+def _save_webp(image, path: Path, quality: int) -> None:
+    """Save through a temporary file, so an interrupted run never leaves a broken image that looks done."""
+    tmp = path.with_suffix(".tmp.webp")
+    image.save(tmp, "WEBP", quality=quality, method=4)
+    os.replace(tmp, path)
+
+
+LIBREOFFICE_APP = Path("/Applications/LibreOffice.app/Contents/MacOS/soffice")
+
+# Office apps driven by AppleScript when LibreOffice is missing or fails: (name, app, script).
+# `{src}` and `{dst}` are filled with quoted POSIX paths; `{{` is a literal brace.
+APPLESCRIPT_CONVERTERS = [
+    ("Microsoft PowerPoint", Path("/Applications/Microsoft PowerPoint.app"),
+     'tell application "Microsoft PowerPoint"\n'
+     '  set p to open (POSIX file "{src}")\n'
+     '  delay 5\n'
+     '  save active presentation in (POSIX file "{dst}") as save as PDF\n'
+     '  close active presentation saving no\n'
+     'end tell'),
+    ("Keynote", Path("/Applications/Keynote.app"),
+     'with timeout of 600 seconds\n'
+     'tell application "Keynote"\n'
+     '  set d to open (POSIX file "{src}")\n'
+     '  export d to (POSIX file "{dst}") as PDF with properties {{PDF image quality:Best, skipped slides:false}}\n'
+     '  close d saving no\n'
+     'end tell\n'
+     'end timeout'),
+]
 
 
 def convert_pptx_to_pdf(pptx: Path, out_pdf: Path) -> tuple[bool, str]:
@@ -367,52 +376,48 @@ def convert_pptx_to_pdf(pptx: Path, out_pdf: Path) -> tuple[bool, str]:
         return True, "cached"
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
     soffice = shutil.which("soffice") or shutil.which("libreoffice")
-    if not soffice and Path("/Applications/LibreOffice.app/Contents/MacOS/soffice").exists():
-        soffice = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
-    if soffice:
-        with tempfile.TemporaryDirectory() as td:
-            r = subprocess.run([soffice, "--headless", "--convert-to", "pdf", "--outdir", td, str(pptx)],
-                               capture_output=True, timeout=1800)
-            produced = list(Path(td).glob("*.pdf"))
-            if r.returncode == 0 and produced:
-                shutil.move(str(produced[0]), out_pdf)
-                return True, "libreoffice"
-    apps = [
-        ("Microsoft PowerPoint", Path("/Applications/Microsoft PowerPoint.app"),
-         'tell application "Microsoft PowerPoint"\n'
-         '  set p to open (POSIX file "{src}")\n'
-         '  delay 5\n'
-         '  save active presentation in (POSIX file "{dst}") as save as PDF\n'
-         '  close active presentation saving no\n'
-         'end tell'),
-        ("Keynote", Path("/Applications/Keynote.app"),
-         'with timeout of 600 seconds\n'
-         'tell application "Keynote"\n'
-         '  set d to open (POSIX file "{src}")\n'
-         '  export d to (POSIX file "{dst}") as PDF with properties {{PDF image quality:Best, skipped slides:false}}\n'
-         '  close d saving no\n'
-         'end tell\n'
-         'end timeout'),
-    ]
+    if not soffice and LIBREOFFICE_APP.exists():
+        soffice = str(LIBREOFFICE_APP)
+    if soffice and _convert_with_libreoffice(soffice, pptx, out_pdf):
+        return True, "libreoffice"
     tried = ["LibreOffice: " + ("failed" if soffice else "not installed")]
-    for name, app, script in apps:
+    for name, app, script in APPLESCRIPT_CONVERTERS:
         if not app.exists():
             tried.append(f"{name}: not installed")
             continue
-        tmp = out_pdf.with_suffix(".tmp.pdf")
-        src = str(pptx).replace('"', '\\"')
-        dst = str(tmp).replace('"', '\\"')
-        try:
-            r = subprocess.run(["osascript", "-e", script.format(src=src, dst=dst)],
-                               capture_output=True, text=True, timeout=660)
-        except subprocess.TimeoutExpired:
-            tried.append(f"{name}: AppleScript timed out (likely an unanswered macOS Automation prompt)")
-            continue
-        if r.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
-            os.replace(tmp, out_pdf)
+        problem = _convert_with_applescript(script, pptx, out_pdf)
+        if problem is None:
             return True, name.lower().replace("microsoft ", "")
-        tried.append(f"{name}: AppleScript failed (exit {r.returncode})")
+        tried.append(f"{name}: {problem}")
     return False, "no converter succeeded (" + "; ".join(tried) + ")"
+
+
+def _convert_with_libreoffice(soffice: str, pptx: Path, out_pdf: Path) -> bool:
+    """Headless LibreOffice export. True when it wrote out_pdf."""
+    with tempfile.TemporaryDirectory() as td:
+        r = subprocess.run([soffice, "--headless", "--convert-to", "pdf", "--outdir", td, str(pptx)],
+                           capture_output=True, timeout=1800)
+        produced = list(Path(td).glob("*.pdf"))
+        if r.returncode == 0 and produced:
+            shutil.move(str(produced[0]), out_pdf)
+            return True
+    return False
+
+
+def _convert_with_applescript(script: str, pptx: Path, out_pdf: Path) -> str | None:
+    """Run one AppleScript export. None when it wrote out_pdf, else why it did not."""
+    tmp = out_pdf.with_suffix(".tmp.pdf")
+    src = str(pptx).replace('"', '\\"')
+    dst = str(tmp).replace('"', '\\"')
+    try:
+        r = subprocess.run(["osascript", "-e", script.format(src=src, dst=dst)],
+                           capture_output=True, text=True, timeout=660)
+    except subprocess.TimeoutExpired:
+        return "AppleScript timed out (likely an unanswered macOS Automation prompt)"
+    if r.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+        os.replace(tmp, out_pdf)
+        return None
+    return f"AppleScript failed (exit {r.returncode})"
 
 
 # --------------------------------------------------------------------------- PPTX
@@ -420,6 +425,8 @@ def convert_pptx_to_pdf(pptx: Path, out_pdf: Path) -> tuple[bool, str]:
 
 @dataclass
 class PptxSlide:
+    """One slide of the PowerPoint file, used for titles and speaker notes."""
+
     index: int  # 1-based position in the pptx
     hidden: bool
     title: str
@@ -428,10 +435,11 @@ class PptxSlide:
 
 
 def _shape_texts(shape) -> list[str]:
+    """Every text frame and table row in a shape, walking into groups."""
     out = []
     try:
         is_group = shape.shape_type == 6  # MSO_SHAPE_TYPE.GROUP
-    except Exception:
+    except Exception:  # python-pptx raises on shape types it does not model; treat them as plain shapes
         is_group = False
     if is_group:
         for s in shape.shapes:
@@ -448,6 +456,7 @@ def _shape_texts(shape) -> list[str]:
 
 
 def read_pptx(pptx: Path) -> list[PptxSlide]:
+    """Title, text, speaker notes and hidden state of every slide in a PowerPoint file."""
     from pptx import Presentation
 
     prs = Presentation(str(pptx))
@@ -457,7 +466,7 @@ def read_pptx(pptx: Path) -> list[PptxSlide]:
         try:
             if s.shapes.title is not None and s.shapes.title.has_text_frame:
                 title = s.shapes.title.text_frame.text.strip()
-        except Exception:
+        except Exception:  # a malformed title placeholder: the PDF text supplies the title instead
             title = ""
         texts = []
         for sh in s.shapes:
@@ -471,14 +480,19 @@ def read_pptx(pptx: Path) -> list[PptxSlide]:
 
 # --------------------------------------------------------------------------- alignment
 
-_STOP = set("the a an and or of to in on for is are be with as by at it this that from".split())
+_STOP = {
+    "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "is", "are", "be", "with", "as", "by", "at",
+    "it", "this", "that", "from",
+}
 
 
 def tokens(text: str) -> set[str]:
+    """Lowercase content words of `text`, for comparing a PDF page with a pptx slide."""
     return {t for t in re.findall(r"[a-z0-9]+", (text or "").lower()) if len(t) > 1 and t not in _STOP}
 
 
 def similarity(a: str, b: str) -> float | None:
+    """Jaccard overlap of the two texts' words; None when neither has any words."""
     ta, tb = tokens(a), tokens(b)
     if not ta and not tb:
         return None
@@ -525,10 +539,15 @@ def align(pdf_texts: list[str], slides: list[PptxSlide]) -> list[tuple[int | Non
     return out
 
 
+HIGH_MATCH = 0.5  # text similarity for a "high" confidence notes match
+MEDIUM_MATCH = 0.2  # ... for "medium"; also what makes a page an anchor for positional matching
+
+
 def confidence(sim: float | None, positional_ok: bool) -> str:
-    if sim is not None and sim >= 0.5:
+    """The notes_match.confidence label for one page (see the module docstring)."""
+    if sim is not None and sim >= HIGH_MATCH:
         return "high"
-    if sim is not None and sim >= 0.2:
+    if sim is not None and sim >= MEDIUM_MATCH:
         return "medium"
     return "positional" if positional_ok else "low"
 
@@ -548,7 +567,7 @@ def positional_ok(alignment: list[tuple[int | None, float | None]], slides: list
     total_visible = r
     anchors = [(-1, -1)]
     for i, (j, sim) in enumerate(alignment):
-        if j is not None and sim is not None and sim >= 0.2 and not slides[j].hidden:
+        if j is not None and sim is not None and sim >= MEDIUM_MATCH and not slides[j].hidden:
             anchors.append((i, rank[j]))
     anchors.append((n, total_visible))
     ok = [False] * n
@@ -566,9 +585,7 @@ def positional_ok(alignment: list[tuple[int | None, float | None]], slides: list
 
 def boilerplate_lines(page_texts: list[str]) -> set[str]:
     """Lines repeated on at least 30% of pages (footers, course names, page furniture)."""
-    from collections import Counter
-
-    counts = Counter()
+    counts: Counter = Counter()
     for t in page_texts:
         counts.update({ln.strip().lower() for ln in t.splitlines() if ln.strip()})
     limit = max(3, int(0.3 * len(page_texts)))
@@ -576,6 +593,7 @@ def boilerplate_lines(page_texts: list[str]) -> set[str]:
 
 
 def strip_boilerplate(text: str, boiler: set[str]) -> str:
+    """`text` without the boilerplate lines."""
     return "\n".join(ln for ln in text.splitlines() if ln.strip().lower() not in boiler).strip()
 
 
@@ -612,6 +630,8 @@ def _short(s: str, limit: int = 120) -> str:
 
 @dataclass
 class Deck:
+    """One session's deck being processed: its sources, output folder, and what this run did."""
+
     session: Session
     pdf: Path
     pptx: Path | None
@@ -651,11 +671,9 @@ def roster_fingerprint(roster_dir: Path | None = None) -> str:
     terms were added after the decks were extracted, and the cache kept a slide
     that names a student, because the key only covered the PDF and pptx.)
     """
-    import hashlib
-
     roster_dir = roster_dir or ARCHIVE / "_private" / "rosters"
     files = sorted(roster_dir.glob("*.csv")) if roster_dir.is_dir() else []
-    return hashlib.sha256(json.dumps(fingerprint(*files)).encode()).hexdigest()[:16]
+    return hashlib.sha256(json.dumps(file_fingerprint(*files)).encode()).hexdigest()[:16]
 
 
 def extraction_current(deck: Deck, roster_fp: str | None = None) -> bool:
@@ -668,13 +686,85 @@ def extraction_current(deck: Deck, roster_fp: str | None = None) -> bool:
     except ValueError:
         return False
     roster_fp = roster_fp if roster_fp is not None else roster_fingerprint()
-    if old.get("pipeline_version") == PIPELINE_VERSION and old.get("fingerprint") == fingerprint(deck.pdf, deck.pptx) \
-            and old.get("pages") == deck.pages and old.get("roster_fingerprint") == roster_fp:
+    unchanged = (
+        old.get("pipeline_version") == PIPELINE_VERSION
+        and old.get("fingerprint") == file_fingerprint(deck.pdf, deck.pptx)
+        and old.get("pages") == deck.pages
+        and old.get("roster_fingerprint") == roster_fp
+    )
+    if unchanged:
         deck.quality = old.get("notes_match", {})
         deck.flags = old.get("flag_counts", {})
         deck.ocr_used = bool(old.get("ocr"))
-        return True
-    return False
+    return unchanged
+
+
+@dataclass
+class PageText:
+    """One page's stored text fields, after every privacy filter, and the flags they raised."""
+
+    text: str
+    title: str
+    notes: str
+    ocr_text: str
+    flags: set[str]
+
+
+def clean_page_text(scrubber: NameScrubber, text: str, title: str, notes: str, ocr_raw: str,
+                    pg_counts: Counter) -> PageText:
+    """Run a page's text through the filters, in privacy order: names, then keys, then the PG rule.
+
+    Content flags read the raw text first, so a flag never depends on what a filter removed.
+    The title gets no key redaction: it is a short heading, and the stored outputs were built that way.
+    """
+    flags: set[str] = set(content_flags("\n".join((text, notes, ocr_raw))))
+    text, f1 = scrubber.check(text)
+    title, f2 = scrubber.check(title)
+    notes, f3 = scrubber.check(notes)
+    ocr_text, f4 = scrubber.check(ocr_raw)
+    flags.update(f1, f2, f3, f4)
+    text, s1 = redact_secrets(text)
+    notes, s2 = redact_secrets(notes)
+    ocr_text, s3 = redact_secrets(ocr_text)
+    if s1 or s2 or s3:
+        flags.add("secret_redacted")
+    # PG rule: mild words for cursing in the stored text (the slide image is unchanged)
+    text, p1 = pg_smooth(text, pg_counts)
+    title, p2 = pg_smooth(title, pg_counts)
+    notes, p3 = pg_smooth(notes, pg_counts)
+    ocr_text, p4 = pg_smooth(ocr_text, pg_counts)
+    if p1 or p2 or p3 or p4:
+        flags.add("pg_language")
+    return PageText(text, title, notes, ocr_text, flags)
+
+
+def _slide_record(deck: Deck, p: int, page: PageText, pptx_slide: PptxSlide | None, sim: float | None,
+                  conf: str) -> dict:
+    """The slides.json row for page `p`."""
+    sess, sid = deck.session, deck.sid(p)
+    rec = {
+        "slide_id": sid,
+        "course": sess.course,
+        "session": sess.number,
+        "slide_number": p,
+        "title": page.title,
+        "text": page.text,
+        "notes": page.notes,
+        "flags": sorted(page.flags),
+        "notes_match": {
+            "pptx_slide": pptx_slide.index if pptx_slide else None,
+            "similarity": None if sim is None else round(sim, 3),
+            "confidence": conf,
+        },
+        "image": f"slides/{sess.course}/s{sess.number:02d}/{sid}.webp",
+        "thumb": f"slides/{sess.course}/s{sess.number:02d}/{sid}-thumb.webp",
+    }
+    if "little_text" in page.flags and page.ocr_text.strip():
+        # Image-only slide: keep the (scrubbed) OCR text so the page can still be found.
+        rec["ocr_text"] = page.ocr_text.strip()
+        if not rec["title"]:
+            rec["title"] = pick_title(rec["ocr_text"])
+    return rec
 
 
 def extract_deck(deck: Deck, scrubber: NameScrubber, ocr: dict[str, str] | None) -> None:
@@ -692,7 +782,6 @@ def extract_deck(deck: Deck, scrubber: NameScrubber, ocr: dict[str, str] | None)
     records, qual, flag_counts = [], {}, {}
     pg_counts: Counter = Counter()
     for p in range(1, n + 1):
-        sid = deck.sid(p)
         j, sim = alignment[p - 1]
         ps = pslides[j] if j is not None else None
         conf = confidence(sim, positional[p - 1]) if ps else ("unmatched" if pslides else "no_pptx")
@@ -701,60 +790,20 @@ def extract_deck(deck: Deck, scrubber: NameScrubber, ocr: dict[str, str] | None)
         title = pick_title(texts[p - 1], ps.title if use_pptx else "")
         ocr_raw = (ocr or {}).get(str(deck.image(p)), "")
 
-        flags: set[str] = set(content_flags("\n".join((texts[p - 1], notes, ocr_raw))))
-        text, f1 = scrubber.check(texts[p - 1])
-        title, f2 = scrubber.check(title)
-        notes, f3 = scrubber.check(notes)
-        ocr_text, f4 = scrubber.check(ocr_raw)
-        flags.update(f1, f2, f3, f4)
-        text, s1 = redact_secrets(text)
-        notes, s2 = redact_secrets(notes)
-        ocr_text, s3 = redact_secrets(ocr_text)
-        if s1 or s2 or s3:
-            flags.add("secret_redacted")
-        # PG rule: mild words for cursing in the stored text (the slide image is unchanged)
-        text, p1 = pg_smooth(text, pg_counts)
-        title, p2 = pg_smooth(title, pg_counts)
-        notes, p3 = pg_smooth(notes, pg_counts)
-        ocr_text, p4 = pg_smooth(ocr_text, pg_counts)
-        if p1 or p2 or p3 or p4:
-            flags.add("pg_language")
-        little = len(re.sub(r"\W", "", text)) < 15
-        if little:
-            flags.add("little_text")
+        page = clean_page_text(scrubber, texts[p - 1], title, notes, ocr_raw, pg_counts)
+        if len(re.sub(r"\W", "", page.text)) < 15:
+            page.flags.add("little_text")
         if (sess.course, sess.number) in NO_CLIP_SESSIONS:
-            flags.add("no_clips_private_case")
+            page.flags.add("no_clips_private_case")
         if deck.source.startswith("converted"):
-            flags.add("converted_from_pptx")
+            page.flags.add("converted_from_pptx")
         if pslides and conf in ("low", "unmatched"):
-            flags.add("notes_unmatched")
+            page.flags.add("notes_unmatched")
 
         qual[conf] = qual.get(conf, 0) + 1
-        for f in flags:
+        for f in page.flags:
             flag_counts[f] = flag_counts.get(f, 0) + 1
-        rec = {
-            "slide_id": sid,
-            "course": sess.course,
-            "session": sess.number,
-            "slide_number": p,
-            "title": title,
-            "text": text,
-            "notes": notes,
-            "flags": sorted(flags),
-            "notes_match": {
-                "pptx_slide": ps.index if ps else None,
-                "similarity": None if sim is None else round(sim, 3),
-                "confidence": conf,
-            },
-            "image": f"slides/{sess.course}/s{sess.number:02d}/{sid}.webp",
-            "thumb": f"slides/{sess.course}/s{sess.number:02d}/{sid}-thumb.webp",
-        }
-        if little and ocr_text.strip():
-            # Image-only slide: keep the (scrubbed) OCR text so the page can still be found.
-            rec["ocr_text"] = ocr_text.strip()
-            if not rec["title"]:
-                rec["title"] = pick_title(rec["ocr_text"])
-        records.append(rec)
+        records.append(_slide_record(deck, p, page, ps, sim, conf))
 
     write_json(deck.out / "slides.json", records)
     write_json(deck.out / "deck.json", {
@@ -766,7 +815,7 @@ def extract_deck(deck: Deck, scrubber: NameScrubber, ocr: dict[str, str] | None)
         "source": deck.source,
         "pdf": deck.pdf.name,
         "pptx": deck.pptx.name if deck.pptx else None,
-        "fingerprint": fingerprint(deck.pdf, deck.pptx),
+        "fingerprint": file_fingerprint(deck.pdf, deck.pptx),
         "roster_fingerprint": roster_fingerprint(),
         "pages": n,
         "pptx_slides": len(pslides),
@@ -817,6 +866,10 @@ def ocr_images(paths: list[Path]) -> dict[str, str] | None:
 
 
 def process_notebooks(sess: Session, scrubber: NameScrubber) -> tuple[int, int, dict]:
+    """Write code/<course>/s<NN>.json: every code cell, scrubbed, with the markdown above it.
+
+    Returns (notebooks read, cells written, flag counts). Outputs are never stored.
+    """
     import nbformat
 
     nbs = sorted((sess.folder / "notebooks").glob("*.ipynb"))
@@ -840,108 +893,83 @@ def process_notebooks(sess: Session, scrubber: NameScrubber) -> tuple[int, int, 
                 continue
             if cell.cell_type != "code" or not src.strip():
                 continue
-            flags: set[str] = set()
-            src, f1 = scrubber.check(src)
-            md, f2 = scrubber.check("\n\n".join(md_buf))
-            src, r1 = redact_secrets(src)
-            md, r2 = redact_secrets(md)
-            flags.update(f1, f2)
-            if r1 or r2:
-                flags.add("secret_redacted")
-            for f in flags:
+            row = _code_cell(sess, k, nb_path.name, idx, src, "\n\n".join(md_buf), scrubber)
+            for f in row["flags"]:
                 flag_counts[f] = flag_counts.get(f, 0) + 1
-            cells_out.append({
-                "cell_id": f"{sess.course}-s{sess.number:02d}-nb{k}-c{idx:03d}",
-                "course": sess.course,
-                "session": sess.number,
-                "notebook": nb_path.name,
-                "cell_index": idx,
-                "source": src,
-                "markdown_above": md,
-                "flags": sorted(flags),
-            })
+            cells_out.append(row)
             md_buf = []
     write_json(build_dir() / "code" / sess.course / f"s{sess.number:02d}.json", cells_out)
     return len(nbs), len(cells_out), flag_counts
+
+
+def _code_cell(sess: Session, k: int, notebook: str, idx: int, src: str, markdown: str,
+               scrubber: NameScrubber) -> dict:
+    """One code/<course>/s<NN>.json row: the cell and the markdown above it, names and keys removed."""
+    flags: set[str] = set()
+    src, f1 = scrubber.check(src)
+    md, f2 = scrubber.check(markdown)
+    src, r1 = redact_secrets(src)
+    md, r2 = redact_secrets(md)
+    flags.update(f1, f2)
+    if r1 or r2:
+        flags.add("secret_redacted")
+    return {
+        "cell_id": f"{sess.course}-s{sess.number:02d}-nb{k}-c{idx:03d}",
+        "course": sess.course,
+        "session": sess.number,
+        "notebook": notebook,
+        "cell_index": idx,
+        "source": src,
+        "markdown_above": md,
+        "flags": sorted(flags),
+    }
 
 
 # --------------------------------------------------------------------------- main
 
 
 def dir_size(path: Path) -> int:
+    """Total bytes of the files under `path`."""
     return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--course", choices=list(COURSES) + ["70-445", "45-884"])
-    ap.add_argument("--session", type=int)
-    ap.add_argument("--force", action="store_true", help="re-extract text/notes even if unchanged")
-    ap.add_argument("--no-convert", action="store_true", help="do not try to convert pptx-only decks")
-    ap.add_argument("--no-ocr", action="store_true", help="skip Apple Vision OCR of slide images")
-    ap.add_argument("--workers", type=int, default=max(2, (os.cpu_count() or 4) - 2))
-    args = ap.parse_args(argv)
+def _missing(sess: Session, reason: str) -> dict:
+    """A missing.json row: a session with no renderable deck, and why."""
+    return {"course": sess.course, "session": sess.number, "date": sess.date, "title": sess.title, "reason": reason}
 
-    t0 = time.time()
-    sessions = discover_sessions(args.course, args.session)
-    if not sessions:
-        print("no sessions matched", file=sys.stderr)
-        return 1
-    scrubber = NameScrubber.from_dir(ARCHIVE / "_private" / "rosters")
-    notes_by_session = inventory_notes()
 
-    missing_path = build_dir() / "slides" / "missing.json"
-    try:
-        missing = {(m["course"], m["session"]): m for m in json.loads(missing_path.read_text())}
-    except (OSError, ValueError):
-        missing = {}
+def _find_deck(sess: Session, args: argparse.Namespace, missing: dict, inventory: dict) -> Deck | None:
+    """The session's renderable deck (converting a pptx-only deck if allowed), else note it in `missing`."""
+    key = (sess.course, sess.number)
+    pdf, pptx = sess.folder / "slides.pdf", sess.folder / "slides.pptx"
+    source = "slides.pdf"
+    if not pdf.exists() and pptx.exists() and not args.no_convert:
+        conv = build_dir() / "slides" / sess.course / f"s{sess.number:02d}" / "source_converted.pdf"
+        print(f"{sess.tag}: no PDF, converting pptx ...", flush=True)
+        ok, how = convert_pptx_to_pdf(pptx, conv)
+        if ok:
+            pdf, source = conv, f"converted from slides.pptx ({how})"
+        else:
+            missing[key] = _missing(sess, f"pptx only, no PDF export; {how}")
+    if pdf.exists():
+        missing.pop(key, None)
+        return Deck(sess, pdf, pptx if pptx.exists() else None, source)
+    if args.no_convert and pptx.exists() and key not in missing:
+        missing[key] = _missing(sess, "pptx only, no PDF export; conversion skipped (--no-convert)")
+    elif key not in missing:
+        note = inventory.get(key, "")
+        missing[key] = _missing(sess, "no slide deck in the archive" + (f" (inventory: {note})" if note else ""))
+    return None
 
-    results: list[Deck] = []
-    code_rows = []
-    for sess in sessions:
-        pdf, pptx = sess.folder / "slides.pdf", sess.folder / "slides.pptx"
-        source = "slides.pdf"
-        if not pdf.exists() and pptx.exists() and not args.no_convert:
-            conv = build_dir() / "slides" / sess.course / f"s{sess.number:02d}" / "source_converted.pdf"
-            print(f"{sess.tag}: no PDF, converting pptx ...", flush=True)
-            ok, how = convert_pptx_to_pdf(pptx, conv)
-            if ok:
-                pdf, source = conv, f"converted from slides.pptx ({how})"
-            else:
-                missing[(sess.course, sess.number)] = {
-                    "course": sess.course, "session": sess.number, "date": sess.date, "title": sess.title,
-                    "reason": f"pptx only, no PDF export; {how}",
-                }
-        if pdf.exists():
-            missing.pop((sess.course, sess.number), None)
-            print(f"{sess.tag}: rendering {source} ...", flush=True)
-            deck = Deck(sess, pdf, pptx if pptx.exists() else None, source)
-            render_deck(deck, args.workers)
-            results.append(deck)
-        elif args.no_convert and pptx.exists() and (sess.course, sess.number) not in missing:
-            missing[(sess.course, sess.number)] = {
-                "course": sess.course, "session": sess.number, "date": sess.date, "title": sess.title,
-                "reason": "pptx only, no PDF export; conversion skipped (--no-convert)",
-            }
-        elif (sess.course, sess.number) not in missing:
-            note = notes_by_session.get((sess.course, sess.number), "")
-            missing[(sess.course, sess.number)] = {
-                "course": sess.course, "session": sess.number, "date": sess.date, "title": sess.title,
-                "reason": "no slide deck in the archive" + (f" (inventory: {note})" if note else ""),
-            }
-        n_nb, n_cells, nb_flags = process_notebooks(sess, scrubber)
-        if n_nb:
-            code_rows.append((sess, n_nb, n_cells, nb_flags))
 
-    write_json(missing_path, sorted(missing.values(), key=lambda m: (m["course"], m["session"])))
-
-    # Text, notes and flags, only for decks whose sources or pipeline changed.
+def _extract_changed(results: list[Deck], scrubber: NameScrubber, force: bool, use_ocr: bool) -> None:
+    """Text, notes and flags, only for decks whose sources, rosters or pipeline changed."""
     roster_fp = roster_fingerprint()
-    todo = [d for d in results if args.force or not extraction_current(d, roster_fp)]
+    todo = [d for d in results if force or not extraction_current(d, roster_fp)]
     for d in results:
         d.skipped_extract = d not in todo
     ocr = None
-    if todo and not args.no_ocr:
+    if todo and use_ocr:
         imgs = [d.image(p) for d in todo for p in range(1, d.pages + 1)]
         print(f"OCR of {len(imgs)} slide images ...", flush=True)
         ocr = ocr_images(imgs)
@@ -951,7 +979,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{d.session.tag}: extracting text, notes, flags ...", flush=True)
         extract_deck(d, scrubber, ocr)
 
-    # ---- summary
+
+def _print_summary(results: list[Deck], sessions: list[Session], missing: dict, code_rows: list,
+                   started: float) -> None:
+    """Counts per deck, flag totals, missing decks and notebooks. Never slide text."""
     print("\n=== Slide pipeline summary ===")
     print(f"{'deck':<11}{'pages':>6}{'new img':>8}  notes match (pages)                       flags")
     for r in results:
@@ -978,7 +1009,48 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {sess.tag}: {n_nb} notebooks, {n_cells} code cells {('[' + f + ']') if f else ''}")
     slides_root, code_root = build_dir() / "slides", build_dir() / "code"
     print(f"output size: slides {dir_size(slides_root) / 1e6:.1f} MB, "
-          f"code {dir_size(code_root) / 1e6 if code_root.exists() else 0:.1f} MB; {time.time() - t0:.0f} s")
+          f"code {dir_size(code_root) / 1e6 if code_root.exists() else 0:.1f} MB; {time.time() - started:.0f} s")
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--course", choices=list(COURSES) + ["70-445", "45-884"])
+    ap.add_argument("--session", type=int)
+    ap.add_argument("--force", action="store_true", help="re-extract text/notes even if unchanged")
+    ap.add_argument("--no-convert", action="store_true", help="do not try to convert pptx-only decks")
+    ap.add_argument("--no-ocr", action="store_true", help="skip Apple Vision OCR of slide images")
+    ap.add_argument("--workers", type=int, default=max(2, (os.cpu_count() or 4) - 2))
+    args = ap.parse_args(argv)
+
+    started = time.time()
+    sessions = discover_sessions(args.course, args.session)
+    if not sessions:
+        print("no sessions matched", file=sys.stderr)
+        return 1
+    scrubber = NameScrubber.from_dir(ARCHIVE / "_private" / "rosters")
+    inventory = inventory_notes()
+
+    missing_path = build_dir() / "slides" / "missing.json"
+    try:
+        missing = {(m["course"], m["session"]): m for m in json.loads(missing_path.read_text())}
+    except (OSError, ValueError):
+        missing = {}
+
+    results: list[Deck] = []
+    code_rows = []
+    for sess in sessions:
+        deck = _find_deck(sess, args, missing, inventory)
+        if deck is not None:
+            print(f"{sess.tag}: rendering {deck.source} ...", flush=True)
+            render_deck(deck, args.workers)
+            results.append(deck)
+        n_nb, n_cells, nb_flags = process_notebooks(sess, scrubber)
+        if n_nb:
+            code_rows.append((sess, n_nb, n_cells, nb_flags))
+
+    write_json(missing_path, sorted(missing.values(), key=lambda m: (m["course"], m["session"])))
+    _extract_changed(results, scrubber, args.force, use_ocr=not args.no_ocr)
+    _print_summary(results, sessions, missing, code_rows, started)
     return 0
 
 

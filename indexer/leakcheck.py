@@ -37,7 +37,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from indexer.roster import blank_institution_terms, person, read_people, roster_files
+from indexer.roster import (
+    blank_institution_terms,
+    lowercase_dictionary_words,
+    names_pattern,
+    person,
+    read_people,
+    roster_files,
+)
 
 BEN = {"ben", "benjamin", "collier"}
 WORD_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*[A-Za-z]|[A-Za-z]")
@@ -45,18 +52,13 @@ TOKEN_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+|[A-Za-z0-9][A-Za-z0-9
 
 
 class RosterMissing(RuntimeError):
-    pass
-
-
-def _english_words() -> set[str]:
-    words = Path("/usr/share/dict/words")
-    if not words.exists():
-        return set()
-    return {w for w in words.read_text(errors="ignore").split() if w.islower()}
+    """No roster CSVs: the check cannot run, so callers must refuse to upload."""
 
 
 @dataclass
 class Hits:
+    """Leak check results: counts by place, never the matched text."""
+
     total: int = 0
     where: dict[str, int] = field(default_factory=dict)  # "<object>#<record id>.<field>" -> count
     allowed: int = 0  # strict hits a person reviewed and allowlisted (not names); never block
@@ -110,10 +112,12 @@ def load_allowlist(path: Path) -> dict[tuple[str, str], set[str]]:
 
 
 class RosterChecker:
+    """Counts roster names in text at the strong and strict levels (see the module docstring)."""
+
     def __init__(self, rows: list[dict[str, str]], english: set[str] | None = None,
                  allow: dict[tuple[str, str], set[str]] | None = None) -> None:
         self.allow = allow or {}
-        english = english if english is not None else _english_words()
+        english = english if english is not None else lowercase_dictionary_words()
         full: set[str] = set()
         self._ids: set[str] = set()
         self._singles: set[str] = set()
@@ -136,13 +140,12 @@ class RosterChecker:
             if email:
                 self._ids.add(email)
                 self._ids.add(email.split("@")[0])
-        parts = sorted((re.escape(n).replace(r"\ ", r"\s+") for n in full if n.strip()), key=len, reverse=True)
-        self._full = re.compile(r"(?<![A-Za-z])(?:" + "|".join(parts) + r")(?![A-Za-z])", re.I) if parts else None
+        self._full = names_pattern(full)
         self.size = len(rows)
 
     @classmethod
     def from_dir(cls, path: Path, english: set[str] | None = None,
-                 allowlist: Path | None = None) -> "RosterChecker":
+                 allowlist: Path | None = None) -> RosterChecker:
         """Rosters from `path`; the reviewed allowlist from `path/../leak_allowlist.json` unless given."""
         if not roster_files(path):
             raise RosterMissing(f"No roster CSVs in {path}; the leak check cannot run")
@@ -157,6 +160,7 @@ class RosterChecker:
     # ------------------------------------------------------------ counting
 
     def strong(self, text: str) -> int:
+        """Full roster names, Andrew IDs and emails in `text` (the level every field gets)."""
         if not text:
             return 0
         n = len(self._full.findall(text)) if self._full else 0
@@ -167,6 +171,7 @@ class RosterChecker:
         return n
 
     def strict(self, text: str) -> int:
+        """Strong hits plus single capitalized roster first names and surnames."""
         return self.strict_allowing(text)[0]
 
     def strict_allowing(self, text: str, allow: set[str] | frozenset = frozenset()) -> tuple[int, int]:
@@ -212,17 +217,22 @@ class RosterChecker:
         return hits
 
     def check_object(self, path: str, data: bytes, hits: Hits | None = None) -> Hits:
+        """Check one object about to be uploaded: record-aware for the two indexes, strong otherwise.
+
+        An index that does not parse as JSON is not skipped: it falls through to the strong
+        check of its raw text, so a malformed file can never slip past the gate.
+        """
         hits = hits or Hits()
         text = data.decode("utf-8", errors="replace")
+        strict_fields = None
         if path.endswith("content/index.json"):
+            strict_fields = ("transcript",)
+        elif path.endswith("content/info_index.json"):
+            strict_fields = INFO_STRICT_FIELDS  # Canvas course info: de-identified prose, so titles and text too
+        if strict_fields is not None:
             try:
-                return self.check_index(json.loads(text), path, hits)
+                return self.check_index(json.loads(text), path, hits, strict_fields)
             except ValueError:
-                pass
-        if path.endswith("content/info_index.json"):
-            try:  # Canvas course info: de-identified prose, so titles and text get the strict check
-                return self.check_index(json.loads(text), path, hits, INFO_STRICT_FIELDS)
-            except ValueError:
-                pass
+                pass  # not JSON: the strong check below still reads every character
         hits.add(path, self.strong(text))
         return hits

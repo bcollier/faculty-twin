@@ -31,7 +31,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -63,17 +64,24 @@ README_CALIBRATION = {
 
 
 def _stamp(run_id: str) -> datetime:
-    return datetime.strptime(run_id, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    return datetime.strptime(run_id, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
 
 
 def _judge_ref(name: str) -> dict[str, str]:
+    """{"provider", "model"} from a "provider:model" key (judges and answering models alike)."""
     provider, _, model = name.partition(":")
     return {"provider": provider, "model": model}
 
 
-def convert_run(run_dir: Path, run_id: str, generator: dict[str, str], excluded: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    """One JSON object per non-empty line."""
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def convert_run(run_dir: Path, run_id: str, generator: dict[str, str],
+                excluded: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """A CLI run folder -> (run.json, result rows) in the Settings format."""
-    results = [json.loads(line) for line in (run_dir / "results.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    results = _read_jsonl(run_dir / "results.jsonl")
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     meta = summary.get("meta") or {}
     judges = [j.strip() for j in str(meta.get("judges") or "").split(",") if j.strip() and j.strip() != "none"]
@@ -127,6 +135,7 @@ def convert_run(run_dir: Path, run_id: str, generator: dict[str, str], excluded:
 
 
 def baseline_entry() -> dict[str, Any]:
+    """The October 5 generic-chatbot baseline as a report-card entry (aggregates only)."""
     def mean2(field: str) -> float:
         return round(sum(j[field] for j in BASELINE_PER_JUDGE.values()) / len(BASELINE_PER_JUDGE), 2)
 
@@ -175,7 +184,8 @@ def baseline_entry() -> dict[str, Any]:
     }
 
 
-def run(private: Path, bucket: eval_store.Bucket, out=print) -> int:
+def run(private: Path, bucket: eval_store.Bucket, out: Callable[[str], None] = print) -> int:
+    """Import the October 7 runs, the October 5 baseline and the README calibration results."""
     runs_dir = private / "runs"
     for run_id, excluded in ((VALID_RUN, False), (ERRORED_RUN, True)):
         folder = runs_dir / run_id
@@ -206,52 +216,72 @@ def run(private: Path, bucket: eval_store.Bucket, out=print) -> int:
     return 0
 
 
+QUESTION_FIELDS = ("qid", "category", "course", "answerable", "question", "reference_answer", "type",
+                   "expected_kind", "expected_slides")
+ROW_EXTRA_FIELDS = ("type", "expected_kind", "expected_slides", "must_include", "must_not")
+
+
+def _read_json_or(path: Path, default: Any) -> Any:
+    """Parsed JSON, or `default` when the file is missing or not JSON (optional run files)."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+def _compare_row(r: dict[str, Any], qid: str, pair: int, generator: str) -> dict[str, Any]:
+    """One comparison result in the Settings row format (judge token usage dropped)."""
+    return {
+        "qid": qid, "pair": pair, "category": r["category"], "course": r.get("course"),
+        "answerable": r["answerable"], "question": r["question"], "reference_answer": r.get("reference_answer"),
+        **{k: r[k] for k in ROW_EXTRA_FIELDS if r.get(k)},
+        "web_path": r.get("web_path", True), "generator": generator, "outcome": r["response"].get("outcome"),
+        "response": r["response"],
+        "judgements": [{k: v for k, v in j.items() if k != "usage"} for j in r.get("judgements", [])],
+        "calls": (r["response"].get("usage") or {}).get("calls"), "at": None,
+    }
+
+
+def _compare_notes(run_dir: Path, meta: dict[str, Any]) -> list[str]:
+    """The run's notes: what was compared, the spend, and the test-retest ICC when the report has it."""
+    notes = [f"Model comparison from the command line (evals/compare.py): "
+             f"{meta.get('questions_file', 'question set')}, run 1 of each question x model. "
+             f"Spend for the whole comparison: ${meta.get('spend_usd', 0):.2f}."]
+    if meta.get("web_path") is False:
+        notes.append("The \"beyond the slides\" web path was not in the app yet: "
+                     "web questions were expected to be declined.")
+    _missing = object()
+    summary = _read_json_or(run_dir / "compare_summary.json", _missing)
+    if summary is not _missing:
+        models = (summary.get("generator_retest") or {}).get("models", {})
+        icc = {k.split(":", 1)[-1]: v.get("icc") for k, v in models.items()}
+        if any(v is not None for v in icc.values()):
+            notes.append("Test-retest ICC (run 1 vs run 2): " + ", ".join(f"{k} {v}" for k, v in icc.items()) + ".")
+    return notes
+
+
 def convert_compare(run_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """A comparison run folder (evals/compare.py) -> (run.json, rows) in the Settings format. Run 1 only."""
-    rows_in = [json.loads(line) for line in (run_dir / "results.jsonl").read_text(encoding="utf-8").splitlines()
-               if line.strip()]
-    try:
-        meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        meta = {}
+    rows_in = _read_jsonl(run_dir / "results.jsonl")
+    meta = _read_json_or(run_dir / "meta.json", {})
     run_id = eval_store.check_run_id(run_dir.name)
     rep1 = [r for r in rows_in if r.get("rep", 1) == 1]
     gens_keys = meta.get("generators") or sorted({r["generator"] for r in rep1})
     generators = [_judge_ref(g) for g in gens_keys]
-    judges = [_judge_ref(j) for j in (meta.get("judges") or sorted({j["judge"] for r in rep1 for j in r["judgements"]}))]
+    judge_keys = meta.get("judges") or sorted({j["judge"] for r in rep1 for j in r["judgements"]})
+    judges = [_judge_ref(j) for j in judge_keys]
     qids = sorted({r["qid"] for r in rep1})
     by = {(r["qid"], r["generator"]): r for r in rep1}
     questions, rows = [], []
     for qi, qid in enumerate(qids):
         first = next(r for r in rep1 if r["qid"] == qid)
-        questions.append({k: first.get(k) for k in ("qid", "category", "course", "answerable", "question",
-                                                    "reference_answer", "type", "expected_kind", "expected_slides")
-                          if first.get(k) is not None})
+        questions.append({k: first.get(k) for k in QUESTION_FIELDS if first.get(k) is not None})
         for gi, g in enumerate(gens_keys):
             r = by.get((qid, g))
-            if r is None:
-                continue
-            rows.append({
-                "qid": qid, "pair": qi * len(gens_keys) + gi, "category": r["category"], "course": r.get("course"),
-                "answerable": r["answerable"], "question": r["question"], "reference_answer": r.get("reference_answer"),
-                **{k: r[k] for k in ("type", "expected_kind", "expected_slides", "must_include", "must_not") if r.get(k)},
-                "web_path": r.get("web_path", True), "generator": g, "outcome": r["response"].get("outcome"),
-                "response": r["response"], "judgements": [{k: v for k, v in j.items() if k != "usage"}
-                                                          for j in r.get("judgements", [])],
-                "calls": (r["response"].get("usage") or {}).get("calls"), "at": None,
-            })
+            if r is not None:
+                rows.append(_compare_row(r, qid, qi * len(gens_keys) + gi, g))
     finished = meta.get("finished_at") or _stamp(run_id.split("-")[0]).isoformat(timespec="seconds")
-    notes = [f"Model comparison from the command line (evals/compare.py): {meta.get('questions_file', 'question set')}, "
-             f"run 1 of each question x model. Spend for the whole comparison: ${meta.get('spend_usd', 0):.2f}."]
-    if meta.get("web_path") is False:
-        notes.append("The \"beyond the slides\" web path was not in the app yet: web questions were expected to be declined.")
-    try:
-        summary = json.loads((run_dir / "compare_summary.json").read_text(encoding="utf-8"))
-        icc = {k.split(":", 1)[-1]: v.get("icc") for k, v in (summary.get("generator_retest") or {}).get("models", {}).items()}
-        if any(v is not None for v in icc.values()):
-            notes.append("Test-retest ICC (run 1 vs run 2): " + ", ".join(f"{k} {v}" for k, v in icc.items()) + ".")
-    except (OSError, ValueError):
-        pass
+    notes = _compare_notes(run_dir, meta)
     run = {
         "id": run_id,
         "name": meta.get("label") or f"Model comparison {run_id}",
@@ -288,7 +318,8 @@ def convert_compare(run_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]
     return run, rows
 
 
-def import_compare(run_dir: Path, bucket: eval_store.Bucket, out=print) -> int:
+def import_compare(run_dir: Path, bucket: eval_store.Bucket, out: Callable[[str], None] = print) -> int:
+    """Upload one model comparison run (run 1 of each question x model) as a finished run."""
     run_json, rows = convert_compare(run_dir)
     eval_store.write_run(bucket, run_json)
     for row in rows:

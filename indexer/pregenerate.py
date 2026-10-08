@@ -30,9 +30,10 @@ import dataclasses
 import os
 import secrets
 import sys
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 
@@ -62,10 +63,14 @@ RETRIEVAL_MSG = (
 
 
 def draft_path(build: Path) -> Path:
+    """Where Ben's editable question list lives."""
     return build / "topics" / "draft_questions.json"
 
 
 def ensure_draft(build: Path, log: Callable[[str], None] = print) -> list[dict[str, Any]]:
+    """The question list, writing the draft first when there is none. Never overwrites Ben's edits."""
+    from app.config import QUESTION_MAX_CHARS
+
     path = draft_path(build)
     if not path.exists():
         common.write_json(path, DRAFT_QUESTIONS)
@@ -74,21 +79,25 @@ def ensure_draft(build: Path, log: Callable[[str], None] = print) -> list[dict[s
     clean = []
     for q in questions:
         if isinstance(q, dict) and str(q.get("question", "")).strip():
-            clean.append({"question": str(q["question"]).strip()[:300], "course": q.get("course") or None})
+            question = str(q["question"]).strip()[:QUESTION_MAX_CHARS]
+            clean.append({"question": question, "course": q.get("course") or None})
     return clean
 
 
 def audio_name(narration: str) -> str:
+    """The stored mp3's file name: a hash of the narration, so a changed narration gets a new file."""
     return common.sha256_bytes(narration.encode("utf-8"))[:24]
 
 
 def voice_tag(voice: str) -> str:
+    """The audio folder for a voice: the same tag app/voices.py uses to find stored audio."""
     from app import speech
 
     return speech.voice_tag(voice)
 
 
 def speak(text: str, voice: str, client: httpx.Client) -> bytes:
+    """Speak one narration with ElevenLabs; mp3 bytes."""
     from app import speech
 
     url, headers, params, body = speech.tts_request(text, voice)
@@ -103,12 +112,13 @@ def generate(
     questions: list[dict[str, Any]],
     voice: str | None,
     audio: bool = True,
-    retriever=None,
-    embedder=None,
-    completer=None,
+    retriever: Callable[..., Any] | None = None,
+    embedder: Callable[..., Any] | None = None,
+    completer: Callable[..., Any] | None = None,
     tts_client: httpx.Client | None = None,
     log: Callable[[str], None] = print,
 ) -> int:
+    """Answer each question through the real app path, store its audio, write topics.json. Returns an EXIT_* code."""
     # Media links stay local (no signing calls), and the audio links answer() signs are thrown
     # away (topics store mp3 paths), so a random per-process key is enough when none is set.
     temp = {"CONTENT_DIR": str(build)}
@@ -126,7 +136,10 @@ def generate(
                 os.environ[k] = v
 
 
-def _generate(build, questions, voice, audio, retriever, embedder, completer, tts_client, log) -> int:
+def _generate(build: Path, questions: list[dict[str, Any]], voice: str | None, audio: bool,
+              retriever: Callable[..., Any] | None, embedder: Callable[..., Any] | None,
+              completer: Callable[..., Any] | None, tts_client: httpx.Client | None,
+              log: Callable[[str], None]) -> int:
     from fastapi import HTTPException
 
     from app import main, storage
@@ -149,7 +162,7 @@ def _generate(build, questions, voice, audio, retriever, embedder, completer, tt
     out: list[dict[str, Any]] = []
     own = tts_client is None and audio and voice is not None
     client = tts_client or (httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) if own else None)
-    chars = 0
+    spoken = {"chars": 0}  # characters sent to ElevenLabs this run
     try:
         for q in questions:
             try:
@@ -160,32 +173,9 @@ def _generate(build, questions, voice, audio, retriever, embedder, completer, tt
             if not result["covered"]:
                 log(f"  skipped (not covered): {q['question']}")
                 continue
-            segments = []
-            for seg in result["segments"]:
-                entry = {"slide_id": seg["slide_id"], "narration": seg["narration"]}
-                if audio and voice and client is not None and seg["narration"]:
-                    rel = f"audio/{voice_tag(voice)}/{audio_name(seg['narration'])}.mp3"
-                    dest = build / rel
-                    if not dest.exists():
-                        common.write_bytes_atomic(dest, speak(seg["narration"], voice, client))
-                        chars += len(seg["narration"])
-                    entry["audio_path"] = rel
-                segments.append(entry)
-            out.append(
-                {
-                    "question": q["question"],
-                    "course": q["course"],
-                    "playlist": {"segments": segments, "follow_ups": result.get("follow_ups", [])},
-                    "generated": {
-                        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                        "provider": info.get("provider"),
-                        "model": info.get("model"),
-                        "narration": info.get("narration"),
-                        "voice_id": voice if audio else None,
-                        "index_version": content.meta.get("index_version"),
-                    },
-                }
-            )
+            speak_with = client if audio and voice else None
+            segments = [_stored_segment(seg, build, voice, speak_with, spoken) for seg in result["segments"]]
+            out.append(_topic(q, segments, result, info, voice if audio else None, content.meta))
             log(f"  ok ({len(segments)} segments, narration {info.get('narration')}): {q['question']}")
     finally:
         if own and client is not None:
@@ -193,9 +183,44 @@ def _generate(build, questions, voice, audio, retriever, embedder, completer, tt
     common.write_json(build / "topics" / "topics.json", out)
     log(
         f"Wrote {len(out)} of {len(questions)} topics to {build / 'topics' / 'topics.json'}"
-        f" ({chars} characters sent to ElevenLabs). Next: indexer/upload.py"
+        f" ({spoken['chars']} characters sent to ElevenLabs). Next: indexer/upload.py"
     )
     return EXIT_OK
+
+
+def _stored_segment(seg: dict[str, Any], build: Path, voice: str | None, client: httpx.Client | None,
+                    spoken: dict[str, int]) -> dict[str, Any]:
+    """One topic segment: slide and narration, plus a stored mp3 path when there is a voice to speak it.
+
+    An mp3 already on disk is reused, so a re-run only pays ElevenLabs for changed narrations.
+    """
+    entry = {"slide_id": seg["slide_id"], "narration": seg["narration"]}
+    if voice and client is not None and seg["narration"]:
+        rel = f"audio/{voice_tag(voice)}/{audio_name(seg['narration'])}.mp3"
+        dest = build / rel
+        if not dest.exists():
+            common.write_bytes_atomic(dest, speak(seg["narration"], voice, client))
+            spoken["chars"] += len(seg["narration"])
+        entry["audio_path"] = rel
+    return entry
+
+
+def _topic(q: dict[str, Any], segments: list[dict[str, Any]], result: dict[str, Any], info: dict[str, Any],
+           voice_id: str | None, index_meta: dict[str, Any]) -> dict[str, Any]:
+    """One topics.json entry, with what generated it (provider, model, voice, index version)."""
+    return {
+        "question": q["question"],
+        "course": q["course"],
+        "playlist": {"segments": segments, "follow_ups": result.get("follow_ups", [])},
+        "generated": {
+            "at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "provider": info.get("provider"),
+            "model": info.get("model"),
+            "narration": info.get("narration"),
+            "voice_id": voice_id,
+            "index_version": index_meta.get("index_version"),
+        },
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -212,7 +237,8 @@ def main(argv: list[str] | None = None) -> int:
     if a.draft_only:
         return EXIT_OK
 
-    from app import llm, main as app_main, settings_store
+    from app import llm, settings_store
+    from app import main as app_main
 
     try:  # free check first: Ben's retrieval functions must exist before any paid call
         app_main._check_retrieval_ready(app_main.get_retriever(), 8)

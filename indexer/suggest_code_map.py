@@ -41,6 +41,7 @@ import argparse
 import re
 import sys
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,7 @@ if __package__ in (None, ""):  # allow `python indexer/suggest_code_map.py`
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from indexer import common  # noqa: E402
+from indexer.layout import slide_text  # noqa: E402
 from indexer.leakcheck import RosterChecker  # noqa: E402
 from indexer.pg_filter import is_pg  # noqa: E402
 
@@ -88,7 +90,8 @@ def stem(word: str) -> str:
     return word
 
 
-def analyzer(stop_words: set[str]):
+def analyzer(stop_words: set[str]) -> Callable[[str], list[str]]:
+    """A TF-IDF analyzer: split identifiers, lowercase, drop stop words, cut to a rough stem."""
     def analyze(doc: str) -> list[str]:
         words = (w.lower() for w in TOKEN_RE.findall(split_identifiers(doc)))
         return [stem(w) for w in words if w not in stop_words]
@@ -129,10 +132,12 @@ def load_course(build: Path) -> tuple[dict[str, list[dict]], dict[str, list[dict
 
 
 def slide_doc(row: dict[str, Any]) -> str:
-    return "\n".join(str(row.get(k) or "") for k in ("title", "text", "notes", "ocr_text"))
+    """A slide's text for matching: title, text, notes, OCR text."""
+    return slide_text(row)
 
 
 def cell_doc(cell: dict[str, Any]) -> str:
+    """A cell's text for matching: the markdown above it, then its source."""
     return f"{cell.get('markdown_above') or ''}\n{cell.get('source') or ''}"
 
 
@@ -143,11 +148,11 @@ def suggest(
     threshold: float = DEFAULT_THRESHOLD,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Rows {slide_id, title, session, cell_id, cell_session, line, score}, best first per slide."""
-    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
     stats = {"cells": 0, "cells_left_out_names": 0, "slides": 0, "slides_left_out": 0, "sessions": 0}
     rows: list[dict[str, Any]] = []
+    stop = set(ENGLISH_STOP_WORDS) | CODE_STOPWORDS
     for course in sorted(cells):
         course_cells = cells[course]
         course_slides = slides.get(course, [])
@@ -156,56 +161,83 @@ def suggest(
         stats["sessions"] += len(both)
         if not both:
             continue
-        ok_cells = []
-        for c in course_cells:
-            if checker is not None and checker.strict(f"{c.get('source')}\n{c.get('markdown_above')}"):
-                stats["cells_left_out_names"] += 1
-                continue
-            ok_cells.append(c)
-        targets = []
-        for s in course_slides:
-            if s["session"] not in both:
-                continue
-            flags = set(s.get("flags") or [])
-            if flags & common.EXCLUDE_FLAGS or (checker is not None and checker.strict(str(s.get("title") or ""))):
-                stats["slides_left_out"] += 1
-                continue
-            targets.append(s)
+        ok_cells = _cells_without_names(course_cells, checker, stats)
+        targets = _target_slides(course_slides, set(both), checker, stats)
         stats["slides"] += len(targets)
         if not ok_cells or not targets:
             continue
-        stop = set(ENGLISH_STOP_WORDS) | CODE_STOPWORDS
-        vec = TfidfVectorizer(analyzer=analyzer(stop), sublinear_tf=True)
-        vec.fit([slide_doc(s) for s in course_slides] + [cell_doc(c) for c in course_cells])
-        S = vec.transform([slide_doc(s) for s in targets])
-        C = vec.transform([cell_doc(c) for c in ok_cells])
-        sim = cosine_similarity(S, C)
-        for i, s in enumerate(targets):
-            cands = []
-            for j, c in enumerate(ok_cells):
-                score = float(sim[i, j])
-                if defines_title(str(c.get("source") or ""), str(s.get("title") or ""), stop):
-                    score += TITLE_BONUS
-                score *= 1.0 if c["session"] == s["session"] else CROSS_SESSION_WEIGHT
-                if score >= threshold:
-                    cands.append((score, c))
-            cands.sort(key=lambda t: (-t[0], t[1]["cell_id"]))
-            for score, c in cands[:MAX_PER_SLIDE]:
-                line = first_code_line(str(c.get("source") or ""))
-                rows.append({
-                    "slide_id": s["slide_id"],
-                    "title": str(s.get("title") or "").strip(),
-                    "session": s["session"],
-                    "cell_id": c["cell_id"],
-                    "cell_session": c["session"],
-                    "notebook": c.get("notebook") or "",
-                    "line": line if is_pg(line) else "(line not shown)",
-                    "score": round(score, 3),
-                })
+        rows += _pairs(course_slides, course_cells, targets, ok_cells, stop, threshold)
     return rows, stats
 
 
+def _cells_without_names(cells: list[dict], checker: RosterChecker | None, stats: dict[str, int]) -> list[dict]:
+    """Cells with no roster first name or surname at all: their first line goes into the repo's review table."""
+    ok = []
+    for c in cells:
+        if checker is not None and checker.strict(f"{c.get('source')}\n{c.get('markdown_above')}"):
+            stats["cells_left_out_names"] += 1
+            continue
+        ok.append(c)
+    return ok
+
+
+def _target_slides(slides: list[dict], sessions: set[int], checker: RosterChecker | None,
+                   stats: dict[str, int]) -> list[dict]:
+    """Slides of sessions that have notebooks, minus excluded slides and titles with a roster name."""
+    targets = []
+    for s in slides:
+        if s["session"] not in sessions:
+            continue
+        flags = set(s.get("flags") or [])
+        if flags & common.EXCLUDE_FLAGS or (checker is not None and checker.strict(str(s.get("title") or ""))):
+            stats["slides_left_out"] += 1
+            continue
+        targets.append(s)
+    return targets
+
+
+def _pairs(course_slides: list[dict], course_cells: list[dict], targets: list[dict], ok_cells: list[dict],
+           stop: set[str], threshold: float) -> list[dict[str, Any]]:
+    """Score every target slide against every eligible cell; keep the best MAX_PER_SLIDE at or above threshold.
+
+    The vectorizer is fit on the whole course (all slides and cells), so words every deck uses count for little.
+    """
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    vec = TfidfVectorizer(analyzer=analyzer(stop), sublinear_tf=True)
+    vec.fit([slide_doc(s) for s in course_slides] + [cell_doc(c) for c in course_cells])
+    S = vec.transform([slide_doc(s) for s in targets])
+    C = vec.transform([cell_doc(c) for c in ok_cells])
+    sim = cosine_similarity(S, C)
+    rows: list[dict[str, Any]] = []
+    for i, s in enumerate(targets):
+        cands = []
+        for j, c in enumerate(ok_cells):
+            score = float(sim[i, j])
+            if defines_title(str(c.get("source") or ""), str(s.get("title") or ""), stop):
+                score += TITLE_BONUS
+            score *= 1.0 if c["session"] == s["session"] else CROSS_SESSION_WEIGHT
+            if score >= threshold:
+                cands.append((score, c))
+        cands.sort(key=lambda t: (-t[0], t[1]["cell_id"]))
+        for score, c in cands[:MAX_PER_SLIDE]:
+            line = first_code_line(str(c.get("source") or ""))
+            rows.append({
+                "slide_id": s["slide_id"],
+                "title": str(s.get("title") or "").strip(),
+                "session": s["session"],
+                "cell_id": c["cell_id"],
+                "cell_session": c["session"],
+                "notebook": c.get("notebook") or "",
+                "line": line if is_pg(line) else "(line not shown)",
+                "score": round(score, 3),
+            })
+    return rows
+
+
 def code_map_json(rows: list[dict[str, Any]], threshold: float) -> dict[str, Any]:
+    """The indexer/code_map.json contents: the pairs, plus "_" keys that build_index ignores."""
     out: dict[str, Any] = {
         "_source": SOURCE_NOTE,
         "_method": (
@@ -213,7 +245,8 @@ def code_map_json(rows: list[dict[str, Any]], threshold: float) -> dict[str, Any
             f"same course; +{TITLE_BONUS} when the cell defines a class or function named like the slide title; "
             f"other-session cells x{CROSS_SESSION_WEIGHT}; kept when score >= {threshold}; "
             f"at most {MAX_PER_SLIDE} cells per slide, best first. Generated by indexer/suggest_code_map.py; "
-            "see _build/code_map_review.md (private, outside the repo). Delete a cell id (or a slide's whole entry) to strike a pair."
+            "see _build/code_map_review.md (private, outside the repo). "
+            "Delete a cell id (or a slide's whole entry) to strike a pair."
         ),
         "_scores": {},
     }
@@ -237,6 +270,7 @@ def _table(rows: list[dict[str, Any]]) -> list[str]:
 
 def review_markdown(rows: list[dict[str, Any]], threshold: float, stats: dict[str, int],
                     near: list[dict[str, Any]] | None = None) -> str:
+    """The private review table Ben strikes bad rows from."""
     slides_with = len({r["slide_id"] for r in rows})
     lines = [
         "# Slide-to-code mapping: review draft",
@@ -249,12 +283,12 @@ def review_markdown(rows: list[dict[str, Any]], threshold: float, stats: dict[st
         "(delete the slide's whole entry if no cell fits), then re-run `python -m indexer.build_index` and",
         "`python -m indexer.upload`. The player shows the first cell in a slide's list.",
         "",
-        f"Method: TF-IDF cosine between each notebook cell (its source plus the markdown above it) and each slide",
-        f"(title, text, notes, OCR text), within one course, with identifiers split and words cut to a rough stem.",
+        "Method: TF-IDF cosine between each notebook cell (its source plus the markdown above it) and each slide",
+        "(title, text, notes, OCR text), within one course, with identifiers split and words cut to a rough stem.",
         f"A cell that defines a class or function named like the slide title gets +{TITLE_BONUS}. Cells from another",
         f"session of the same course are scored at x{CROSS_SESSION_WEIGHT}. A pair is kept at score >= {threshold},",
         f"at most {MAX_PER_SLIDE} cells per slide.",
-        f"Slides come only from sessions that have both a deck and notebooks. Cells with any roster first name or",
+        "Slides come only from sessions that have both a deck and notebooks. Cells with any roster first name or",
         f"surname ({stats['cells_left_out_names']} of {stats['cells']}) and slides whose title has one were left out.",
         "",
         f"**{len(rows)} pairs on {slides_with} slides.**",
@@ -297,7 +331,8 @@ def main(argv: list[str] | None = None) -> int:
     if a.dry_run:
         return 0
     common.write_json(common.REPO / "indexer" / "code_map.json", code_map_json(rows, a.threshold))
-    (common.build_dir(archive) / "code_map_review.md").write_text(review_markdown(rows, a.threshold, stats, near), encoding="utf-8")
+    review = review_markdown(rows, a.threshold, stats, near)
+    (common.build_dir(archive) / "code_map_review.md").write_text(review, encoding="utf-8")
     print("wrote indexer/code_map.json and the private review table in _build/code_map_review.md")
     return 0
 

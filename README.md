@@ -386,6 +386,7 @@ The pipeline, eval and CI diagrams, every endpoint with the file and function th
 | [docs/SPEC.md](docs/SPEC.md) | The spec and build guide: scope, data formats, every API route, limits, the build blocks |
 | [docs/TESTING_AND_SCORES.md](docs/TESTING_AND_SCORES.md) | What the Activity numbers mean, how the 0.52 threshold was chosen, and how to run every kind of test |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, findings, spend limits, the pre-launch checklist |
+| [docs/CODE_STYLE.md](docs/CODE_STYLE.md) | Code conventions: module layout, naming, comments, error handling, the ruff rules CI runs |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Ideas after submission: local voice models, FAQ answers, rescheduling by talking to the twin |
 | [evals/README.md](evals/README.md) | The eval harness: privacy rules, the rubric, judges, results so far |
 | [docs/demo/data-and-evals.html](docs/demo/data-and-evals.html) | Demo page: what data goes into the twin and how evals score it ([view rendered](https://htmlpreview.github.io/?https://github.com/bcollier/faculty-twin/blob/main/docs/demo/data-and-evals.html)) |

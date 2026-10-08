@@ -32,8 +32,8 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 REMOVED = "[removed]"
 
@@ -98,6 +98,8 @@ def _not_abbrev(text: str, m: re.Match) -> bool:
 
 @dataclass
 class Rule:
+    """One substitution: the pattern, its replacement, a label for the counts, and an optional guard."""
+
     rx: re.Pattern
     repl: str | dict | Callable[[re.Match], str]
     label: str
@@ -158,7 +160,8 @@ _rule(r"(?:what|who|where|why|how|whatever|wherever|whoever|when)(?:\s+in)?\s+th
 _rule(r"the\s+(?P<w>hell|h\*ll)(?=\s+(?:out|outta|with|away|up|of\s+it)\b)", "heck", "hell -> heck")
 _rule(r"(?P<w>hell|h\*ll)(?=\s+(?:of\s+(?:an?|it)|yeah|yes|yea|no)\b)", "heck", "hell -> heck")
 _rule(r"helluva", "heck of a", "hell -> heck")
-_rule(r"(?:as|like|oh|bloody|" + F + r"(?:ing|in['’]?))\s+(?P<w>hell)(?!['’])", "heck", "hell -> heck", when=_not_proper)
+_rule(r"(?:as|like|oh|bloody|" + F + r"(?:ing|in['’]?))\s+(?P<w>hell)(?!['’])", "heck", "hell -> heck",
+      when=_not_proper)
 _rule(r"(?:go|goes|went|going|gone)\s+to\s+(?P<w>hell)(?!['’])", "heck", "hell -> heck", when=_not_proper)
 _rule(r"to\s+(?P<w>hell)(?=\s+(?:with|and\s+back)\b)", "heck", "hell -> heck", when=_not_proper)
 _rule(r"(?P<w>hell|h\*ll)", "heck", "hell -> heck", when=_exclaim)

@@ -35,6 +35,11 @@ masks or counts roster names (indexer/deidentify.py, indexer/leakcheck.py)
 skips those spans. Anything else, including "Andrew" on its own or an Andrew ID
 before "@andrew.cmu.edu", is still masked and counted.
 
+Two matching helpers live here too, because every roster matcher needs them:
+`names_pattern(names)` (one regex for a set of full names) and
+`lowercase_dictionary_words()` (ordinary English words, which are never treated
+as a name on their own).
+
 This module never prints, logs, or returns anything but the parsed rows to its
 caller.
 """
@@ -43,8 +48,8 @@ from __future__ import annotations
 
 import csv
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 FIRST_HEADERS = ("preferred/first name", "preferred name", "first name", "first", "preferred", "given name")
 LAST_HEADERS = ("last name", "last", "surname", "family name")
@@ -141,3 +146,31 @@ def read_people(roster_dir: Path) -> list[dict[str, str]]:
     for path in roster_files(roster_dir):
         people.extend(read_csv_people(path))
     return people
+
+
+# ---------------------------------------------------------------- matching helpers
+
+DICTIONARY = Path("/usr/share/dict/words")
+
+
+def lowercase_dictionary_words(path: Path = DICTIONARY) -> set[str]:
+    """The lowercase entries of the system word list: ordinary words, not proper nouns.
+
+    A roster first name or surname that is also an ordinary word ("Green", "Will") is
+    only matched as part of a full name. Empty when the word list is missing.
+    """
+    if not path.exists():
+        return set()
+    return {w for w in path.read_text(errors="ignore").split() if w.islower()}
+
+
+def names_pattern(names: Iterable[str], flags: int = re.IGNORECASE) -> re.Pattern[str] | None:
+    """One regex that matches any of `names` as a whole word, longest first; None for no names.
+
+    A space inside a name matches any run of whitespace, so a name wrapped across lines
+    still matches.
+    """
+    parts = sorted((re.escape(n).replace(r"\ ", r"\s+") for n in names if n.strip()), key=len, reverse=True)
+    if not parts:
+        return None
+    return re.compile(r"(?<![A-Za-z])(?:" + "|".join(parts) + r")(?![A-Za-z])", flags)
