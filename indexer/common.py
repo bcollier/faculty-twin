@@ -46,11 +46,14 @@ REPO = Path(__file__).resolve().parents[1]
 # ---------------------------------------------------------------- env
 
 def load_env(path: Path | None = None) -> list[str]:
-    """Load KEY=VALUE lines from the repo's git-ignored `.env` without overriding the environment.
+    """Load KEY=VALUE lines from a `.env` file without overriding the environment.
 
-    Returns the names that were set (never the values). `FT_ENV_FILE` points elsewhere.
+    Which file: `path` when given, else $FT_ENV_FILE (another checkout's .env, for a git
+    worktree that has none), else the repo's git-ignored `.env`. An explicit path wins, so a
+    test that passes a missing file never reads a real one. Every script and eval uses this
+    one loader. Returns the names that were set (never the values).
     """
-    path = Path(os.environ.get("FT_ENV_FILE") or path or (REPO / ".env")).expanduser()
+    path = Path(path or os.environ.get("FT_ENV_FILE") or (REPO / ".env")).expanduser()
     if not path.is_file():
         return []
     loaded = []

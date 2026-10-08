@@ -37,6 +37,11 @@ uvx ruff check --fix .    # apply the safe fixes
 | Archive layout, the two courses, sessions that may never have clips, flags that rule out clips, atomic JSON writes, change fingerprints | `indexer/layout.py` (standard library only, so stages 1 to 4 can import it without httpx) |
 | Roster parsing, the full-name regex, the ordinary-word list | `indexer/roster.py` |
 | Embedding batches, the version that survives an unchanged rebuild, writing or removing the embedding matrix, the build-time leak check | `indexer/build_index.py` (the Canvas index builder imports them) |
+| Reading `.env` (an explicit file, else `FT_ENV_FILE`, else the repo's `.env`) | `indexer/common.load_env` (`evals.run.load_dotenv` calls it) |
+| `"provider:model"` keys both ways, local JSON Lines files, the `68%` and `3.14` number formats | `app/eval_runs.model_key` / `model_ref`, `app/eval_core.read_jsonl`, `fmt_pct`, `fmt_num` |
+| Retrying a provider call (growing wait, stop at once on a non-retryable error) | `evals/judges._with_retries` |
+
+**Generated reports.** A refactor of code that writes a report (Markdown, HTML, JSON) is checked by rendering the same input with the old and the new code and comparing the bytes. Template text that cannot be wrapped (the report page's CSS and script) ends with `# noqa: E501` instead of being reflowed.
 
 **Scripts.** A stage that can run as `python indexer/<stage>.py` starts with the same two lines (`if __package__ in (None, ""): sys.path.insert(...)`), so it imports `indexer.*` the same way whether it runs as a script, a module, or from the worker.
 

@@ -14,16 +14,17 @@ fill it, because it reads the index; over HTTP it is None and judges score
 groundedness as null.
 
 In-process is the main mode: run it on the local build machine, which holds the
-built index, with keys from the git-ignored `.env`. It calls `app.main.answer`, the same function `/api/ask` calls, with the
-real retriever, so it reports `retrieval_not_ready` until Ben's hand-written
-retrieval lands.
+built index, with keys from the git-ignored `.env`. It calls `app.main.answer`,
+the same function `/api/ask` calls, with the real retriever, so it reports
+`retrieval_not_ready` until Ben's hand-written retrieval lands.
 """
 
 from __future__ import annotations
 
 import os
 import time
-from typing import Any, Callable, Protocol
+from collections.abc import Callable
+from typing import Any, Protocol
 
 import httpx
 
@@ -31,12 +32,15 @@ from app import prompts
 
 
 class Target(Protocol):
+    """Anything that answers a question in the shared response shape."""
+
     name: str
 
     def ask(self, question: str) -> dict[str, Any]: ...
 
 
 def _result(status: str, message: str | None = None, **extra: Any) -> dict[str, Any]:
+    """A response in the shape every target returns, with `extra` fields filled in."""
     out = {
         "status": status,
         "message": message,
@@ -71,8 +75,8 @@ class InProcessTarget:
     Settings run, a FAQ answer or a referral is shown to the judges in words.
     """
 
-    def __init__(self, retriever=None, embedder=None, completer=None, content=None,
-                 provider: str | None = None, model: str | None = None, searcher=None):
+    def __init__(self, retriever: Any = None, embedder: Any = None, completer: Any = None, content: Any = None,
+                 provider: str | None = None, model: str | None = None, searcher: Any = None) -> None:
         from app import main
 
         self._main = main
@@ -84,7 +88,8 @@ class InProcessTarget:
         self.searcher = searcher  # the web search call for "beyond the slides" answers (None: the app's own)
         self.name = f"in-process {provider}:{model}" if provider and model else "in-process"
 
-    def content(self):
+    def content(self) -> Any:
+        """The loaded index (from the bucket or CONTENT_DIR), loaded once."""
         if self._content is None:
             from app import storage
 
@@ -92,6 +97,7 @@ class InProcessTarget:
         return self._content
 
     def ask(self, question: str) -> dict[str, Any]:
+        """Answer through app.main.answer, metered as eval spend; never raises."""
         import contextlib
 
         from fastapi import HTTPException
@@ -124,7 +130,9 @@ class InProcessTarget:
             out["usage"] = answer_usage({"provider": info["provider"], "model": info["model"]}, spent)
         if info.get("errors"):
             out["narration_errors"] = [str(e)[:200] for e in info["errors"][:3]]
-        if self.provider and self.completer is not None and getattr(self.completer, "__name__", "") == "direct_complete":
+        # Answers made by evals.judges.direct_complete may have gone through OpenRouter (FT_EVAL_ROUTE_ANTHROPIC).
+        direct = getattr(self.completer, "__name__", "") == "direct_complete"
+        if self.provider and self.completer is not None and direct:
             from .judges import route_of
 
             via = route_of(self.provider, self.model or "")[0]
@@ -161,6 +169,7 @@ class HttpTarget:
         self._logged_in = True
 
     def ask(self, question: str) -> dict[str, Any]:
+        """Answer through the site's /api/ask, spaced to its per-minute limit; never raises."""
         if not self._logged_in:
             self._login()
         wait = self.spacing - (time.monotonic() - self._last)
@@ -218,10 +227,11 @@ class BaselineTarget:
         return self._llm.ready()
 
     def ask(self, question: str) -> dict[str, Any]:
+        """One plain model call with no course material; never raises."""
         import json as _json
 
-        from .judges import JudgeError
         from . import rubric
+        from .judges import JudgeError
 
         started = time.monotonic()
         try:

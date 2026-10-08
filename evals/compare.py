@@ -36,14 +36,16 @@ import random
 import sys
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
 from app import eval_core, pricing
+from app.eval_runs import model_key, model_ref
 
 from . import dataset
 from .judges import OUTAGES, Judge, JudgeError, direct_complete, route_of
@@ -65,14 +67,14 @@ GENERATOR_CALLS_TYPICAL = 2  # logistics check + narration (a retry adds one)
 # ---------------------------------------------------------------- plan
 
 def parse_model(spec: str) -> dict[str, str]:
+    """An answering model from "provider:model". Raises JudgeError for anything else."""
     provider, sep, model = spec.partition(":")
     if not sep or provider not in ("anthropic", "openai", "openrouter") or not model:
         raise JudgeError(f"{spec!r} must look like provider:model (anthropic, openai or openrouter)")
-    return {"provider": provider, "model": model}
+    return model_ref(spec)
 
 
-def key(m: dict[str, str]) -> str:
-    return f"{m['provider']}:{m['model']}"
+key = model_key  # "provider:model", the name rows and reports use for a model
 
 
 def plan_tasks(questions: list[dataset.Question], generators: list[dict[str, str]], reps: int,
@@ -141,7 +143,8 @@ def estimate(tasks: list[tuple[Any, dict[str, str], int]], judges: list[dict[str
             "unknown": unknown}
 
 
-def print_estimate(est: dict[str, Any], budget: float, out=print) -> None:
+def print_estimate(est: dict[str, Any], budget: float, out: Callable[[str], None] = print) -> None:
+    """The plan, one line per model and role, and the total against the budget."""
     out(f"Plan: {est['answers']} answers, {est['judgements']} judgements.")
     for r in est["rows"]:
         cost = "unknown" if r["cost_usd"] is None else f"${r['cost_usd']:.2f}"
@@ -153,7 +156,7 @@ def print_estimate(est: dict[str, Any], budget: float, out=print) -> None:
 # ---------------------------------------------------------------- embeddings
 
 def _hash(text: str, model: str) -> str:
-    return hashlib.sha256(f"{model}\n{text}".encode("utf-8")).hexdigest()[:32]
+    return hashlib.sha256(f"{model}\n{text}".encode()).hexdigest()[:32]
 
 
 class CachedEmbedder:
@@ -175,6 +178,7 @@ class CachedEmbedder:
                 missing.append(t)
         if missing:
             if embed_many is None:
+                # One Voyage request for many questions: the same call threshold_table uses.
                 from scripts.threshold_table import voyage_embed_many as embed_many
             cache_dir.mkdir(parents=True, exist_ok=True)
             for start in range(0, len(missing), 100):
@@ -185,6 +189,7 @@ class CachedEmbedder:
         self.made = len(missing)
 
     def __call__(self, text: str) -> np.ndarray:
+        """The cached vector for a question (every question was embedded up front)."""
         return self.vectors[text]
 
 
@@ -200,6 +205,7 @@ class Spend:
         self._lock = threading.Lock()
 
     def add(self, model_key: str, usd: float | None) -> None:
+        """Add one call's cost (None when unpriced) to the totals, thread-safely."""
         if usd is None:
             return
         with self._lock:
@@ -207,6 +213,7 @@ class Spend:
             self.by_model[model_key] = self.by_model.get(model_key, 0.0) + usd
 
     def judge_cost(self, judge: dict[str, str], j: dict[str, Any]) -> float | None:
+        """USD for one judgement from its token counts; None without a price or usage."""
         u = j.get("usage") or {}
         p = price(judge["provider"], judge["model"], self.live)
         if p is None or not u:
@@ -215,6 +222,7 @@ class Spend:
 
 
 def judge_all(item: dict[str, Any], judges: list[Judge], spend: Spend) -> list[dict[str, Any]]:
+    """Every judge scores one answer in parallel; each judgement gets its cost, added to the spend."""
     with ThreadPoolExecutor(max_workers=max(1, len(judges))) as pool:
         out = list(pool.map(lambda j: j.judge(item), judges))
     for j, res in zip(judges, out):
@@ -225,6 +233,7 @@ def judge_all(item: dict[str, Any], judges: list[Judge], spend: Spend) -> list[d
 
 
 def item_for(q: dataset.Question, response: dict[str, Any], web_path: bool) -> dict[str, Any]:
+    """What a judge reads about one answer: the question, its expectations, and the response."""
     return {
         "question": q.question, "category": q.category, "answerable": q.answerable,
         "reference_answer": q.reference_answer, "response": response,
@@ -234,7 +243,7 @@ def item_for(q: dataset.Question, response: dict[str, Any], web_path: bool) -> d
 
 
 def eval_search(system: str, user: str, max_tokens: int, provider: str | None = None, model: str | None = None,
-                client: Any = None):
+                client: Any = None) -> Any:
     """The app's web search call (app/web_answer.py), with Claude routed through OpenRouter's web search when
     FT_EVAL_ROUTE_ANTHROPIC=openrouter (the direct Anthropic key cannot be used)."""
     from app import web_answer
@@ -261,6 +270,7 @@ def offline_caps() -> None:
 
 
 def web_path_available() -> bool:
+    """Whether the app has the "beyond the slides" web path (its answers are expected, not declined)."""
     from app.admin_evals import web_path_available as available
 
     return available()
@@ -269,7 +279,7 @@ def web_path_available() -> bool:
 def run(questions: list[dataset.Question], generators: list[dict[str, str]], judges: list[Judge], reps: int,
         retest_types: set[str] | None, judge_retest: float, budget: float, out_dir: Path,
         make_target: Callable[[dict[str, str]], Any], spend: Spend, seed: int = 8, concurrency: int = 5,
-        log=print) -> list[dict[str, Any]]:
+        log: Callable[[str], None] = print) -> list[dict[str, Any]]:
     """Answer and judge every task, appending each row to `out_dir/results.jsonl` (resumable).
 
     A provider that refuses calls for billing reasons (`evals.judges.OUTAGES`) is not called again in this
@@ -277,122 +287,160 @@ def run(questions: list[dataset.Question], generators: list[dict[str, str]], jud
     Both are left out of every score, and a later run on the same folder asks exactly those again (the
     answer, or only the judges that could not score), without redoing anything else.
     """
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / "results.jsonl"
-    done: dict[tuple[str, str, int], dict[str, Any]] = {}
-    outage_rows: dict[tuple[str, str, int], dict[str, Any]] = {}
-    if path.exists():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                r = json.loads(line)
-                if eval_core.is_provider_error(r):
-                    continue  # never answered: ask again
-                done[(r["qid"], r["generator"], r["rep"])] = r
-                for jj in r.get("judgements", []) + r.get("judgements_retest", []):
-                    spend.add(jj.get("judge", "?"), (jj.get("usage") or {}).get("cost_usd"))
-                spend.add(r["generator"], ((r.get("response") or {}).get("usage") or {}).get("cost_usd"))
-    web_path = web_path_available()
-    tasks = [t for t in plan_tasks(questions, generators, reps, retest_types) if (t[0].qid, key(t[1]), t[2]) not in done]
-    lock = threading.Lock()
-    targets: dict[str, Any] = {}
+    session = _ComparisonRun(questions, judges, budget, out_dir, make_target, spend, concurrency, log)
+    session.load_previous()
+    tasks = [t for t in plan_tasks(questions, generators, reps, retest_types)
+             if (t[0].qid, key(t[1]), t[2]) not in session.done]
+    session.answer_all(tasks)
+    session.rejudge_provider_errors()
+    rows = sorted(session.done.values(), key=lambda r: (r["rep"], r["qid"], r["generator"]))
+    session.judge_retest(rows, judge_retest, seed)
+    return session.write_rows(rows)
 
-    def target_for(g: dict[str, str]):
-        with lock:
-            if key(g) not in targets:
-                targets[key(g)] = make_target(g)
-            return targets[key(g)]
-    stop = threading.Event()
-    counter = {"n": 0}
 
-    def one(task) -> None:
-        q, g, rep = task
-        if stop.is_set():
+class _ComparisonRun:
+    """One session of a comparison run: the rows so far, the spend, and the stop flag shared by the workers."""
+
+    def __init__(self, questions: list[dataset.Question], judges: list[Judge], budget: float, out_dir: Path,
+                 make_target: Callable[[dict[str, str]], Any], spend: Spend, concurrency: int,
+                 log: Callable[[str], None]) -> None:
+        self.questions, self.judges, self.budget = questions, judges, budget
+        self.make_target, self.spend, self.concurrency, self.log = make_target, spend, concurrency, log
+        out_dir.mkdir(parents=True, exist_ok=True)
+        self.path = out_dir / "results.jsonl"
+        self.done: dict[tuple[str, str, int], dict[str, Any]] = {}
+        self.outage_rows: dict[tuple[str, str, int], dict[str, Any]] = {}
+        self.web_path = web_path_available()
+        self.q_by_id = {q.qid: q for q in questions}
+        self.lock = threading.Lock()
+        self.targets: dict[str, Any] = {}
+        self.stop = threading.Event()
+        self.answered = 0
+
+    def load_previous(self) -> None:
+        """Rows from an earlier session of this folder count as done (their spend too); outage rows do not."""
+        if not self.path.exists():
             return
-        if spend.total >= budget:
-            stop.set()
-            log(f"Stopped: spend ${spend.total:.2f} reached the budget ${budget:.2f}.")
+        for r in eval_core.read_jsonl(self.path):
+            if eval_core.is_provider_error(r):
+                continue  # never answered: ask again
+            self.done[(r["qid"], r["generator"], r["rep"])] = r
+            for jj in r.get("judgements", []) + r.get("judgements_retest", []):
+                self.spend.add(jj.get("judge", "?"), (jj.get("usage") or {}).get("cost_usd"))
+            self.spend.add(r["generator"], ((r.get("response") or {}).get("usage") or {}).get("cost_usd"))
+
+    def _over_budget(self) -> bool:
+        if self.spend.total >= self.budget:
+            self.stop.set()
+            return True
+        return False
+
+    def _map(self, fn: Callable[[Any], None], items: list[Any]) -> None:
+        # One worker per generator keeps each provider at a polite rate.
+        with ThreadPoolExecutor(max_workers=max(1, self.concurrency)) as pool:
+            list(pool.map(fn, items))
+
+    def _target_for(self, g: dict[str, str]) -> Any:
+        with self.lock:
+            if key(g) not in self.targets:
+                self.targets[key(g)] = self.make_target(g)
+            return self.targets[key(g)]
+
+    def _item(self, r: dict[str, Any]) -> dict[str, Any]:
+        return item_for(self.q_by_id[r["qid"]], r["response"], r.get("web_path", self.web_path))
+
+    def answer_all(self, tasks: list[tuple[dataset.Question, dict[str, str], int]]) -> None:
+        self.total_tasks = len(tasks)
+        self._map(self._answer, tasks)
+
+    def _answer(self, task: tuple[dataset.Question, dict[str, str], int]) -> None:
+        """Ask one generator one question (unless its provider is down or the budget is spent), judge, append."""
+        q, g, rep = task
+        if self.stop.is_set():
+            return
+        if self.spend.total >= self.budget:
+            self.stop.set()
+            self.log(f"Stopped: spend ${self.spend.total:.2f} reached the budget ${self.budget:.2f}.")
             return
         gen_route = route_of(g["provider"], g["model"])[0]
         if OUTAGES.reason(gen_route):
             response = outage_response(gen_route)  # not called: the provider is refusing calls
         else:
-            response = target_for(g).ask(q.question)
-            spend.add(key(g), (response.get("usage") or {}).get("cost_usd"))
+            response = self._target_for(g).ask(q.question)
+            self.spend.add(key(g), (response.get("usage") or {}).get("cost_usd"))
             if OUTAGES.reason(gen_route):
                 # The provider went down while this answer was made: its narration may be a fallback, not the model.
                 response = outage_response(gen_route, response)
-        row = {"qid": q.qid, "rep": rep, "generator": key(g), **q.as_dict(), "web_path": web_path,
+        row = {"qid": q.qid, "rep": rep, "generator": key(g), **q.as_dict(), "web_path": self.web_path,
                "response": response, "judgements": []}
         row["qid"] = q.qid
         if response["status"] in ("ok", "not_covered"):
-            row["judgements"] = judge_all(item_for(q, response, web_path), judges, spend)
-        with lock:
-            with path.open("a", encoding="utf-8") as f:
+            row["judgements"] = judge_all(item_for(q, response, self.web_path), self.judges, self.spend)
+        with self.lock:
+            with self.path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
             if response["status"] == eval_core.PROVIDER_ERROR:
-                outage_rows[(q.qid, key(g), rep)] = row
+                self.outage_rows[(q.qid, key(g), rep)] = row
             else:
-                done[(q.qid, key(g), rep)] = row
-            counter["n"] += 1
+                self.done[(q.qid, key(g), rep)] = row
+            self.answered += 1
             verdicts = " ".join(j.get("verdict", "err")[0] for j in row["judgements"])
-            log(f"[{counter['n']}/{len(tasks)}] {q.qid} rep{rep} {key(g)}: {eval_core.route_of(response) or response['status']}"
-                f" {response.get('latency_ms', 0) / 1000:.1f}s [{verdicts}] spend ${spend.total:.2f}")
+            route = eval_core.route_of(response) or response["status"]
+            self.log(f"[{self.answered}/{self.total_tasks}] {q.qid} rep{rep} {key(g)}: {route}"
+                     f" {response.get('latency_ms', 0) / 1000:.1f}s [{verdicts}] spend ${self.spend.total:.2f}")
 
-    # One worker per generator keeps each provider at a polite rate.
-    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
-        list(pool.map(one, tasks))
+    def rejudge_provider_errors(self) -> None:
+        """Judgements a provider outage left out (now or in an earlier session): ask only those judges again."""
+        redo = [(r, field) for r in self.done.values() for field in ("judgements", "judgements_retest")
+                if any(eval_core.is_provider_error(j) for j in r.get(field) or []) and r["qid"] in self.q_by_id]
+        if not redo or self.stop.is_set():
+            return
 
-    # Judgements a provider outage left out (now or in an earlier session): ask only those judges again.
-    q_by_id = {q.qid: q for q in questions}
-    redo = [(r, field) for r in done.values() for field in ("judgements", "judgements_retest")
-            if any(eval_core.is_provider_error(j) for j in r.get(field) or []) and r["qid"] in q_by_id]
-    if redo and not stop.is_set():
         def rejudge(item: tuple[dict[str, Any], str]) -> None:
             r, field = item
-            if spend.total >= budget:
-                stop.set()
+            if self._over_budget():
                 return
             missing = {j["judge"] for j in r[field] if eval_core.is_provider_error(j)}
-            todo = [j for j in judges if j.name in missing and not OUTAGES.reason(route_of(j.provider, j.model)[0])]
+            todo = [j for j in self.judges
+                    if j.name in missing and not OUTAGES.reason(route_of(j.provider, j.model)[0])]
             if not todo:
                 return
-            fresh = {j["judge"]: j for j in judge_all(item_for(q_by_id[r["qid"]], r["response"],
-                                                               r.get("web_path", web_path)), todo, spend)}
+            fresh = {j["judge"]: j for j in judge_all(self._item(r), todo, self.spend)}
             r[field] = [fresh.get(j["judge"], j) for j in r[field]]
 
-        with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
-            list(pool.map(rejudge, redo))
-        log(f"Re-judged {len(redo)} answers whose judge had a provider error. Spend ${spend.total:.2f}.")
+        self._map(rejudge, redo)
+        self.log(f"Re-judged {len(redo)} answers whose judge had a provider error. Spend ${self.spend.total:.2f}.")
 
-    rows = sorted(done.values(), key=lambda r: (r["rep"], r["qid"], r["generator"]))
-    # Judge retest: the same judge scores a random share of the run-1 answers again.
-    if judge_retest > 0 and not stop.is_set():
+    def judge_retest(self, rows: list[dict[str, Any]], share: float, seed: int) -> None:
+        """The same judges score a random share of the run-1 answers again (topping up an earlier session)."""
+        if share <= 0 or self.stop.is_set():
+            return
         rng = random.Random(seed)
         pool_rows = [r for r in rows if r["rep"] == 1 and r["judgements"] and not r.get("judgements_retest")]
         already = sum(1 for r in rows if r.get("judgements_retest"))
-        want = max(0, int(round(len([r for r in rows if r["rep"] == 1 and r["judgements"]]) * judge_retest)) - already)
+        want = max(0, int(round(len([r for r in rows if r["rep"] == 1 and r["judgements"]]) * share)) - already)
         sample = rng.sample(pool_rows, min(want, len(pool_rows)))
-        q_by_id = {q.qid: q for q in questions}
 
         def again(r: dict[str, Any]) -> None:
-            if spend.total >= budget:
-                stop.set()
+            if self._over_budget():
                 return
-            r["judgements_retest"] = judge_all(item_for(q_by_id[r["qid"]], r["response"], r.get("web_path", web_path)),
-                                               judges, spend)
+            r["judgements_retest"] = judge_all(self._item(r), self.judges, self.spend)
 
-        with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
-            list(pool.map(again, sample))
-        log(f"Judge retest: {len(sample)} answers scored again by every judge. Spend ${spend.total:.2f}.")
-    # One line per answer: the results, plus this session's provider_error rows (asked again next time).
-    with path.open("w", encoding="utf-8") as f:
-        for r in rows + [r for k, r in outage_rows.items() if k not in done]:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    if OUTAGES.down():
-        log("Provider errors (no credit or quota): " + "; ".join(f"{p}: {why}" for p, why in OUTAGES.down().items())
-            + ". Those answers and judgements are marked provider_error and left out of the scores; run the same "
-            "command again with --out on this folder once the account is topped up.")
-    return rows + [r for k, r in outage_rows.items() if k not in done]
+        self._map(again, sample)
+        self.log(f"Judge retest: {len(sample)} answers scored again by every judge. Spend ${self.spend.total:.2f}.")
+
+    def write_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Rewrite results.jsonl: the results, plus this session's provider_error rows (asked again next time)."""
+        out = rows + [r for k, r in self.outage_rows.items() if k not in self.done]
+        with self.path.open("w", encoding="utf-8") as f:
+            for r in out:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        if OUTAGES.down():
+            self.log("Provider errors (no credit or quota): "
+                     + "; ".join(f"{p}: {why}" for p, why in OUTAGES.down().items())
+                     + ". Those answers and judgements are marked provider_error and left out of the scores; run "
+                     "the same command again with --out on this folder once the account is topped up.")
+        return out
 
 
 def outage_response(provider: str, made: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -414,7 +462,7 @@ def _live_prices() -> dict[str, dict[str, Any]] | None:
         return None
 
 
-def main(argv: list[str] | None = None) -> int:
+def _arguments(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--questions")
     p.add_argument("--generator", action="append", default=[], metavar="PROVIDER:MODEL")
@@ -432,8 +480,41 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true", help="print the plan and estimate, call nothing")
     p.add_argument("--yes", action="store_true", help="start without asking after the estimate")
     p.add_argument("--report-only", action="store_true", help="rebuild the reports of --out from its results.jsonl")
-    args = p.parse_args(argv)
+    return p.parse_args(argv)
 
+
+def _comma_set(text: str) -> set[str]:
+    return {t.strip() for t in text.split(",") if t.strip()}
+
+
+def _models(args: argparse.Namespace) -> tuple[list[dict[str, str]], list[Judge], int]:
+    """The answering models and judges, or ([], [], exit code) after printing what is wrong."""
+    try:
+        generators = [parse_model(s) for s in args.generator]
+        judges = [Judge.parse_spec(s) for s in args.judge]
+    except JudgeError as exc:
+        print(exc, file=sys.stderr)
+        return [], [], 2
+    if not 1 <= len(generators) <= MAX_GENERATORS:
+        print(f"Pick 1 to {MAX_GENERATORS} generators.", file=sys.stderr)
+        return [], [], 2
+    if len({key(g) for g in generators}) != len(generators):
+        print("The same generator is listed twice.", file=sys.stderr)
+        return [], [], 2
+    return generators, judges, 0
+
+
+def _not_ready(generators: list[dict[str, str]], judges: list[Judge]) -> list[str]:
+    """Models whose key is missing, as "model: reason" lines."""
+    from app import llm
+
+    missing = [f"{key(g)}: {llm.KEY_VARS[g['provider']]} is not set" for g in generators
+               if not llm.key_configured(g["provider"])]
+    return missing + [f"{j.name}: {why}" for j in judges if (why := j.ready())]
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _arguments(argv)
     load_dotenv()
     if args.report_only:
         if not args.out:
@@ -448,23 +529,14 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, dataset.DatasetError) as exc:
         print(f"Cannot use {args.questions}: {exc}", file=sys.stderr)
         return 2
-    only = {t.strip() for t in args.only_types.split(",") if t.strip()}
+    only = _comma_set(args.only_types)
     if only:
         questions = [q for q in questions if (q.qtype or "") in only]
-    try:
-        generators = [parse_model(s) for s in args.generator]
-        judges = [Judge.parse_spec(s) for s in args.judge]
-    except JudgeError as exc:
-        print(exc, file=sys.stderr)
-        return 2
-    if not 1 <= len(generators) <= MAX_GENERATORS:
-        print(f"Pick 1 to {MAX_GENERATORS} generators.", file=sys.stderr)
-        return 2
-    if len({key(g) for g in generators}) != len(generators):
-        print("The same generator is listed twice.", file=sys.stderr)
-        return 2
-    retest = {t.strip() for t in args.retest_types.split(",") if t.strip()} or None
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    generators, judges, code = _models(args)
+    if code:
+        return code
+    retest = _comma_set(args.retest_types) or None
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     out = Path(args.out) if args.out else PRIVATE / "runs" / stamp
     done = done_keys(out / "results.jsonl")
     tasks = [t for t in plan_tasks(questions, generators, max(1, args.reps), retest)
@@ -483,17 +555,29 @@ def main(argv: list[str] | None = None) -> int:
         return 4
     if args.dry_run:
         return 0
-    from app import llm
-
-    missing = [f"{key(g)}: {llm.KEY_VARS[g['provider']]} is not set" for g in generators if not llm.key_configured(g["provider"])]
-    missing += [f"{j.name}: {why}" for j in judges if (why := j.ready())]
+    missing = _not_ready(generators, judges)
     if missing:
         print("Not ready:\n  " + "\n  ".join(missing), file=sys.stderr)
         return 3
-    if not args.yes:
-        if input("Start? [y/N] ").strip().lower() != "y":
-            return 1
+    if not args.yes and input("Start? [y/N] ").strip().lower() != "y":
+        return 1
 
+    make_target = _target_factory(questions)
+    spend = Spend(live)
+    started = time.monotonic()
+    run(questions, generators, judges, max(1, args.reps), retest, args.judge_retest, left, out,
+        make_target, spend, seed=args.seed, concurrency=args.concurrency or len(generators))
+    _write_meta(out, args, generators, judges, retest, only, spend, est, started)
+    print(f"Spend: ${spend.total:.2f} (all sessions of this run folder).")
+    return report_only(out)
+
+
+def _target_factory(questions: list[dataset.Question]) -> Callable[[dict[str, str]], Any]:
+    """In-process targets that share the index, the cached question embeddings and the retriever.
+
+    The live site's daily caps are switched off for this process first (offline_caps): the run is
+    bounded by --budget instead.
+    """
     from app import main as app_main
     from app import storage
 
@@ -506,14 +590,16 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Embeddings: {embedder.made} new, {len(questions) - embedder.made} from the cache.")
     retriever = app_main.get_retriever()
 
-    def make_target(g: dict[str, str]):
+    def make_target(g: dict[str, str]) -> Any:
         return InProcessTarget(retriever, embedder, direct_complete, content, provider=g["provider"], model=g["model"],
                                searcher=eval_search if web_path_available() else None)
 
-    spend = Spend(live)
-    started = time.monotonic()
-    rows = run(questions, generators, judges, max(1, args.reps), retest, args.judge_retest, left, out, make_target,
-               spend, seed=args.seed, concurrency=args.concurrency or len(generators))
+    return make_target
+
+
+def _write_meta(out: Path, args: argparse.Namespace, generators: list[dict[str, str]], judges: list[Judge],
+                retest: set[str] | None, only: set[str], spend: Spend, est: dict[str, Any], started: float) -> None:
+    """meta.json: what was run, by whom, at what cost; counts the sessions when a folder is resumed."""
     meta = {
         "label": args.label or out.name,
         "run_id": out.name,
@@ -530,14 +616,12 @@ def main(argv: list[str] | None = None) -> int:
         "spend_usd": round(spend.total, 2),
         "spend_by_model": {k: round(v, 3) for k, v in sorted(spend.by_model.items())},
         "estimate_usd": est["total_usd"],
-        "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "finished_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     old = _read_meta(out)
     if old.get("spend_usd") and old.get("run_id") == meta["run_id"]:
         meta["sessions"] = (old.get("sessions") or 1) + 1
     (out / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    print(f"Spend: ${spend.total:.2f} (all sessions of this run folder).")
-    return report_only(out)
 
 
 def _read_meta(out: Path) -> dict[str, Any]:
@@ -548,21 +632,17 @@ def _read_meta(out: Path) -> dict[str, Any]:
 
 
 def done_keys(path: Path) -> set[tuple[str, str, int]]:
+    """(qid, generator, rep) of every row already in a results file."""
     if not path.exists():
         return set()
-    out = set()
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            r = json.loads(line)
-            out.add((r["qid"], r["generator"], r["rep"]))
-    return out
+    return {(r["qid"], r["generator"], r["rep"]) for r in eval_core.read_jsonl(path)}
 
 
 def report_only(out: Path) -> int:
     """Write every report for a run folder from its results.jsonl and meta.json."""
     from . import compare_report
 
-    rows = [json.loads(line) for line in (out / "results.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = eval_core.read_jsonl(out / "results.jsonl")
     meta = _read_meta(out)
     written = compare_report.write_all(rows, meta, out, REPORTS / out.name if not meta.get("private", True) else None)
     print("Wrote " + ", ".join(str(w) for w in written))
