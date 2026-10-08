@@ -12,3 +12,9 @@ docs/
 supabase/
 content/
 .claude/
+.github/
+requirements-test.txt
+requirements-e2e.txt
+.hypothesis/
+.coverage
+coverage.xml

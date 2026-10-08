@@ -17,3 +17,10 @@ evals/private/
 
 # Local voice A/B renders (may contain a clone of Ben's voice)
 localvoice/out/
+
+# Test coverage output
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/

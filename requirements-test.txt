@@ -1,0 +1,14 @@
+# Test-only dependencies (never deployed; .vercelignore leaves this file out).
+# The full local run and CI both use:
+#   uv run --no-project --with-requirements requirements.txt --with-requirements requirements-test.txt python -m pytest -q
+pytest==9.1.1
+pytest-cov==7.1.0
+coverage==7.16.2
+hypothesis==6.168.5
+# used by indexer/ and evals/ code the suite imports
+rapidfuzz==3.14.6
+nicknames==1.0.1
+nbformat==5.11.1
+scikit-learn==1.9.1
+pillow==12.3.0
+scipy==1.18.1

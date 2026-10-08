@@ -294,13 +294,64 @@ from the git-ignored `.env`; the live site reads Vercel environment variables.
 
 No keys and no network: retrieval, embeddings and models are replaced by
 clearly labelled test fakes, and the index is a tiny synthetic fixture.
+`tests/conftest.py` enforces the "no network" part: any test that opens a
+connection to (or looks up) a host other than 127.0.0.1 fails with
+`NetworkBlocked`, so a missing fake can never call a provider or spend money.
 
 ```bash
-uv run --no-project --with-requirements requirements.txt --with pytest --with rapidfuzz --with nicknames --with nbformat --with scikit-learn --with pillow --with scipy python -m pytest -q
+uv run --no-project --with-requirements requirements.txt --with-requirements requirements-test.txt python -m pytest -q
 ```
 
-Expect about 710 passed and 2 skipped in about 10 seconds. Any failure means
-the code and the spec disagree; fix that before deploying.
+`requirements-test.txt` pins the test-only packages (pytest, pytest-cov,
+hypothesis, and the rapidfuzz, nicknames, nbformat, scikit-learn, pillow and
+scipy that `indexer/` and `evals/` need). Vercel never sees it.
+
+Expect about 1,120 passed and 4 skipped in about 30 seconds. Any failure means
+the code and the spec disagree; fix that before deploying. The skips are the
+two browser test files (they need `--e2e`, below), the Jev judge tests (they
+need deepeval, which only `evals/requirements.txt` installs), and one check
+that only applied before my retrieval functions were written.
+
+What the suite holds besides the unit and API tests:
+
+- **Coverage.** Add `--cov=app --cov=scripts --cov-report=term` to see line
+  coverage per module. Every `app/` module is at 83% or more (92% overall on
+  October 8); CI fails below 90% overall.
+- **Property tests** (`tests/test_properties.py`, hypothesis): the PG filter,
+  the access-code filter, both de-identification scrubbers and the narration
+  validators never crash on any text, give the same result when run twice,
+  and never add a name that was not in the input. The examples are fixed
+  (`derandomize=True`), so a run is repeatable.
+- **Mock contract** (`tests/test_contract_mock.py`): the dev mock
+  (`public/dev/mock.js`, behind `?mock=1`) must answer in the same shapes
+  (keys and JSON types) as the real API. The test asks the real app (fixture
+  and fakes) and the mock (run in Node by `tests/contract/dump_mock.mjs`) the
+  same 25 things: student routes, every kind of answer, error bodies, and the
+  Settings routes the pages read. When the API changes shape, update the mock
+  in the same PR. Needs `node` (skipped locally without it, required in CI).
+- **Browser tests** (`tests/e2e/`, Playwright with headless Chromium): the
+  student page and Settings served from `public/` on 127.0.0.1 with
+  `?mock=1`. They cover the passcode, a chip answer, moving through the
+  segments with Next and Previous, the class clip swap, not covered, the FAQ
+  and Canvas cards, the TA contact card, the error states (rate limit,
+  unreachable, not finished, expired session, server down at boot), captions
+  only, and every Settings section loading. Skipped unless pytest gets
+  `--e2e`:
+
+  ```bash
+  uv run --no-project --with-requirements requirements-e2e.txt python -m playwright install chromium   # once
+  uv run --no-project --with-requirements requirements.txt --with-requirements requirements-test.txt --with-requirements requirements-e2e.txt python -m pytest -q --e2e tests/e2e
+  ```
+
+  About 20 tests in about a minute (the mock waits about a second per answer
+  on purpose).
+
+**On GitHub.** `.github/workflows/tests.yml` runs on every pull request and
+every push to `main`, with no secrets: the suite with coverage (the per-module
+table is in the job summary), `node --check` on every `public/*.js` and
+`public/dev/*.js`, and the browser tests in headless Chromium. uv's cache and
+the Playwright browser cache keep a run to a few minutes. A red check means do
+not merge.
 
 ### (b) The real-question eval
 
@@ -386,28 +437,46 @@ uv run --no-project --with-requirements requirements.txt python -m scripts.live_
 ```
 
 It runs these steps against `https://faculty-twin.vercel.app` (change it with
-`--base-url`) and prints each step's HTTP status, time and result:
+`--base-url`) and prints each step's HTTP status, time and result (`--json`
+prints the same report as JSON, for saving or comparing runs):
 
 1. health
 2. login with `STUDENT_PASSCODE` from `.env` (the passcode is never printed;
    if you rotated it in Settings, update `.env` first)
 3. the suggested questions
 4. one on-topic question (expects covered, with slides)
-5. one off-topic question (expects not covered)
-6. one FAQ question (expects the FAQ answer)
+5. the first slide image of that answer, through its signed link (reads the
+   first kilobyte only; expects an image)
+6. one off-topic question (expects not covered)
+7. one FAQ question (expects the FAQ answer)
+8. one course-info question about the syllabus (expects the answer from
+   Canvas; change it with `--course-info-question`)
+9. the first suggested question (expects its stored walkthrough)
+10. that walkthrough's first stored audio file, through its signed link (first
+    kilobyte only; expects audio). A live voice link (`/api/audio`) is never
+    fetched, because that would spend voice characters; the step says so and
+    passes.
+11. Settings status, only when `ADMIN_PASSCODE` is in the environment or
+    `.env`: admin login, then `GET /api/admin/status`. It prints counts only
+    (how many keys are set, whether content loaded, today's questions), never
+    a key name, value or passcode. `--no-admin` skips it.
 
-It uses three of today's questions for one visitor, one or two embeddings and
-up to two model calls, and no voice characters (it never fetches audio). The
-three questions appear in Activity. Times are what the script saw, so they
-include the network and any cold start; the first answer after a quiet spell
-can take 20 seconds. It exits 0 when every step passes.
+It uses five of today's questions for one visitor (exactly the per-minute cap
+of 5, so do not run it twice within a minute), one or two embeddings, up to
+three model calls (the logistics check and narration for the on-topic
+question, and the course-info answer), and no voice characters. The five
+questions appear in Activity. Times are what the script saw, so they include
+the network and any cold start; the first answer after a quiet spell can take
+20 seconds. It exits 0 when every step passes. It never prints a passcode, a
+cookie or a signed link.
 
 The script sends the header `X-FT-Source: smoke`, so its rows are logged with
 `source = smoke`: Activity shows them with a **Test** badge and Settings >
 Analytics leaves them out of the student numbers (tick "Show test traffic" to
 include them). The header is only a tag; it changes nothing else. Rows logged
 before the `source` column existed are marked **Test?** when the question is
-word for word one of the three smoke-check questions.
+word for word one of the three original smoke-check questions (the
+on-topic, off-topic and FAQ ones).
 
 ## Test traffic in Analytics
 

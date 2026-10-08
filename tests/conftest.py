@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ipaddress
+import socket
 import sys
 from pathlib import Path
 
@@ -10,6 +12,89 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests" / "fixtures"))
 
 import build_fixture  # noqa: E402
+
+
+# ---------------------------------------------------------------- no network
+# The suite never talks to a real service: models, embeddings, voices and storage are fakes.
+# This guard turns any outbound connection (or DNS lookup) to a non-loopback host into a test
+# failure, so a missing fake cannot quietly call a provider or spend money. Loopback stays open
+# for the browser tests' local static server.
+
+class NetworkBlocked(RuntimeError):
+    pass
+
+
+_LOOPBACK_NAMES = {"localhost", "localhost.localdomain", "testserver", ""}
+
+
+def _is_loopback(host) -> bool:
+    if host is None:
+        return True  # getaddrinfo(None, port): the local wildcard, used by bind()
+    if isinstance(host, bytes):
+        host = host.decode("ascii", "ignore")
+    host = str(host).strip("[]")
+    if host in _LOOPBACK_NAMES:
+        return True
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return addr.is_loopback or addr.is_unspecified
+
+
+def _guard_address(address) -> None:
+    if isinstance(address, (str, bytes)):  # AF_UNIX path
+        return
+    if isinstance(address, tuple) and address and not _is_loopback(address[0]):
+        raise NetworkBlocked(f"tests may not open network connections (tried {address[0]!r})")
+
+
+_real_connect = socket.socket.connect
+_real_connect_ex = socket.socket.connect_ex
+_real_getaddrinfo = socket.getaddrinfo
+
+
+def _blocked_connect(self, address):
+    _guard_address(address)
+    return _real_connect(self, address)
+
+
+def _blocked_connect_ex(self, address):
+    _guard_address(address)
+    return _real_connect_ex(self, address)
+
+
+def _blocked_getaddrinfo(host, *args, **kwargs):
+    if not _is_loopback(host):
+        raise NetworkBlocked(f"tests may not look up network hosts (tried {host!r})")
+    return _real_getaddrinfo(host, *args, **kwargs)
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption("--e2e", action="store_true", default=False,
+                     help="also run the browser tests in tests/e2e (needs requirements-e2e.txt and chromium)")
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "e2e: browser test of public/ with ?mock=1 (skipped unless --e2e)")
+    socket.socket.connect = _blocked_connect
+    socket.socket.connect_ex = _blocked_connect_ex
+    socket.getaddrinfo = _blocked_getaddrinfo
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    socket.socket.connect = _real_connect
+    socket.socket.connect_ex = _real_connect_ex
+    socket.getaddrinfo = _real_getaddrinfo
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    if config.getoption("--e2e"):
+        return
+    skip = pytest.mark.skip(reason="browser test: pass --e2e to run it")
+    for item in items:
+        if "e2e" in item.keywords:
+            item.add_marker(skip)
 
 KEYS_TO_CLEAR = [
     "SUPABASE_URL",
