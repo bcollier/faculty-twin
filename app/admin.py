@@ -45,6 +45,7 @@ from . import (
     thresholds,
     usage,
     voices,
+    web_answer,
 )
 from .main import (
     NOT_COVERED,
@@ -199,6 +200,9 @@ class SettingsBody(BaseModel):
     daily_voice_char_cap: Optional[int] = None
     daily_free_voice_char_cap: Optional[int] = None
     student_passcode: Optional[str] = None
+    web_answers_enabled: Optional[bool] = None
+    daily_web_answer_cap: Optional[int] = None
+    web_answer_voice: Optional[str] = None  # "none" (text only) or "edge:<ShortName>"
 
 
 def settings_view() -> dict[str, Any]:
@@ -229,7 +233,20 @@ def settings_view() -> dict[str, Any]:
         "model_warning": model_warning(provider, model),
         "max_price_per_mtok": max_price_per_mtok(),
         "student_passcode_source": "settings" if settings_store.get("student_passcode_hash") else "env",
+        **web_view(),
         "index_version": settings_store.index_version(),
+    }
+
+
+def web_view() -> dict[str, Any]:
+    """Beyond-the-slides settings: on or off, today's cap and count, and the voice that reads web answers."""
+    spoken = web_answer.voice()
+    return {
+        "web_answers_enabled": web_answer.enabled(),
+        "daily_web_answer_cap": web_answer.daily_cap(),
+        "web_answers_today": limits.read_counter(limits.web_answers_key()),
+        "web_answer_voice": spoken.setting if spoken else "none",
+        "web_answer_voice_label": spoken.label if spoken else None,
     }
 
 
@@ -331,6 +348,27 @@ def put_settings(body: SettingsBody, _: auth.Session = Depends(auth.require_admi
         if not 0 <= body.daily_free_voice_char_cap <= 10_000_000:
             raise HTTPException(400, "The free voice cap must be between 0 and 10,000,000 characters.")
         values["daily_free_voice_char_cap"] = body.daily_free_voice_char_cap
+    if body.web_answers_enabled is not None:
+        values["web_answers_enabled"] = bool(body.web_answers_enabled)
+    if body.daily_web_answer_cap is not None:
+        if not 0 <= body.daily_web_answer_cap <= 100_000:
+            raise HTTPException(400, "The daily web answer cap must be between 0 and 100,000.")
+        values["daily_web_answer_cap"] = body.daily_web_answer_cap
+    if body.web_answer_voice is not None:
+        # Web answers are never read in my clone: only "none" or a free Microsoft voice.
+        raw = body.web_answer_voice.strip()
+        if raw in ("", "none"):
+            values["web_answer_voice"] = "none"
+        else:
+            try:
+                parsed = voices.parse(raw)
+            except voices.BadVoice as exc:
+                raise HTTPException(400, str(exc)) from exc
+            if not parsed or parsed[0] != voices.EDGE:
+                raise HTTPException(400, "Web answers can only be read by a free Microsoft voice (edge:...), never "
+                                         "the voice clone or another ElevenLabs voice.")
+            _check_free_voice(parsed[1])
+            values["web_answer_voice"] = f"edge:{parsed[1]}"
     if body.student_passcode is not None:
         code = body.student_passcode.strip()
         if not 6 <= len(code) <= 100:
@@ -529,7 +567,15 @@ def test_prompt(
     limits.check_ask_rate(auth.visitor_key(session), limits.client_hash(request))  # counts against limits; not logged
     started = time.monotonic()
     with prompts.draft(name, text), usage.purpose("prompt_test", sticky=True):  # test spend, not student spend
-        if name == logistics.PROMPT_NAME:
+        if name == web_answer.SCOPE_PROMPT:
+            scope = web_answer.classify(question, completer, provider=provider, model=model)
+            output = {"kind": scope.scope, "source": scope.source, "reason": scope.reason}
+            if scope.source == "keyword":
+                output["note"] = "The keyword pre-check caught this question, so the prompt was not used."
+            elif scope.source == "error":
+                output["note"] = "The reply was not a valid scope, so the question would be declined."
+            ok, errors = scope.source != "error", []
+        elif name == logistics.PROMPT_NAME:
             kind = logistics.classify(question, completer, provider=provider, model=model)
             output: dict[str, Any] = {"kind": kind.kind, "source": kind.source, "reason": kind.reason}
             if kind.source == "keyword":
@@ -555,6 +601,7 @@ def test_prompt(
                 "message": result.get("message"),
                 "segments": [{"slide_id": s["slide_id"], "narration": s["narration"]} for s in result["segments"]],
                 "follow_ups": result.get("follow_ups") or [],
+                "links": result.get("links") or [],
                 "note": info.get("note"),
             }
             errors = info.get("errors") or []
@@ -613,6 +660,7 @@ def status(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
             **limits.today_counters(),
             "voice_char_cap": settings_store.daily_voice_char_cap(),
             "free_voice_char_cap": settings_store.daily_free_voice_char_cap(),
+            "web_answer_cap": web_answer.daily_cap(),
         },
         "limits": {
             "per_minute": config.PER_MINUTE_LIMIT,

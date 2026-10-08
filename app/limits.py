@@ -177,6 +177,11 @@ def take_eval_call() -> bool:
     return ok
 
 
+def web_answers_key() -> str:
+    """Today's count of web answers (app/web_answer.py takes one per answer, capped)."""
+    return f"web_answers:{_today()}"
+
+
 def take_embedding() -> bool:
     """Reserve one question embedding from today's global budget. Fails closed."""
     cap = daily_embed_cap()
@@ -281,6 +286,7 @@ def today_counters() -> dict[str, int]:
         "llm_calls": read_counter(f"llm_calls:{day}"),
         "embeddings": read_counter(f"embeds:{day}"),
         "eval_llm_calls": read_counter(f"eval_llm_calls:{day}"),
+        "web_answers": read_counter(web_answers_key()),
     }
 
 
@@ -305,7 +311,7 @@ def log_question(
     """One question-log row. See docs/TESTING_AND_SCORES.md for what each field means.
 
     `kind` is what answered: "course_content", "stored_topic", "faq", "course_info",
-    "logistics", or "not_covered". `provider` and `model` are None when no model was called.
+    "logistics", "web" (beyond the slides, from a web search), or "not_covered". `provider` and `model` are None when no model was called.
     `extra` may carry the analytics columns (ANALYTICS_COLUMNS): the top slide and its
     session, tokens in/out, voice characters signed, and where the question came from
     (chip, typed, follow_up, or a test source). Never a visitor id, a cookie, or an address.

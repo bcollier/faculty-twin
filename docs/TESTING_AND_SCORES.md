@@ -33,7 +33,9 @@ The path is saved with the question as its **kind**.
 | 1 | The question matches a suggested question (same words, ignoring case and punctuation, course fits the filter) | `stored_topic` | no | no | The stored, pre-generated walkthrough, with fresh signed links |
 | 2 | The question matches an entry in my course FAQ (`app/faq.py`, `app/faq_entries.json`) | `faq` | no | no | My written FAQ answer, word for word, with link buttons and TA contact cards |
 | 3 | Embed the question with Voyage once, rank every visible slide and every course-info chunk from Canvas with the same vector (`rank()` in `app/retrieval.py`). The best info chunk scores at least the course-info threshold (0.55 unless changed in Settings) and beats the best slide (`app/course_info.py`) | `course_info` | yes | yes (one grounded answer call) | A short answer in my voice written only from the top 3 Canvas chunks, with buttons that open those Canvas pages |
-| 4 | No slide at or above the slide threshold (0.52 unless changed in Settings) | `not_covered` | yes | no | The not-covered reply |
+| 4 | No slide at or above the slide threshold (0.52 unless changed in Settings), and either web answers are off, or the scope check (`app/web_answer.py`, added Oct 8) says it is off-topic or is unsure, or today's web answer cap is used up | `not_covered` | yes | only the scope check, when its keyword pre-check misses | The not-covered reply |
+| 4a | No slide clears the threshold and the scope check says it is about meetings, grades, deadlines and the like | `logistics` | yes | only if the keyword pre-check missed it | The "that one is for me directly" referral |
+| 4b | No slide clears the threshold and the scope check says it is course-adjacent (AI, data, agents, coding tools), web answers are on and today's cap has room | `web` | yes | yes (the scope check unless keywords decide, then one call with the provider's web search tool) | "Beyond my slides: from the web": a short answer from a web search, 2 to 4 source links, and the closest slides in my course |
 | 5 | Slides found, but the logistics check says it is about meetings, absences, grades, deadlines, Canvas and the like (`app/logistics.py`) | `logistics` | yes | only if the keyword pre-check missed it | The "that one is for me directly" referral, with the Calendly button |
 | 6 | Slides found and it is course content | `course_content` | yes | yes (the logistics check, then narration) | A narrated walkthrough of the chosen slides |
 
@@ -65,6 +67,7 @@ A badge for the kind of answer (see the table above):
 | Stored answer | `stored_topic` | true |
 | FAQ | `faq` | false |
 | From Canvas | `course_info` | true |
+| From the web | `web` | true |
 | Referred to Ben | `logistics` | false |
 | Not covered | `not_covered` | false |
 | Student alert | `alert` | false |
@@ -145,6 +148,7 @@ What to expect per kind:
 | Not covered | One Voyage embedding, plus ranking every slide | about a second |
 | From Canvas | One Voyage embedding, ranking the slides and the Canvas chunks, and one answer call | a few seconds, mostly the model |
 | Referred to Ben | Embedding and ranking, plus one small model call when the keyword pre-check misses | one to a few seconds |
+| From the web | Embedding and ranking, the scope check (unless keywords decide), and one model call that runs 1 to 3 web searches | 5 to 20 seconds, mostly the search |
 | Covered | Embedding, ranking, the logistics check, the narration call (with one retry if its JSON fails validation) and signing links | several seconds, mostly the narration model |
 
 ### Model
@@ -163,7 +167,13 @@ only when a model was actually called for that question:
   called.
 - **Referred to Ben:** shown when the model did the logistics check; "none"
   when the keyword pre-check caught it with no call.
-- **Stored answer, FAQ, Not covered:** always "none".
+- **From the web:** the model ran the web search and wrote the answer. If the
+  reply failed its checks (over 150 words, a web address, a name, a crude
+  word, a code, an injection marker) the card says "Here is where to look."
+  with the source links; the model is still shown.
+- **Not covered:** "none", unless the scope check (beyond the slides) made a
+  model call to decide it was off-topic.
+- **Stored answer, FAQ:** always "none".
 
 Before October 7 the active model was saved on every row, even when no model
 was called. The page now shows "none" for any row whose kind never calls a
