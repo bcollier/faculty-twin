@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>*{box-sizing:border-box}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Faculty Twin Data and Evals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,700&family=Libre+Franklin:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: two presentation panels (data in, then evals), each readable on a screen recording; summary first, detail below. */
+:root {
+  --bg: #f5f7f9; --panel: #ffffff; --fg: #18212b; --muted: #55606c; --line: #d9dfe5;
+  --accent: #1f5f8b; --accent-soft: #e3eef6; --twin: #1f5f8b; --base: #9a6b1f; --base-soft: #f6ecda;
+  --good: #2f7d4f; --warn: #a3541a;
+  --display: "Literata", Georgia, serif; --body: "Libre Franklin", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12171d; --panel: #1a2129; --fg: #e8edf2; --muted: #a2adb8; --line: #2c3540;
+  --accent: #7cb7e0; --accent-soft: #1d3141; --twin: #7cb7e0; --base: #e2b46a; --base-soft: #3a2f1c;
+  --good: #7fcf9f; --warn: #f0a26a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12171d; --panel: #1a2129; --fg: #e8edf2; --muted: #a2adb8; --line: #2c3540;
+  --accent: #7cb7e0; --accent-soft: #1d3141; --twin: #7cb7e0; --base: #e2b46a; --base-soft: #3a2f1c;
+  --good: #7fcf9f; --warn: #f0a26a; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.55; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 20px; padding-block: 32px 56px; display: grid; gap: 40px; }
+header h1 { font-family: var(--display); font-weight: 700; font-size: clamp(28px, 4vw, 40px); margin: 0; text-wrap: balance; }
+header p { margin: 6px 0 0; color: var(--muted); max-width: 70ch; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+section.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding-inline: clamp(16px, 3vw, 36px); padding-block: 28px 32px; display: grid; gap: 24px; min-width: 0; }
+section.panel h2 { font-family: var(--display); font-weight: 700; font-size: clamp(22px, 3vw, 30px); margin: 4px 0 0; text-wrap: balance; }
+h3 { font-size: 17px; margin: 0 0 8px; font-weight: 600; }
+.lead { color: var(--muted); margin: 6px 0 0; max-width: 72ch; }
+.nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.num { border-top: 3px solid var(--accent); padding-top: 8px; min-width: 0; }
+.num b { display: block; font-family: var(--display); font-size: 30px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.num span { color: var(--muted); font-size: 14px; }
+.flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; counter-reset: step; }
+.step { background: var(--accent-soft); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+.step::before { counter-increment: step; content: "Step " counter(step); display: block; font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+.step strong { display: block; font-size: 15px; }
+.step small { color: var(--muted); font-size: 13.5px; display: block; line-height: 1.45; margin-top: 2px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+.cols > div { min-width: 0; }
+ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+ul.plain li { padding-left: 2px; }
+.note { font-size: 14px; color: var(--muted); }
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 15px; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12.5px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+td.n { font-family: var(--mono); text-align: right; white-space: nowrap; }
+th.n { text-align: right; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 14px; color: var(--muted); }
+.key { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart text { font-family: var(--body); fill: var(--muted); font-size: 12px; }
+.chart .val { fill: var(--fg); font-family: var(--mono); font-size: 11px; }
+.pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--base-soft); color: var(--warn); }
+.pill.ok { background: var(--accent-soft); color: var(--good); }
+code { font-family: var(--mono); font-size: .9em; }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+footer { color: var(--muted); font-size: 13.5px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Faculty Twin · CMU 15-113 Project 2 · October 7, 2026</div>
+    <h1>What goes into the twin, and how we test it</h1>
+    <p>An AI version of Prof. Ben Collier that answers course questions from his own slides and what he said in class, in an AI voice made from his recordings. All counts are aggregates. No student names or course text appear on this page.</p>
+  </header>
+
+  <section class="panel" aria-labelledby="data-h">
+    <div>
+      <div class="eyebrow">Part 1</div>
+      <h2 id="data-h">The data that goes in</h2>
+      <p class="lead">Two courses I am teaching this semester, every class so far: 70-445 AI for Business Leaders and 45-884 AI Methods for Social and Visual Data. 22 class sessions, 21 with usable class audio.</p>
+    </div>
+
+    <div class="nums">
+      <div class="num"><b>974</b><span>slides indexed (574 from 70-445, 400 from 45-884)</span></div>
+      <div class="num"><b>736</b><span>slides with what I said in class while the slide was up</span></div>
+      <div class="num"><b>329</b><span>short class clips of me explaining a slide</span></div>
+      <div class="num"><b>169</b><span>notebook code cells</span></div>
+      <div class="num"><b>1,139</b><span>minutes of my own class speech used for narration</span></div>
+    </div>
+
+    <div>
+      <h3>How a class becomes searchable</h3>
+      <div class="flow">
+        <div class="step"><strong>Collect</strong><small>Slide PDFs, PowerPoint notes, Zoom recordings and captions, notebooks, from Google Drive and Zoom.</small></div>
+        <div class="step"><strong>Read each slide</strong><small>PDF text, speaker notes, and text recognized inside images (278 picture slides).</small></div>
+        <div class="step"><strong>Protect students</strong><small>Every name except mine replaced, student turns removed, cursing smoothed, quiz codes removed.</small></div>
+        <div class="step"><strong>Match video to slides</strong><small>A frame every 2 seconds is matched to the slide on screen, so each slide gets the minutes I spent on it.</small></div>
+        <div class="step"><strong>Cut clips</strong><small>Only stretches where I alone am speaking, with nobody named and no student presentations.</small></div>
+        <div class="step"><strong>Embed and upload</strong><small>1,143 records embedded with Voyage AI, checked against the rosters, stored in a private Supabase bucket.</small></div>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div>
+        <h3>Privacy checks before anything is uploaded</h3>
+        <div class="tbl"><table>
+          <thead><tr><th>Check</th><th class="n">Result</th></tr></thead>
+          <tbody>
+            <tr><td>Student names replaced with <code>[student]</code></td><td class="n">659</td></tr>
+            <tr><td>Other people named, replaced with <code>[person]</code></td><td class="n">251</td></tr>
+            <tr><td>Minutes of student speech left out</td><td class="n">251</td></tr>
+            <tr><td>Minutes left out because the speaker was unclear</td><td class="n">214</td></tr>
+            <tr><td>Roster names found in the upload by the final leak check</td><td class="n">0</td></tr>
+            <tr><td>Quiz access codes removed from the index</td><td class="n">3</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div>
+        <h3>Where a student's answer comes from</h3>
+        <ul class="plain">
+          <li><b>My FAQ</b> for logistics like office hours and missed classes, with a booking link or the TA's contact.</li>
+          <li><b>My slides</b> for course concepts, narrated from the slide, my notes, and my class explanation, with the course, session, date and slide number.</li>
+          <li><b>A class clip</b> of me explaining that slide, where one passed every privacy rule.</li>
+          <li><b>A clean decline</b> when nothing scores at least 0.52, my hand-chosen threshold.</li>
+        </ul>
+        <p class="note">Everything sits behind a course passcode. The app runs on Vercel, content and logs on Supabase.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="eval-h">
+    <div>
+      <div class="eyebrow">Part 2</div>
+      <h2 id="eval-h">How we test it: the eval harness</h2>
+      <p class="lead">22 real questions students emailed me, de-identified, run through the twin and judged by two AI models from different companies, so no model only grades its own work.</p>
+    </div>
+
+    <div class="flow">
+      <div class="step"><strong>Real questions</strong><small>22 student emails, names and details removed, each with my actual reply as the reference.</small></div>
+      <div class="step"><strong>Calibrate the judges</strong><small>8 made-up cases with known right answers. Both judges got 8 of 8 before we trusted them.</small></div>
+      <div class="step"><strong>Ask the twin</strong><small>The real index, my retrieval code and the 0.52 threshold, exactly as students use it.</small></div>
+      <div class="step"><strong>Two judges score</strong><small>Claude Opus 5.5 and GPT-6.1 Sol each give six scores from 1 to 5 and a pass or fail.</small></div>
+      <div class="step"><strong>Compare</strong><small>Against a generic chatbot with no course material, answering the same 22 questions.</small></div>
+    </div>
+
+    <div>
+      <h3>Pass rate: share of answers a judge passed (0 to 100%)</h3>
+      <div class="legend"><span class="key"><span class="sw" style="background:var(--twin)"></span>Faculty Twin, Oct 7 (n = 22)</span><span class="key"><span class="sw" style="background:var(--base)"></span>Generic chatbot baseline, Oct 5 (n = 22)</span></div>
+      <div class="chart" id="pass-chart" role="img" aria-label="Pass rate by judge. Twin: 55% with Claude Opus 5.5, 55% with GPT-6.1 Sol. Baseline: 68% with GPT-6.1 Sol grading its own answers, 27% with GPT-6 Luna."></div>
+      <p class="note">The baseline's 68% comes from GPT-6.1 Sol grading answers it wrote itself; a different judge, GPT-6 Luna, passed 27% of the same answers. The twin's two judges agreed on 91% of verdicts; the baseline's agreed on 59%.</p>
+    </div>
+
+    <div>
+      <h3>Average score per dimension (1 = very poor, 3 = acceptable, 5 = excellent)</h3>
+      <div class="legend"><span class="key"><span class="sw" style="background:var(--twin)"></span>Twin, mean of both judges</span><span class="key"><span class="sw" style="background:var(--base)"></span>Baseline, mean of both judges</span></div>
+      <div class="chart" id="dim-chart" role="img" aria-label="Average score per dimension on a 1 to 5 scale, twin versus baseline."></div>
+      <div class="tbl"><table>
+        <thead><tr><th>Dimension (1 to 5, 5 best)</th><th>What a 5 means</th><th class="n">Twin</th><th class="n">Baseline</th></tr></thead>
+        <tbody id="dim-rows"></tbody>
+      </table></div>
+      <p class="note">Each number is the mean of the two judges' averages across the questions where the dimension applies. n/a means it does not apply: the baseline has no slides to be grounded in.</p>
+    </div>
+
+    <div class="cols">
+      <div>
+        <h3>What the twin does better</h3>
+        <ul class="plain">
+          <li>Picks the right call, answer or decline: <b>77%</b> of questions.</li>
+          <li>Declines logistics it should not handle: meeting requests passed <b>83%</b>; grading, career, Canvas access and team questions <b>100%</b>.</li>
+          <li>Stays in scope and PG: scope <b>4.05</b> vs 3.14, safety and tone <b>4.62</b> vs 3.80.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>What the judges flagged, and what changed</h3>
+        <ul class="plain">
+          <li>Read a quiz access code from a transcript. <span class="pill ok">Fixed</span> codes removed from the index.</li>
+          <li>Narrated slides for logistics questions. <span class="pill ok">Fixed</span> logistics routing and my FAQ now answer them.</li>
+          <li>Some answers mix slides from both courses. <span class="pill">Open</span> next change to segment selection.</li>
+          <li>Narration sometimes adds specifics beyond the slide. <span class="pill">Open</span> tighter grounding check.</li>
+        </ul>
+        <p class="note">The Oct 7 run predates both fixes. Next run measures them.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>Source: the Faculty Twin repo, <a href="https://github.com/bcollier/faculty-twin/blob/main/evals/README.md">evals/README.md</a> and <a href="https://github.com/bcollier/faculty-twin/blob/main/docs/TESTING_AND_SCORES.md">docs/TESTING_AND_SCORES.md</a>. Counts from the index built October 7, 2026.</footer>
+</div>
+
+<script>
+(function () {
+  var NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, text) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; }
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  // Pass rate, horizontal bars, fixed 0-100% axis.
+  function passChart() {
+    var rows = [
+      { label: "Twin, judged by Claude Opus 5.5", v: 55, c: "--twin" },
+      { label: "Twin, judged by GPT-6.1 Sol", v: 55, c: "--twin" },
+      { label: "Baseline, judged by GPT-6.1 Sol (its own answers)", v: 68, c: "--base" },
+      { label: "Baseline, judged by GPT-6 Luna", v: 27, c: "--base" }
+    ];
+    var W = 720, left = 300, right = 50, rowH = 34, top = 8, H = top + rows.length * rowH + 30, plot = W - left - right;
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H });
+    [0, 25, 50, 75, 100].forEach(function (t) {
+      var x = left + plot * t / 100;
+      svg.appendChild(el("line", { x1: x, x2: x, y1: top, y2: top + rows.length * rowH, stroke: css("--line"), "stroke-width": 1 }));
+      svg.appendChild(el("text", { x: x, y: H - 10, "text-anchor": "middle" }, t + "%"));
+    });
+    rows.forEach(function (r, i) {
+      var y = top + i * rowH + 7;
+      svg.appendChild(el("text", { x: left - 10, y: y + 13, "text-anchor": "end" }, r.label));
+      svg.appendChild(el("rect", { x: left, y: y, width: plot * r.v / 100, height: 18, rx: 2, fill: css(r.c) }));
+      svg.appendChild(el("text", { x: left + plot * r.v / 100 + 6, y: y + 13, class: "val" }, r.v + "%"));
+    });
+    var host = document.getElementById("pass-chart"); host.innerHTML = ""; host.appendChild(svg);
+  }
+
+  // Dimension means: twin = mean of Opus and Sol; baseline = mean of Sol and Luna. Axis 0-5, zero baseline.
+  var dims = [
+    { k: "Grounded in the slides", d: "Every claim is supported by the slides shown", t: (3 + 3) / 2, b: null },
+    { k: "Answers the question", d: "Addresses what was asked, or declines helpfully", t: (2.64 + 2.64) / 2, b: (3.77 + 3.00) / 2 },
+    { k: "Correct scope", d: "Answers course questions, declines logistics", t: (4.14 + 3.95) / 2, b: (3.68 + 2.59) / 2 },
+    { k: "Matches my real reply", d: "Agrees with how I actually answered", t: (2.46 + 1.38) / 2, b: (2.00 + 1.08) / 2 },
+    { k: "Works as speech", d: "Clear, first person, easy to follow aloud", t: (3.43 + 3.86) / 2, b: (3.67 + 3.11) / 2 },
+    { k: "Safety and tone", d: "PG, no names, no promises I have not made", t: (4.68 + 4.55) / 2, b: (4.45 + 3.14) / 2 }
+  ];
+  function fmt(v) { return v == null ? "n/a" : v.toFixed(2); }
+  function dimTable() {
+    var body = document.getElementById("dim-rows"); body.innerHTML = "";
+    dims.forEach(function (r) {
+      var tr = document.createElement("tr");
+      [r.k, r.d].forEach(function (s) { var td = document.createElement("td"); td.textContent = s; tr.appendChild(td); });
+      [r.t, r.b].forEach(function (v) { var td = document.createElement("td"); td.className = "n"; td.textContent = v == null ? "n/a (no slides)" : fmt(v); tr.appendChild(td); });
+      body.appendChild(tr);
+    });
+  }
+  function dimChart() {
+    var W = 720, left = 190, right = 60, groupH = 46, top = 8, H = top + dims.length * groupH + 30, plot = W - left - right;
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H });
+    [0, 1, 2, 3, 4, 5].forEach(function (t) {
+      var x = left + plot * t / 5;
+      svg.appendChild(el("line", { x1: x, x2: x, y1: top, y2: top + dims.length * groupH, stroke: css("--line"), "stroke-width": 1 }));
+      svg.appendChild(el("text", { x: x, y: H - 10, "text-anchor": "middle" }, String(t)));
+    });
+    dims.forEach(function (r, i) {
+      var y = top + i * groupH + 5;
+      svg.appendChild(el("text", { x: left - 10, y: y + 17, "text-anchor": "end" }, r.k));
+      [[r.t, "--twin", 0], [r.b, "--base", 18]].forEach(function (p) {
+        if (p[0] == null) { svg.appendChild(el("text", { x: left + 4, y: y + p[2] + 12, class: "val" }, "n/a (no slides)")); return; }
+        svg.appendChild(el("rect", { x: left, y: y + p[2], width: plot * p[0] / 5, height: 15, rx: 2, fill: css(p[1]) }));
+        svg.appendChild(el("text", { x: left + plot * p[0] / 5 + 6, y: y + p[2] + 12, class: "val" }, fmt(p[0])));
+      });
+    });
+    var host = document.getElementById("dim-chart"); host.innerHTML = ""; host.appendChild(svg);
+  }
+  function draw() { passChart(); dimChart(); }
+  dimTable(); draw();
+  try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw); } catch (e) {}
+  new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+})();
+</script>
+</body>
+</html>
