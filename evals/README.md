@@ -251,6 +251,61 @@ How the command runs:
 - **Its own call path.** Answering calls go straight to the providers (like the judges), so a comparison never uses the site's `DAILY_LLM_CALL_CAP`. Spend still shows in Settings > Analytics under `eval_generate` and `eval_judge`.
 - **One embedding per question.** Embeddings are made once per question, in one Voyage request, and cached in `evals/private/embed_cache/`.
 
+### Results, October 8, 2026
+
+**Setup.**
+- **Models and judges:** five answering models; three judges (`claude-opus-5-5`, `gpt-6.1-sol`, `gemini-3.8-flash`).
+- **Repetition:** two runs of every question x model, and a second scoring of a random 25% of answers by every judge.
+- **Spend:** about $35 in all, under the $80 cap. That is the course set $22.51, the private set $7.04 and the web re-run $2.60, plus the pilot, calibration and $1.28 of answers discarded in the outage below. Web search fees (about $0.01 a search) are not included.
+- **Outage:** the direct Anthropic API key ran out of credit late in the course set's second run. The affected answers were discarded and asked again with the same Claude models through OpenRouter (`FT_EVAL_ROUTE_ANTHROPIC=openrouter`). That covers 15 of 400 course answers and 75 of 1,350 course judgements, and most Claude calls in the private set's second run. Each report says how many.
+
+Full reports:
+- course set: `evals/reports/20261008T045000Z-course/`
+- web questions: `evals/reports/20261008T065000Z-web/`
+- private set: `evals/private/runs/20261008T055000Z-private/report.html`, which has no question text and stays local
+
+**Course set (40 invented questions, run 1).**
+
+| Model | Pass rate, all judges (%, n=40 answers, 120 verdicts) | Pass rate, without same-family judges (%, 80 verdicts) | Core rubric mean (1–5) | Teaching mean (1–5, n≈25 answers that taught) | Retrieval hit (%, n=20) | Right route (%, n=40) | Median time to answer (s, model answers) | Cost per model answer (USD) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `claude-sonnet-5-5` | 57 | 59 | 4.03 | 3.44 | 75 | 68 | 5.6 | 0.011 |
+| `claude-opus-5-5` | 51 | 54 | 3.88 | 3.27 | 75 | 68 | 8.3 | 0.027 |
+| `claude-fable-5-1` | 51 | 54 | 3.88 | 3.33 | 75 | 68 | 12.6 | 0.072 |
+| `gpt-5.6-sol` | 68 | 72 | 4.13 | 3.56 | 75 | 68 | 10.7 | 0.016 |
+| `gpt-6.1-sol` | 65 | 69 | 4.11 | 3.72 | 75 | 68 | 14.1 | 0.010 |
+
+95% confidence intervals on pass rate are about ±12 points with 40 answers, so the GPT models lead Sonnet without a clear statistical separation. The lead holds with every judge, though, including the Claude judge:
+
+| Judge | Pass rate on Claude answers (%) | Pass rate on GPT answers (%) |
+| --- | --- | --- |
+| `claude-opus-5-5` | 45 to 55 | 62 to 68 |
+| `gpt-6.1-sol` | 35 to 40 | 57 to 60 |
+| `gemini-3.8-flash` | 70 to 78 | 75 to 78 |
+
+GPT-6.1 Sol had the highest teaching scores: accurate 4.29, explains the concept 3.44, appropriate depth 3.64.
+
+Routing and retrieval do not depend on the model, so they are the same for all five:
+- **Concept questions:** 15 of 20 went to slides, 4 were answered from Canvas instead (the course-info index outscored the slides), and 1 was declined. An expected slide was used in 75% of them.
+- **Off-topic and logistics:** all 6 off-topic questions were declined. Of the 6 logistics questions, 3 went to the FAQ, 1 to a referral, 1 to Canvas, and 1 was declined.
+- **Beyond-the-slides questions:** 2 of 8 reached the web path when it was re-run with the merged web path. 4 went to Canvas and 2 to slides, so the Canvas and slide thresholds catch most course-adjacent questions before the web scope check runs.
+- **Web answers:** when the web path answered, the judges scored sources 3 to 5 and the "beyond my slides" label 5 of 5. Three of five answers to the MCP-server question fell back to "Here is where to look", which failed.
+
+**Real questions (private set, 22, run 1).** Pass rates were close:
+- all judges: 50% to 58%
+- without same-family judges: `gpt-6.1-sol` 68%, `gpt-5.6-sol` 61%, `claude-sonnet-5-5` 57%, `claude-fable-5-1` 50%, `claude-opus-5-5` 48%
+
+Right route was 86% for every model. Almost every real question is logistics, and the twin now routes those to the FAQ, Canvas or Ben before any narration. Only 2 to 4 answers per model taught anything.
+
+**Reliability (course set).**
+- **Model test-retest:** ICC(2,1) between run 1 and run 2 was 0.96 to 1.00 for every model. Counting only answers that taught something, it was 0.87 (Opus) to 0.99 (GPT-6.1 Sol). Verdicts flipped on 5% to 12% of judge verdicts, and Sonnet was least stable at 12%. Every answer took the same route both times.
+- **Judge test-retest:** ICC 0.96 to 0.97. Kappa on pass or fail was 0.80 for Opus, 1.00 for Sol and 0.90 for Gemini.
+- **Agreement between judges:**
+  - Krippendorff's alpha was 0.87 for right scope and 0.86 for matches the reply.
+  - It was 0.34 to 0.50 for the teaching dimensions and 0.47 for grounded.
+  - Pass or fail verdicts agreed on 72% to 81% of answers.
+
+  Each judge repeats itself well, but the judges read teaching quality differently. Teaching scores need all three judges, not one.
+
 ## Settings > Evals
 
 The same rubric, judges and summary math also run from the Settings page on the live site (admin only), so a round can be started without the local build machine. The shared code is `app/eval_core.py` (this folder re-exports it, so CLI results and Settings results are computed the same way). How to run it, what it costs, and where its data lives: [docs/TESTING_AND_SCORES.md](../docs/TESTING_AND_SCORES.md#run-evals-from-settings). Settings reads the question set from the private bucket; upload it from `evals/private/questions.jsonl` with `python -m scripts.upload_eval_questions` (it runs `dataset.py`'s checks first). The October 5 baseline and October 7 run above are imported into its report card by `python -m scripts.import_eval_history`.

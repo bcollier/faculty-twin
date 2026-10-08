@@ -321,3 +321,28 @@ def test_import_compare_puts_the_run_on_the_report_card(tmp_path, monkeypatch):
     assert any("web path" in n for n in run["notes"])
     assert not any(q.question in "\n".join(lines) for q in qs)  # prints counts only
     assert {(s["generator"], s["judge"]) for s in run["self_grading"]} == {("openai:gpt-6.1-sol", "openai:gpt-6.1-sol")}
+
+
+def test_a_subset_run_is_listed_but_not_plotted(tmp_path, monkeypatch):
+    from app import eval_runs
+
+    monkeypatch.setattr(compare, "web_path_available", lambda: True)
+    qs = [q for q in small_set(tmp_path) if q.qtype == "beyond"]
+    out = tmp_path / "20261008T065000Z-web"
+    compare.run(qs, GENS, fake_judges(), 1, None, 0.0, 50.0, out, FakeTarget, compare.Spend(None), log=lambda m: None)
+    (out / "meta.json").write_text(json.dumps({"run_id": out.name, "private": False, "only_types": ["beyond"],
+                                               "questions_file": "q.jsonl", "generators": [compare.key(g) for g in GENS]}))
+    bucket = eval_store.MemoryBucket()
+    import_eval_history.import_compare(out, bucket, out=lambda m: None)
+    entry = next(e for e in eval_store.read_index(bucket) if e["id"] == out.name)
+    assert entry["excluded"] and entry["status"] == "excluded"
+    assert eval_runs.report_card(eval_store.read_index(bucket), {})["series"] == []
+
+
+def test_claude_can_be_routed_through_openrouter(monkeypatch):
+    from evals.judges import route_of
+
+    assert route_of("anthropic", "claude-opus-5-5") == ("anthropic", "claude-opus-5-5")
+    monkeypatch.setenv("FT_EVAL_ROUTE_ANTHROPIC", "openrouter")
+    assert route_of("anthropic", "claude-fable-5-1") == ("openrouter", "anthropic/claude-fable-5.1")
+    assert route_of("openai", "gpt-6.1-sol") == ("openai", "gpt-6.1-sol")

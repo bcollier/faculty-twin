@@ -233,6 +233,33 @@ def item_for(q: dataset.Question, response: dict[str, Any], web_path: bool) -> d
     }
 
 
+def eval_search(system: str, user: str, max_tokens: int, provider: str | None = None, model: str | None = None,
+                client: Any = None):
+    """The app's web search call (app/web_answer.py), with Claude routed through OpenRouter's web search when
+    FT_EVAL_ROUTE_ANTHROPIC=openrouter (the direct Anthropic key cannot be used)."""
+    from app import web_answer
+
+    from .judges import route_of
+
+    if provider and model:
+        provider, model = route_of(provider, model)
+    return web_answer.search(system, user, max_tokens, provider=provider, model=model, client=client)
+
+
+def offline_caps() -> None:
+    """A comparison runs in its own process on the local build machine: it must never use up the live site's
+    daily model-call cap or today's web-answer budget (students share both). Its spend is bounded by --budget."""
+    from app import limits
+
+    limits.take_llm_call = lambda *a, **k: True
+    try:
+        from app import web_answer
+
+        web_answer.take_budget = lambda *a, **k: True
+    except ImportError:  # before the web path existed
+        pass
+
+
 def web_path_available() -> bool:
     from app.admin_evals import web_path_available as available
 
@@ -416,6 +443,8 @@ def main(argv: list[str] | None = None) -> int:
     from app import main as app_main
     from app import storage
 
+    offline_caps()
+
     from .targets import InProcessTarget
 
     content = storage.store.get_or_503()
@@ -424,7 +453,8 @@ def main(argv: list[str] | None = None) -> int:
     retriever = app_main.get_retriever()
 
     def make_target(g: dict[str, str]):
-        return InProcessTarget(retriever, embedder, direct_complete, content, provider=g["provider"], model=g["model"])
+        return InProcessTarget(retriever, embedder, direct_complete, content, provider=g["provider"], model=g["model"],
+                               searcher=eval_search if web_path_available() else None)
 
     spend = Spend(live)
     started = time.monotonic()

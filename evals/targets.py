@@ -72,7 +72,7 @@ class InProcessTarget:
     """
 
     def __init__(self, retriever=None, embedder=None, completer=None, content=None,
-                 provider: str | None = None, model: str | None = None):
+                 provider: str | None = None, model: str | None = None, searcher=None):
         from app import main
 
         self._main = main
@@ -81,6 +81,7 @@ class InProcessTarget:
         self.completer = completer or main.get_completer()
         self._content = content
         self.provider, self.model = provider, model
+        self.searcher = searcher  # the web search call for "beyond the slides" answers (None: the app's own)
         self.name = f"in-process {provider}:{model}" if provider and model else "in-process"
 
     def content(self):
@@ -105,8 +106,10 @@ class InProcessTarget:
             content = self.content()
             # Counted as eval spend, not student narration (sticky: inner tags keep it).
             with override, usage.purpose("eval_generate", sticky=True), usage.tally() as spent:
+                extra = {"searcher": self.searcher} if self.searcher is not None else {}
                 playlist, info = self._main.answer(
-                    question, None, content, self.retriever, self.embedder, self.completer, self.provider, self.model
+                    question, None, content, self.retriever, self.embedder, self.completer, self.provider, self.model,
+                    **extra,
                 )
         except self._main.RetrievalNotReady:
             return _result("retrieval_not_ready", "retrieval not implemented yet")

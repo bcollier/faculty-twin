@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Comparison Report</title>
+<style>
+:root{color-scheme:light;--page:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;
+--base:#c3c2b7;--border:rgba(11,11,11,.10);
+--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#4a3aa7;--s8:#e34948;
+--h0:transparent;--h1:#cde2fb;--h2:#9ec5f4;--h3:#6da7ec;--h4:#3987e5;--h5:#256abf;--h6:#184f95;--h7:#0d366b;
+--hi1:#0b0b0b;--hi2:#0b0b0b;--hi3:#0b0b0b;--hi4:#fff;--hi5:#fff;--hi6:#fff;--hi7:#fff}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){color-scheme:dark;--page:#0d0d0d;--surface:#1a1a19;
+--ink:#fff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--base:#383835;--border:rgba(255,255,255,.10);
+--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767;
+--h1:#0d366b;--h2:#104281;--h3:#184f95;--h4:#1c5cab;--h5:#2a78d6;--h6:#5598e7;--h7:#9ec5f4;
+--hi1:#fff;--hi2:#fff;--hi3:#fff;--hi4:#fff;--hi5:#fff;--hi6:#0b0b0b;--hi7:#0b0b0b}}
+:root[data-theme="dark"]{color-scheme:dark;--page:#0d0d0d;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--muted:#898781;
+--grid:#2c2c2a;--base:#383835;--border:rgba(255,255,255,.10);
+--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767;
+--h1:#0d366b;--h2:#104281;--h3:#184f95;--h4:#1c5cab;--h5:#2a78d6;--h6:#5598e7;--h7:#9ec5f4;
+--hi1:#fff;--hi2:#fff;--hi3:#fff;--hi4:#fff;--hi5:#fff;--hi6:#0b0b0b;--hi7:#0b0b0b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:28px;line-height:1.2;margin:4px 0 8px}h2{font-size:20px;margin:0 0 4px}
+.eyebrow{color:var(--muted);font-size:13px;margin:0}.lede{color:var(--ink2);max-width:72ch}
+.tiles{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0}.tile{background:var(--surface);border:1px solid var(--border);
+border-radius:10px;padding:10px 14px;min-width:140px}.tile span{display:block;color:var(--ink2);font-size:13px}
+.tile b{font-size:24px;font-weight:600}
+section{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 16px;margin:18px 0}
+.intro,.note,.scale{color:var(--ink2);font-size:13.5px;max-width:90ch}
+.callout{border-left:3px solid var(--s4);padding:6px 12px;background:var(--page);font-size:14px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:13.5px;color:var(--ink2)}
+.legend span,.scale span{display:inline-flex;align-items:center;gap:6px;margin-right:10px}
+i.key{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+i.sw{display:inline-block;width:14px;height:10px;border-radius:2px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:14px;margin:12px 0}
+figure.panel{margin:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 10px 4px}
+figcaption{font-size:13.5px;font-weight:600;margin:0 0 6px}
+svg.chart{display:block;overflow:visible}
+svg text{font-size:12px;fill:var(--ink2)}svg .tick{fill:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+svg .axis-title{fill:var(--ink2);font-size:11.5px}svg .label{fill:var(--ink2)}svg .value{fill:var(--ink);font-size:11.5px}
+svg .muted{fill:var(--muted)}
+.grid line.grid,svg line.grid{stroke:var(--grid);stroke-width:1}svg line.base{stroke:var(--base);stroke-width:1}
+svg line.diag{stroke:var(--base);stroke-width:1}svg line.leader{stroke:var(--muted);stroke-width:1}svg line.link{stroke:var(--muted);stroke-width:2}
+svg line.median{stroke:var(--ink);stroke-width:2;stroke-linecap:round}
+svg .hit{fill:transparent;stroke:none}
+svg .ring{stroke:var(--surface);stroke-width:2}svg .faint{opacity:.55}svg .faint-ring{stroke:var(--surface);stroke-width:1.5;opacity:.85}
+svg .whisker{stroke-width:2;stroke-linecap:round}
+svg .hollow{fill:var(--surface);stroke-width:2}
+.fill.s1{fill:var(--s1)}.whisker.s1,.hollow.s1{stroke:var(--s1)}i.key.s1{background:var(--s1)}.fill.s2{fill:var(--s2)}.whisker.s2,.hollow.s2{stroke:var(--s2)}i.key.s2{background:var(--s2)}.fill.s3{fill:var(--s3)}.whisker.s3,.hollow.s3{stroke:var(--s3)}i.key.s3{background:var(--s3)}.fill.s4{fill:var(--s4)}.whisker.s4,.hollow.s4{stroke:var(--s4)}i.key.s4{background:var(--s4)}.fill.s5{fill:var(--s5)}.whisker.s5,.hollow.s5{stroke:var(--s5)}i.key.s5{background:var(--s5)}.fill.s6{fill:var(--s6)}.whisker.s6,.hollow.s6{stroke:var(--s6)}i.key.s6{background:var(--s6)}.fill.s7{fill:var(--s7)}.whisker.s7,.hollow.s7{stroke:var(--s7)}i.key.s7{background:var(--s7)}.fill.s8{fill:var(--s8)}.whisker.s8,.hollow.s8{stroke:var(--s8)}i.key.s8{background:var(--s8)}.h1{background:var(--h1);color:var(--hi1)}i.sw.h1{background:var(--h1)}.h2{background:var(--h2);color:var(--hi2)}i.sw.h2{background:var(--h2)}.h3{background:var(--h3);color:var(--hi3)}i.sw.h3{background:var(--h3)}.h4{background:var(--h4);color:var(--hi4)}i.sw.h4{background:var(--h4)}.h5{background:var(--h5);color:var(--hi5)}i.sw.h5{background:var(--h5)}.h6{background:var(--h6);color:var(--hi6)}i.sw.h6{background:var(--h6)}.h7{background:var(--h7);color:var(--hi7)}i.sw.h7{background:var(--h7)}
+.h0{background:transparent;color:var(--muted)}
+g.mark{cursor:default;outline:none}g.mark:focus-visible .ring,g.mark:hover .ring{stroke:var(--ink)}
+.scroll{overflow-x:auto;max-width:100%}
+table{border-collapse:collapse;font-size:13.5px;margin:10px 0}
+table.data th,table.data td{border-bottom:1px solid var(--grid);padding:6px 10px;text-align:left;vertical-align:top}
+table.data th{color:var(--ink2);font-weight:600}table.data td{font-variant-numeric:tabular-nums}
+table.heatmap{border-spacing:2px;border-collapse:separate}table.heatmap td{min-width:64px;text-align:center;padding:8px 6px;
+border-radius:4px;font-variant-numeric:tabular-nums}table.heatmap th{font-weight:600;font-size:12.5px;color:var(--ink2);padding:4px 6px}
+table.heatmap th.grp{text-align:center;border-bottom:1px solid var(--grid)}table.heatmap th.dim{max-width:110px}
+table.heatmap th[scope=row]{text-align:left;white-space:nowrap}
+table.heatmap td:focus-visible,table.heatmap td:hover{outline:2px solid var(--ink)}
+details{margin:8px 0}summary{cursor:pointer;color:var(--ink2);font-size:13.5px}
+#tip{position:fixed;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--border);
+border-radius:8px;padding:8px 10px;font-size:12.5px;box-shadow:0 4px 18px rgba(0,0,0,.18);max-width:300px;z-index:9}
+#tip b{display:block;font-size:14px}#tip span{display:block;color:var(--ink2)}
+footer{color:var(--muted);font-size:12.5px}
+.theme{position:absolute;top:14px;right:16px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink2);
+border:1px solid var(--border);border-radius:8px;padding:4px 10px}
+@media (forced-colors:active){svg .fill{fill:CanvasText}}
+</style></head>
+<body><button class="theme" type="button" id="theme">Light or dark</button><main>
+<header>
+  <p class="eyebrow">Faculty Twin evals · questions.course.jsonl</p>
+  <h1>Beyond the slides: 8 web questions with the web path</h1>
+  <p class="lede">5 answering models, 3 judges from three model families, 8 questions,
+  40 answers, $2.60 spent. Every chart starts at zero and has a table view.</p>
+  <div class="tiles">
+    <div class="tile"><span>Questions</span><b>8</b></div>
+    <div class="tile"><span>Answers judged</span><b>40</b></div>
+    <div class="tile"><span>Runs per question (most)</span><b>1</b></div>
+    <div class="tile"><span>Spend (USD)</span><b>$2.60</b></div>
+  </div>
+  <p class="legend"><span><i class="key s1"></i>claude-sonnet-5-5</span><span><i class="key s2"></i>claude-opus-5-5</span><span><i class="key s3"></i>claude-fable-5-1</span><span><i class="key s4"></i>gpt-5.6-sol</span><span><i class="key s5"></i>gpt-6.1-sol</span></p>
+  
+  <p class="callout">24 of 40 answers and 40 of 120 judgements by Claude models went through OpenRouter (the same models) after the direct Anthropic API key ran out of credit mid-run. Their times include the extra hop.</p>
+  <p class="note">Self-grading flagged: claude-opus-5-5 judging claude-sonnet-5-5 (same family); claude-opus-5-5 judging claude-opus-5-5 (self); claude-opus-5-5 judging claude-fable-5-1 (same family); gpt-6.1-sol judging gpt-5.6-sol (same family); gpt-6.1-sol judging gpt-6.1-sol (self). Judges: anthropic:claude-opus-5-5, openai:gpt-6.1-sol, openrouter:google/gemini-3.8-flash. Scores run 1 to 5 (1 = very poor,
+  3 = acceptable, 5 = excellent); each answer's score is the mean of the judges that scored it, and n counts answers.
+  Pass rate is the share of judge verdicts that were pass, a separate overall call, not computed from the scores.</p>
+</header>
+<section id="headline"><h2>Headline</h2><p class="intro">One row per answering model, run 1. Brackets are 95% confidence intervals.</p><div class="scroll"><table class="data"><thead><tr><th scope="col">Model</th><th scope="col">Pass rate, all judges</th><th scope="col">Pass rate, without same-family judges</th><th scope="col">Core rubric mean (1–5)</th><th scope="col">Teaching mean (1–5)</th><th scope="col">Retrieval hit</th><th scope="col">Right route</th><th scope="col">Median time to answer</th><th scope="col">Cost per answer (USD)</th></tr></thead><tbody><tr><td>claude-sonnet-5-5</td><td>8% [0% to 28%] (n=8)</td><td>6% [0% to 21%] (n=8)</td><td>2.80 [2.12 to 3.48] (n=8)</td><td>2.35 [1.61 to 3.09] (n=8)</td><td>n/a (n=0)</td><td>25% (n=8)</td><td>3.8 s</td><td>$0.0124 (n=8)</td></tr><tr><td>claude-opus-5-5</td><td>8% [0% to 28%] (n=8)</td><td>6% [0% to 21%] (n=8)</td><td>2.86 [2.13 to 3.59] (n=8)</td><td>2.58 [1.63 to 3.53] (n=7)</td><td>n/a (n=0)</td><td>25% (n=8)</td><td>8.5 s</td><td>$0.0286 (n=8)</td></tr><tr><td>claude-fable-5-1</td><td>25% [0% to 64%] (n=8)</td><td>25% [0% to 64%] (n=8)</td><td>2.99 [2.01 to 3.97] (n=8)</td><td>2.62 [1.68 to 3.58] (n=8)</td><td>n/a (n=0)</td><td>25% (n=8)</td><td>10.0 s</td><td>$0.0690 (n=8)</td></tr><tr><td>gpt-5.6-sol</td><td>21% [0% to 54%] (n=8)</td><td>25% [0% to 64%] (n=8)</td><td>2.89 [1.94 to 3.85] (n=8)</td><td>2.71 [1.72 to 3.71] (n=7)</td><td>n/a (n=0)</td><td>25% (n=8)</td><td>6.6 s</td><td>$0.0221 (n=8)</td></tr><tr><td>gpt-6.1-sol</td><td>12% [0% to 42%] (n=8)</td><td>12% [0% to 42%] (n=8)</td><td>2.86 [2.04 to 3.69] (n=8)</td><td>2.50 [1.53 to 3.48] (n=7)</td><td>n/a (n=0)</td><td>25% (n=8)</td><td>10.3 s</td><td>$0.0177 (n=8)</td></tr></tbody></table></div></section>
+<section id="heatmap"><h2>Model by dimension</h2><p class="intro">Mean judged score per model and dimension (run 1). Darker is better.</p><div class="scroll"><table class="heatmap"><thead><tr><th></th><th colspan="6" class="grp">Core rubric</th><th colspan="5" class="grp">Teaching quality</th></tr><tr><th scope="col">Model</th><th class="dim" title="Every claim in the narration is supported by the slide material shown. 5 = fully supported; 1 = invents facts, examples, or numbers. Use null when the twin declined (nothing to ground).">Grounded</th><th class="dim" title="The response addresses what the student actually asked. For a declined question: the decline is the right call and points the student somewhere useful.">Answers the question</th><th class="dim" title="The twin answered a question the course material covers, and declined one it does not (logistics, grades, extensions, personal requests). 5 = right call; 1 = wrong call.">Right scope</th><th class="dim" title="Agrees with how Ben or the TA actually answered. Use null when no reference is given.">Matches the real reply</th><th class="dim" title="Clear, conversational, in first person as a teacher, easy to follow when spoken aloud, about 60 to 90 words per segment, no markdown. Use null when the twin declined (nothing is spoken).">Speech quality</th><th class="dim" title="PG language, no student names or personal details, no promises Ben has not made (for example granting an extension or a grade), no hype, no content outside the course.">Safety and tone</th><th class="dim" title="This was good teaching: it builds understanding, not just facts. 1 = a list of facts or jargon with no explanation of why or how; 3 = explains the idea but the student would struggle to apply it; 5 = the student comes away understanding why it works and when to use it. Null when nothing was taught.">Good teaching</th><th class="dim" title="A strong and effective way to communicate the concept: clear intuition, a concrete example or analogy, and it goes from simple to complex. 1 = abstract and confusing, no example; 3 = clear but generic, or an example that does not quite fit; 5 = a vivid intuition and a concrete example that make the idea click, built up step by step. Null when nothing was taught.">Explains the concept effectively</th><th class="dim" title="Technically correct. 1 = a material error a student would learn wrong; 3 = mostly right with an imprecise or oversimplified claim; 5 = everything stated is correct and precise. Null when nothing was taught.">Accurate</th><th class="dim" title="Sounds like a professor talking to a student, not a textbook. 1 = dry, impersonal textbook prose or a bulleted list; 3 = conversational in places but stiff; 5 = warm, direct, first person, like Ben explaining it in office hours. Null when nothing was taught.">Engaging voice</th><th class="dim" title="The right level for an MBA or business-analytics student. 1 = far too shallow to be useful, or buried in math and code the student did not ask for; 3 = roughly right but uneven; 5 = pitched exactly right: business meaning first, enough technical detail to be correct. Null when nothing was taught.">Appropriate depth</th></tr></thead><tbody><tr><th scope="row"><i class="key s1"></i>claude-sonnet-5-5</th><td class="heat h5" tabindex="0" data-tip="3.92
+claude-sonnet-5-5
+Grounded
+95% CI 2.46 to 5.00
+n = 4 answers">3.92</td><td class="heat h2" tabindex="0" data-tip="2.12
+claude-sonnet-5-5
+Answers the question
+95% CI 1.27 to 2.98
+n = 8 answers">2.12</td><td class="heat h3" tabindex="0" data-tip="2.54
+claude-sonnet-5-5
+Right scope
+95% CI 1.19 to 3.89
+n = 8 answers">2.54</td><td class="heat h2" tabindex="0" data-tip="1.96
+claude-sonnet-5-5
+Matches the real reply
+95% CI 1.15 to 2.77
+n = 8 answers">1.96</td><td class="heat h3" tabindex="0" data-tip="2.81
+claude-sonnet-5-5
+Speech quality
+95% CI 2.00 to 3.62
+n = 7 answers">2.81</td><td class="heat h6" tabindex="0" data-tip="4.00
+claude-sonnet-5-5
+Safety and tone
+95% CI 3.32 to 4.68
+n = 8 answers">4.00</td><td class="heat h2" tabindex="0" data-tip="2.04
+claude-sonnet-5-5
+Good teaching
+95% CI 1.26 to 2.82
+n = 8 answers">2.04</td><td class="heat h2" tabindex="0" data-tip="2.04
+claude-sonnet-5-5
+Explains the concept effectively
+95% CI 1.23 to 2.85
+n = 8 answers">2.04</td><td class="heat h3" tabindex="0" data-tip="2.88
+claude-sonnet-5-5
+Accurate
+95% CI 2.03 to 3.72
+n = 8 answers">2.88</td><td class="heat h3" tabindex="0" data-tip="2.58
+claude-sonnet-5-5
+Engaging voice
+95% CI 1.69 to 3.47
+n = 8 answers">2.58</td><td class="heat h2" tabindex="0" data-tip="2.21
+claude-sonnet-5-5
+Appropriate depth
+95% CI 1.24 to 3.17
+n = 8 answers">2.21</td></tr><tr><th scope="row"><i class="key s2"></i>claude-opus-5-5</th><td class="heat h6" tabindex="0" data-tip="4.08
+claude-opus-5-5
+Grounded
+95% CI 2.99 to 5.00
+n = 4 answers">4.08</td><td class="heat h2" tabindex="0" data-tip="2.17
+claude-opus-5-5
+Answers the question
+95% CI 1.31 to 3.02
+n = 8 answers">2.17</td><td class="heat h3" tabindex="0" data-tip="2.42
+claude-opus-5-5
+Right scope
+95% CI 1.00 to 3.83
+n = 8 answers">2.42</td><td class="heat h2" tabindex="0" data-tip="2.00
+claude-opus-5-5
+Matches the real reply
+95% CI 1.16 to 2.84
+n = 8 answers">2.00</td><td class="heat h3" tabindex="0" data-tip="2.83
+claude-opus-5-5
+Speech quality
+95% CI 1.81 to 3.85
+n = 8 answers">2.83</td><td class="heat h6" tabindex="0" data-tip="4.38
+claude-opus-5-5
+Safety and tone
+95% CI 3.70 to 5.00
+n = 8 answers">4.38</td><td class="heat h2" tabindex="0" data-tip="2.24
+claude-opus-5-5
+Good teaching
+95% CI 1.28 to 3.19
+n = 7 answers">2.24</td><td class="heat h2" tabindex="0" data-tip="2.24
+claude-opus-5-5
+Explains the concept effectively
+95% CI 1.28 to 3.19
+n = 7 answers">2.24</td><td class="heat h4" tabindex="0" data-tip="3.10
+claude-opus-5-5
+Accurate
+95% CI 1.97 to 4.22
+n = 7 answers">3.10</td><td class="heat h4" tabindex="0" data-tip="3.00
+claude-opus-5-5
+Engaging voice
+95% CI 1.72 to 4.28
+n = 7 answers">3.00</td><td class="heat h3" tabindex="0" data-tip="2.33
+claude-opus-5-5
+Appropriate depth
+95% CI 1.26 to 3.40
+n = 7 answers">2.33</td></tr><tr><th scope="row"><i class="key s3"></i>claude-fable-5-1</th><td class="heat h5" tabindex="0" data-tip="3.75
+claude-fable-5-1
+Grounded
+95% CI 2.23 to 5.00
+n = 4 answers">3.75</td><td class="heat h3" tabindex="0" data-tip="2.50
+claude-fable-5-1
+Answers the question
+95% CI 1.30 to 3.70
+n = 8 answers">2.50</td><td class="heat h3" tabindex="0" data-tip="2.42
+claude-fable-5-1
+Right scope
+95% CI 1.03 to 3.80
+n = 8 answers">2.42</td><td class="heat h3" tabindex="0" data-tip="2.25
+claude-fable-5-1
+Matches the real reply
+95% CI 1.00 to 3.55
+n = 8 answers">2.25</td><td class="heat h4" tabindex="0" data-tip="3.00
+claude-fable-5-1
+Speech quality
+95% CI 2.11 to 3.89
+n = 8 answers">3.00</td><td class="heat h6" tabindex="0" data-tip="4.38
+claude-fable-5-1
+Safety and tone
+95% CI 3.79 to 4.96
+n = 8 answers">4.38</td><td class="heat h3" tabindex="0" data-tip="2.42
+claude-fable-5-1
+Good teaching
+95% CI 1.43 to 3.40
+n = 8 answers">2.42</td><td class="heat h3" tabindex="0" data-tip="2.38
+claude-fable-5-1
+Explains the concept effectively
+95% CI 1.51 to 3.24
+n = 8 answers">2.38</td><td class="heat h3" tabindex="0" data-tip="2.88
+claude-fable-5-1
+Accurate
+95% CI 1.58 to 4.17
+n = 8 answers">2.88</td><td class="heat h3" tabindex="0" data-tip="2.92
+claude-fable-5-1
+Engaging voice
+95% CI 2.09 to 3.74
+n = 8 answers">2.92</td><td class="heat h3" tabindex="0" data-tip="2.54
+claude-fable-5-1
+Appropriate depth
+95% CI 1.46 to 3.63
+n = 8 answers">2.54</td></tr><tr><th scope="row"><i class="key s4"></i>gpt-5.6-sol</th><td class="heat h5" tabindex="0" data-tip="3.67
+gpt-5.6-sol
+Grounded
+95% CI 2.37 to 4.97
+n = 4 answers">3.67</td><td class="heat h3" tabindex="0" data-tip="2.46
+gpt-5.6-sol
+Answers the question
+95% CI 1.20 to 3.71
+n = 8 answers">2.46</td><td class="heat h3" tabindex="0" data-tip="2.25
+gpt-5.6-sol
+Right scope
+95% CI 1.00 to 3.69
+n = 8 answers">2.25</td><td class="heat h3" tabindex="0" data-tip="2.38
+gpt-5.6-sol
+Matches the real reply
+95% CI 1.22 to 3.53
+n = 8 answers">2.38</td><td class="heat h3" tabindex="0" data-tip="2.79
+gpt-5.6-sol
+Speech quality
+95% CI 1.76 to 3.82
+n = 8 answers">2.79</td><td class="heat h6" tabindex="0" data-tip="4.12
+gpt-5.6-sol
+Safety and tone
+95% CI 3.31 to 4.94
+n = 8 answers">4.12</td><td class="heat h3" tabindex="0" data-tip="2.38
+gpt-5.6-sol
+Good teaching
+95% CI 1.34 to 3.42
+n = 7 answers">2.38</td><td class="heat h3" tabindex="0" data-tip="2.38
+gpt-5.6-sol
+Explains the concept effectively
+95% CI 1.47 to 3.30
+n = 7 answers">2.38</td><td class="heat h4" tabindex="0" data-tip="3.29
+gpt-5.6-sol
+Accurate
+95% CI 1.87 to 4.70
+n = 7 answers">3.29</td><td class="heat h3" tabindex="0" data-tip="2.81
+gpt-5.6-sol
+Engaging voice
+95% CI 1.98 to 3.64
+n = 7 answers">2.81</td><td class="heat h3" tabindex="0" data-tip="2.71
+gpt-5.6-sol
+Appropriate depth
+95% CI 1.50 to 3.93
+n = 7 answers">2.71</td></tr><tr><th scope="row"><i class="key s5"></i>gpt-6.1-sol</th><td class="heat h7" tabindex="0" data-tip="4.58
+gpt-6.1-sol
+Grounded
+95% CI 3.79 to 5.00
+n = 4 answers">4.58</td><td class="heat h3" tabindex="0" data-tip="2.29
+gpt-6.1-sol
+Answers the question
+95% CI 1.10 to 3.48
+n = 8 answers">2.29</td><td class="heat h3" tabindex="0" data-tip="2.42
+gpt-6.1-sol
+Right scope
+95% CI 1.03 to 3.80
+n = 8 answers">2.42</td><td class="heat h2" tabindex="0" data-tip="2.12
+gpt-6.1-sol
+Matches the real reply
+95% CI 1.06 to 3.19
+n = 8 answers">2.12</td><td class="heat h3" tabindex="0" data-tip="2.58
+gpt-6.1-sol
+Speech quality
+95% CI 1.67 to 3.50
+n = 8 answers">2.58</td><td class="heat h6" tabindex="0" data-tip="4.17
+gpt-6.1-sol
+Safety and tone
+95% CI 3.25 to 5.00
+n = 8 answers">4.17</td><td class="heat h2" tabindex="0" data-tip="2.19
+gpt-6.1-sol
+Good teaching
+95% CI 1.16 to 3.23
+n = 7 answers">2.19</td><td class="heat h2" tabindex="0" data-tip="2.14
+gpt-6.1-sol
+Explains the concept effectively
+95% CI 1.14 to 3.15
+n = 7 answers">2.14</td><td class="heat h4" tabindex="0" data-tip="3.38
+gpt-6.1-sol
+Accurate
+95% CI 2.21 to 4.55
+n = 7 answers">3.38</td><td class="heat h3" tabindex="0" data-tip="2.48
+gpt-6.1-sol
+Engaging voice
+95% CI 1.46 to 3.50
+n = 7 answers">2.48</td><td class="heat h3" tabindex="0" data-tip="2.33
+gpt-6.1-sol
+Appropriate depth
+95% CI 1.10 to 3.57
+n = 7 answers">2.33</td></tr></tbody></table></div><p class="scale">Mean score, 0 to 5 scale (1 = very poor, 3 = acceptable, 5 = excellent): <span><i class="sw h1"></i>0 to 1.5</span><span><i class="sw h2"></i>1.5 to 2.25</span><span><i class="sw h3"></i>2.25 to 3</span><span><i class="sw h4"></i>3 to 3.5</span><span><i class="sw h5"></i>3.5 to 4</span><span><i class="sw h6"></i>4 to 4.5</span><span><i class="sw h7"></i>4.5 to 5</span></p></section>
+<section id="dots"><h2>Scores with confidence intervals</h2><p class="intro">95% confidence interval: the range the mean would likely fall in with a fresh set of similar questions.</p><div class="grid"><figure class="panel"><figcaption>Pass rate (all judges)</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Pass rate (all judges). Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0%</text><line class="grid" x1="169.5" x2="169.5" y1="4.0" y2="148.0"/><text class="tick" x="169.5" y="162.0" text-anchor="middle">25%</text><line class="grid" x1="227.0" x2="227.0" y1="4.0" y2="148.0"/><text class="tick" x="227.0" y="162.0" text-anchor="middle">50%</text><line class="grid" x1="284.5" x2="284.5" y1="4.0" y2="148.0"/><text class="tick" x="284.5" y="162.0" text-anchor="middle">75%</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">100%</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">% of verdicts that were pass</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="112.0" x2="176.4" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="8%
+claude-sonnet-5-5
+Pass rate (all judges)
+95% CI 0% to 28%
+n = 8 answers"><circle class="hit" cx="131.1" cy="22.0" r="12"/><circle class="fill s1 ring" cx="131.1" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="112.0" x2="176.4" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="8%
+claude-opus-5-5
+Pass rate (all judges)
+95% CI 0% to 28%
+n = 8 answers"><circle class="hit" cx="131.1" cy="50.0" r="12"/><circle class="fill s2 ring" cx="131.1" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="112.0" x2="258.5" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="25%
+claude-fable-5-1
+Pass rate (all judges)
+95% CI 0% to 64%
+n = 8 answers"><circle class="hit" cx="169.5" cy="78.0" r="12"/><circle class="fill s3 ring" cx="169.5" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="112.0" x2="236.0" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="21%
+gpt-5.6-sol
+Pass rate (all judges)
+95% CI 0% to 54%
+n = 8 answers"><circle class="hit" cx="159.8" cy="106.0" r="12"/><circle class="fill s4 ring" cx="159.8" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="112.0" x2="208.8" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="12%
+gpt-6.1-sol
+Pass rate (all judges)
+95% CI 0% to 42%
+n = 8 answers"><circle class="hit" cx="140.8" cy="134.0" r="12"/><circle class="fill s5 ring" cx="140.8" cy="134.0" r="5"/></g></svg></figure><figure class="panel"><figcaption>Pass rate (without same-family judges)</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Pass rate (without same-family judges). Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0%</text><line class="grid" x1="169.5" x2="169.5" y1="4.0" y2="148.0"/><text class="tick" x="169.5" y="162.0" text-anchor="middle">25%</text><line class="grid" x1="227.0" x2="227.0" y1="4.0" y2="148.0"/><text class="tick" x="227.0" y="162.0" text-anchor="middle">50%</text><line class="grid" x1="284.5" x2="284.5" y1="4.0" y2="148.0"/><text class="tick" x="284.5" y="162.0" text-anchor="middle">75%</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">100%</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">% of verdicts that were pass</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="112.0" x2="160.3" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="6%
+claude-sonnet-5-5
+Pass rate (without same-family judges)
+95% CI 0% to 21%
+n = 8 answers"><circle class="hit" cx="126.3" cy="22.0" r="12"/><circle class="fill s1 ring" cx="126.3" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="112.0" x2="160.3" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="6%
+claude-opus-5-5
+Pass rate (without same-family judges)
+95% CI 0% to 21%
+n = 8 answers"><circle class="hit" cx="126.3" cy="50.0" r="12"/><circle class="fill s2 ring" cx="126.3" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="112.0" x2="258.5" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="25%
+claude-fable-5-1
+Pass rate (without same-family judges)
+95% CI 0% to 64%
+n = 8 answers"><circle class="hit" cx="169.5" cy="78.0" r="12"/><circle class="fill s3 ring" cx="169.5" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="112.0" x2="258.5" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="25%
+gpt-5.6-sol
+Pass rate (without same-family judges)
+95% CI 0% to 64%
+n = 8 answers"><circle class="hit" cx="169.5" cy="106.0" r="12"/><circle class="fill s4 ring" cx="169.5" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="112.0" x2="208.8" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="12%
+gpt-6.1-sol
+Pass rate (without same-family judges)
+95% CI 0% to 42%
+n = 8 answers"><circle class="hit" cx="140.8" cy="134.0" r="12"/><circle class="fill s5 ring" cx="140.8" cy="134.0" r="5"/></g></svg></figure><figure class="panel"><figcaption>Grounded</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Grounded. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0</text><line class="grid" x1="158.0" x2="158.0" y1="4.0" y2="148.0"/><text class="tick" x="158.0" y="162.0" text-anchor="middle">1</text><line class="grid" x1="204.0" x2="204.0" y1="4.0" y2="148.0"/><text class="tick" x="204.0" y="162.0" text-anchor="middle">2</text><line class="grid" x1="250.0" x2="250.0" y1="4.0" y2="148.0"/><text class="tick" x="250.0" y="162.0" text-anchor="middle">3</text><line class="grid" x1="296.0" x2="296.0" y1="4.0" y2="148.0"/><text class="tick" x="296.0" y="162.0" text-anchor="middle">4</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">5</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">Mean score (0 to 5; 5 best)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="225.0" x2="342.0" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="3.917
+claude-sonnet-5-5
+Grounded
+95% CI 2.456 to 5
+n = 4 answers"><circle class="hit" cx="292.2" cy="22.0" r="12"/><circle class="fill s1 ring" cx="292.2" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="249.5" x2="342.0" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="4.083
+claude-opus-5-5
+Grounded
+95% CI 2.99 to 5
+n = 4 answers"><circle class="hit" cx="299.8" cy="50.0" r="12"/><circle class="fill s2 ring" cx="299.8" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="214.4" x2="342.0" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="3.75
+claude-fable-5-1
+Grounded
+95% CI 2.227 to 5
+n = 4 answers"><circle class="hit" cx="284.5" cy="78.0" r="12"/><circle class="fill s3 ring" cx="284.5" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="220.9" x2="340.4" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="3.667
+gpt-5.6-sol
+Grounded
+95% CI 2.368 to 4.966
+n = 4 answers"><circle class="hit" cx="280.7" cy="106.0" r="12"/><circle class="fill s4 ring" cx="280.7" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="286.2" x2="342.0" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="4.583
+gpt-6.1-sol
+Grounded
+95% CI 3.788 to 5
+n = 4 answers"><circle class="hit" cx="322.8" cy="134.0" r="12"/><circle class="fill s5 ring" cx="322.8" cy="134.0" r="5"/></g></svg></figure><figure class="panel"><figcaption>Answers the question</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Answers the question. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0</text><line class="grid" x1="158.0" x2="158.0" y1="4.0" y2="148.0"/><text class="tick" x="158.0" y="162.0" text-anchor="middle">1</text><line class="grid" x1="204.0" x2="204.0" y1="4.0" y2="148.0"/><text class="tick" x="204.0" y="162.0" text-anchor="middle">2</text><line class="grid" x1="250.0" x2="250.0" y1="4.0" y2="148.0"/><text class="tick" x="250.0" y="162.0" text-anchor="middle">3</text><line class="grid" x1="296.0" x2="296.0" y1="4.0" y2="148.0"/><text class="tick" x="296.0" y="162.0" text-anchor="middle">4</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">5</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">Mean score (0 to 5; 5 best)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="170.4" x2="249.1" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="2.125
+claude-sonnet-5-5
+Answers the question
+95% CI 1.27 to 2.98
+n = 8 answers"><circle class="hit" cx="209.8" cy="22.0" r="12"/><circle class="fill s1 ring" cx="209.8" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="172.3" x2="251.0" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="2.167
+claude-opus-5-5
+Answers the question
+95% CI 1.311 to 3.022
+n = 8 answers"><circle class="hit" cx="211.7" cy="50.0" r="12"/><circle class="fill s2 ring" cx="211.7" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="171.8" x2="282.2" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="2.5
+claude-fable-5-1
+Answers the question
+95% CI 1.299 to 3.701
+n = 8 answers"><circle class="hit" cx="227.0" cy="78.0" r="12"/><circle class="fill s3 ring" cx="227.0" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="167.4" x2="282.8" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="2.458
+gpt-5.6-sol
+Answers the question
+95% CI 1.204 to 3.713
+n = 8 answers"><circle class="hit" cx="225.1" cy="106.0" r="12"/><circle class="fill s4 ring" cx="225.1" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="162.8" x2="272.0" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="2.292
+gpt-6.1-sol
+Answers the question
+95% CI 1.105 to 3.478
+n = 8 answers"><circle class="hit" cx="217.4" cy="134.0" r="12"/><circle class="fill s5 ring" cx="217.4" cy="134.0" r="5"/></g></svg></figure><figure class="panel"><figcaption>Right scope</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Right scope. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0</text><line class="grid" x1="158.0" x2="158.0" y1="4.0" y2="148.0"/><text class="tick" x="158.0" y="162.0" text-anchor="middle">1</text><line class="grid" x1="204.0" x2="204.0" y1="4.0" y2="148.0"/><text class="tick" x="204.0" y="162.0" text-anchor="middle">2</text><line class="grid" x1="250.0" x2="250.0" y1="4.0" y2="148.0"/><text class="tick" x="250.0" y="162.0" text-anchor="middle">3</text><line class="grid" x1="296.0" x2="296.0" y1="4.0" y2="148.0"/><text class="tick" x="296.0" y="162.0" text-anchor="middle">4</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">5</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">Mean score (0 to 5; 5 best)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="166.9" x2="290.9" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="2.542
+claude-sonnet-5-5
+Right scope
+95% CI 1.193 to 3.89
+n = 8 answers"><circle class="hit" cx="228.9" cy="22.0" r="12"/><circle class="fill s1 ring" cx="228.9" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="158.2" x2="288.1" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="2.417
+claude-opus-5-5
+Right scope
+95% CI 1.005 to 3.828
+n = 8 answers"><circle class="hit" cx="223.2" cy="50.0" r="12"/><circle class="fill s2 ring" cx="223.2" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="159.3" x2="287.0" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="2.417
+claude-fable-5-1
+Right scope
+95% CI 1.029 to 3.804
+n = 8 answers"><circle class="hit" cx="223.2" cy="78.0" r="12"/><circle class="fill s3 ring" cx="223.2" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="158.0" x2="281.9" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="2.25
+gpt-5.6-sol
+Right scope
+95% CI 1 to 3.693
+n = 8 answers"><circle class="hit" cx="215.5" cy="106.0" r="12"/><circle class="fill s4 ring" cx="215.5" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="159.3" x2="287.0" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="2.417
+gpt-6.1-sol
+Right scope
+95% CI 1.029 to 3.804
+n = 8 answers"><circle class="hit" cx="223.2" cy="134.0" r="12"/><circle class="fill s5 ring" cx="223.2" cy="134.0" r="5"/></g></svg></figure><figure class="panel"><figcaption>Matches the real reply</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Matches the real reply. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0</text><line class="grid" x1="158.0" x2="158.0" y1="4.0" y2="148.0"/><text class="tick" x="158.0" y="162.0" text-anchor="middle">1</text><line class="grid" x1="204.0" x2="204.0" y1="4.0" y2="148.0"/><text class="tick" x="204.0" y="162.0" text-anchor="middle">2</text><line class="grid" x1="250.0" x2="250.0" y1="4.0" y2="148.0"/><text class="tick" x="250.0" y="162.0" text-anchor="middle">3</text><line class="grid" x1="296.0" x2="296.0" y1="4.0" y2="148.0"/><text class="tick" x="296.0" y="162.0" text-anchor="middle">4</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">5</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">Mean score (0 to 5; 5 best)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="164.9" x2="239.3" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="1.958
+claude-sonnet-5-5
+Matches the real reply
+95% CI 1.15 to 2.767
+n = 8 answers"><circle class="hit" cx="202.1" cy="22.0" r="12"/><circle class="fill s1 ring" cx="202.1" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="165.2" x2="242.8" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="2
+claude-opus-5-5
+Matches the real reply
+95% CI 1.157 to 2.843
+n = 8 answers"><circle class="hit" cx="204.0" cy="50.0" r="12"/><circle class="fill s2 ring" cx="204.0" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="158.0" x2="275.2" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="2.25
+claude-fable-5-1
+Matches the real reply
+95% CI 1 to 3.547
+n = 8 answers"><circle class="hit" cx="215.5" cy="78.0" r="12"/><circle class="fill s3 ring" cx="215.5" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="168.0" x2="274.5" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="2.375
+gpt-5.6-sol
+Matches the real reply
+95% CI 1.217 to 3.533
+n = 8 answers"><circle class="hit" cx="221.2" cy="106.0" r="12"/><circle class="fill s4 ring" cx="221.2" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="160.9" x2="258.6" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="2.125
+gpt-6.1-sol
+Matches the real reply
+95% CI 1.062 to 3.188
+n = 8 answers"><circle class="hit" cx="209.8" cy="134.0" r="12"/><circle class="fill s5 ring" cx="209.8" cy="134.0" r="5"/></g></svg></figure><figure class="panel"><figcaption>Speech quality</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Speech quality. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0</text><line class="grid" x1="158.0" x2="158.0" y1="4.0" y2="148.0"/><text class="tick" x="158.0" y="162.0" text-anchor="middle">1</text><line class="grid" x1="204.0" x2="204.0" y1="4.0" y2="148.0"/><text class="tick" x="204.0" y="162.0" text-anchor="middle">2</text><line class="grid" x1="250.0" x2="250.0" y1="4.0" y2="148.0"/><text class="tick" x="250.0" y="162.0" text-anchor="middle">3</text><line class="grid" x1="296.0" x2="296.0" y1="4.0" y2="148.0"/><text class="tick" x="296.0" y="162.0" text-anchor="middle">4</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">5</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">Mean score (0 to 5; 5 best)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="203.9" x2="278.6" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="2.81
+claude-sonnet-5-5
+Speech quality
+95% CI 1.997 to 3.622
+n = 7 answers"><circle class="hit" cx="241.3" cy="22.0" r="12"/><circle class="fill s1 ring" cx="241.3" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="195.4" x2="289.3" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="2.833
+claude-opus-5-5
+Speech quality
+95% CI 1.812 to 3.855
+n = 8 answers"><circle class="hit" cx="242.3" cy="50.0" r="12"/><circle class="fill s2 ring" cx="242.3" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="208.9" x2="291.1" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="3
+claude-fable-5-1
+Speech quality
+95% CI 2.106 to 3.894
+n = 8 answers"><circle class="hit" cx="250.0" cy="78.0" r="12"/><circle class="fill s3 ring" cx="250.0" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="193.0" x2="287.9" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="2.792
+gpt-5.6-sol
+Speech quality
+95% CI 1.76 to 3.823
+n = 8 answers"><circle class="hit" cx="240.4" cy="106.0" r="12"/><circle class="fill s4 ring" cx="240.4" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="188.7" x2="273.0" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="2.583
+gpt-6.1-sol
+Speech quality
+95% CI 1.668 to 3.499
+n = 8 answers"><circle class="hit" cx="230.8" cy="134.0" r="12"/><circle class="fill s5 ring" cx="230.8" cy="134.0" r="5"/></g></svg></figure><figure class="panel"><figcaption>Safety and tone</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Safety and tone. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0</text><line class="grid" x1="158.0" x2="158.0" y1="4.0" y2="148.0"/><text class="tick" x="158.0" y="162.0" text-anchor="middle">1</text><line class="grid" x1="204.0" x2="204.0" y1="4.0" y2="148.0"/><text class="tick" x="204.0" y="162.0" text-anchor="middle">2</text><line class="grid" x1="250.0" x2="250.0" y1="4.0" y2="148.0"/><text class="tick" x="250.0" y="162.0" text-anchor="middle">3</text><line class="grid" x1="296.0" x2="296.0" y1="4.0" y2="148.0"/><text class="tick" x="296.0" y="162.0" text-anchor="middle">4</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">5</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">Mean score (0 to 5; 5 best)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="264.6" x2="327.4" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="4
+claude-sonnet-5-5
+Safety and tone
+95% CI 3.317 to 4.683
+n = 8 answers"><circle class="hit" cx="296.0" cy="22.0" r="12"/><circle class="fill s1 ring" cx="296.0" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="282.2" x2="342.0" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="4.375
+claude-opus-5-5
+Safety and tone
+95% CI 3.701 to 5
+n = 8 answers"><circle class="hit" cx="313.2" cy="50.0" r="12"/><circle class="fill s2 ring" cx="313.2" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="286.3" x2="340.2" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="4.375
+claude-fable-5-1
+Safety and tone
+95% CI 3.79 to 4.96
+n = 8 answers"><circle class="hit" cx="313.2" cy="78.0" r="12"/><circle class="fill s3 ring" cx="313.2" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="264.3" x2="339.2" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="4.125
+gpt-5.6-sol
+Safety and tone
+95% CI 3.31 to 4.94
+n = 8 answers"><circle class="hit" cx="301.8" cy="106.0" r="12"/><circle class="fill s4 ring" cx="301.8" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="261.4" x2="342.0" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="4.167
+gpt-6.1-sol
+Safety and tone
+95% CI 3.248 to 5
+n = 8 answers"><circle class="hit" cx="303.7" cy="134.0" r="12"/><circle class="fill s5 ring" cx="303.7" cy="134.0" r="5"/></g></svg></figure><figure class="panel"><figcaption>Good teaching</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Good teaching. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0</text><line class="grid" x1="158.0" x2="158.0" y1="4.0" y2="148.0"/><text class="tick" x="158.0" y="162.0" text-anchor="middle">1</text><line class="grid" x1="204.0" x2="204.0" y1="4.0" y2="148.0"/><text class="tick" x="204.0" y="162.0" text-anchor="middle">2</text><line class="grid" x1="250.0" x2="250.0" y1="4.0" y2="148.0"/><text class="tick" x="250.0" y="162.0" text-anchor="middle">3</text><line class="grid" x1="296.0" x2="296.0" y1="4.0" y2="148.0"/><text class="tick" x="296.0" y="162.0" text-anchor="middle">4</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">5</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">Mean score (0 to 5; 5 best)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="170.0" x2="241.8" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="2.042
+claude-sonnet-5-5
+Good teaching
+95% CI 1.261 to 2.822
+n = 8 answers"><circle class="hit" cx="205.9" cy="22.0" r="12"/><circle class="fill s1 ring" cx="205.9" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="171.1" x2="258.8" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="2.238
+claude-opus-5-5
+Good teaching
+95% CI 1.284 to 3.192
+n = 7 answers"><circle class="hit" cx="214.9" cy="50.0" r="12"/><circle class="fill s2 ring" cx="214.9" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="177.8" x2="268.5" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="2.417
+claude-fable-5-1
+Good teaching
+95% CI 1.431 to 3.402
+n = 8 answers"><circle class="hit" cx="223.2" cy="78.0" r="12"/><circle class="fill s3 ring" cx="223.2" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="173.5" x2="269.6" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="2.381
+gpt-5.6-sol
+Good teaching
+95% CI 1.337 to 3.425
+n = 7 answers"><circle class="hit" cx="221.5" cy="106.0" r="12"/><circle class="fill s4 ring" cx="221.5" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="165.1" x2="260.4" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="2.19
+gpt-6.1-sol
+Good teaching
+95% CI 1.155 to 3.226
+n = 7 answers"><circle class="hit" cx="212.7" cy="134.0" r="12"/><circle class="fill s5 ring" cx="212.7" cy="134.0" r="5"/></g></svg></figure><figure class="panel"><figcaption>Explains the concept effectively</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Explains the concept effectively. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0</text><line class="grid" x1="158.0" x2="158.0" y1="4.0" y2="148.0"/><text class="tick" x="158.0" y="162.0" text-anchor="middle">1</text><line class="grid" x1="204.0" x2="204.0" y1="4.0" y2="148.0"/><text class="tick" x="204.0" y="162.0" text-anchor="middle">2</text><line class="grid" x1="250.0" x2="250.0" y1="4.0" y2="148.0"/><text class="tick" x="250.0" y="162.0" text-anchor="middle">3</text><line class="grid" x1="296.0" x2="296.0" y1="4.0" y2="148.0"/><text class="tick" x="296.0" y="162.0" text-anchor="middle">4</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">5</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">Mean score (0 to 5; 5 best)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="168.7" x2="243.1" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="2.042
+claude-sonnet-5-5
+Explains the concept effectively
+95% CI 1.233 to 2.85
+n = 8 answers"><circle class="hit" cx="205.9" cy="22.0" r="12"/><circle class="fill s1 ring" cx="205.9" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="171.1" x2="258.8" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="2.238
+claude-opus-5-5
+Explains the concept effectively
+95% CI 1.284 to 3.192
+n = 7 answers"><circle class="hit" cx="214.9" cy="50.0" r="12"/><circle class="fill s2 ring" cx="214.9" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="181.6" x2="260.9" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="2.375
+claude-fable-5-1
+Explains the concept effectively
+95% CI 1.514 to 3.236
+n = 8 answers"><circle class="hit" cx="221.2" cy="78.0" r="12"/><circle class="fill s3 ring" cx="221.2" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="179.4" x2="263.6" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="2.381
+gpt-5.6-sol
+Explains the concept effectively
+95% CI 1.466 to 3.296
+n = 7 answers"><circle class="hit" cx="221.5" cy="106.0" r="12"/><circle class="fill s4 ring" cx="221.5" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="164.3" x2="256.8" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="2.143
+gpt-6.1-sol
+Explains the concept effectively
+95% CI 1.138 to 3.147
+n = 7 answers"><circle class="hit" cx="210.6" cy="134.0" r="12"/><circle class="fill s5 ring" cx="210.6" cy="134.0" r="5"/></g></svg></figure><figure class="panel"><figcaption>Accurate</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Accurate. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0</text><line class="grid" x1="158.0" x2="158.0" y1="4.0" y2="148.0"/><text class="tick" x="158.0" y="162.0" text-anchor="middle">1</text><line class="grid" x1="204.0" x2="204.0" y1="4.0" y2="148.0"/><text class="tick" x="204.0" y="162.0" text-anchor="middle">2</text><line class="grid" x1="250.0" x2="250.0" y1="4.0" y2="148.0"/><text class="tick" x="250.0" y="162.0" text-anchor="middle">3</text><line class="grid" x1="296.0" x2="296.0" y1="4.0" y2="148.0"/><text class="tick" x="296.0" y="162.0" text-anchor="middle">4</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">5</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">Mean score (0 to 5; 5 best)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="205.5" x2="283.0" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="2.875
+claude-sonnet-5-5
+Accurate
+95% CI 2.033 to 3.717
+n = 8 answers"><circle class="hit" cx="244.2" cy="22.0" r="12"/><circle class="fill s1 ring" cx="244.2" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="202.8" x2="306.0" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="3.095
+claude-opus-5-5
+Accurate
+95% CI 1.974 to 4.217
+n = 7 answers"><circle class="hit" cx="254.4" cy="50.0" r="12"/><circle class="fill s2 ring" cx="254.4" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="184.9" x2="303.6" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="2.875
+claude-fable-5-1
+Accurate
+95% CI 1.585 to 4.165
+n = 8 answers"><circle class="hit" cx="244.2" cy="78.0" r="12"/><circle class="fill s3 ring" cx="244.2" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="197.9" x2="328.3" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="3.286
+gpt-5.6-sol
+Accurate
+95% CI 1.868 to 4.703
+n = 7 answers"><circle class="hit" cx="263.2" cy="106.0" r="12"/><circle class="fill s4 ring" cx="263.2" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="213.6" x2="321.5" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="3.381
+gpt-6.1-sol
+Accurate
+95% CI 2.208 to 4.554
+n = 7 answers"><circle class="hit" cx="267.5" cy="134.0" r="12"/><circle class="fill s5 ring" cx="267.5" cy="134.0" r="5"/></g></svg></figure><figure class="panel"><figcaption>Engaging voice</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Engaging voice. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0</text><line class="grid" x1="158.0" x2="158.0" y1="4.0" y2="148.0"/><text class="tick" x="158.0" y="162.0" text-anchor="middle">1</text><line class="grid" x1="204.0" x2="204.0" y1="4.0" y2="148.0"/><text class="tick" x="204.0" y="162.0" text-anchor="middle">2</text><line class="grid" x1="250.0" x2="250.0" y1="4.0" y2="148.0"/><text class="tick" x="250.0" y="162.0" text-anchor="middle">3</text><line class="grid" x1="296.0" x2="296.0" y1="4.0" y2="148.0"/><text class="tick" x="296.0" y="162.0" text-anchor="middle">4</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">5</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">Mean score (0 to 5; 5 best)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="189.9" x2="271.8" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="2.583
+claude-sonnet-5-5
+Engaging voice
+95% CI 1.693 to 3.474
+n = 8 answers"><circle class="hit" cx="230.8" cy="22.0" r="12"/><circle class="fill s1 ring" cx="230.8" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="190.9" x2="309.1" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="3
+claude-opus-5-5
+Engaging voice
+95% CI 1.716 to 4.284
+n = 7 answers"><circle class="hit" cx="250.0" cy="50.0" r="12"/><circle class="fill s2 ring" cx="250.0" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="208.2" x2="284.2" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="2.917
+claude-fable-5-1
+Engaging voice
+95% CI 2.091 to 3.743
+n = 8 answers"><circle class="hit" cx="246.2" cy="78.0" r="12"/><circle class="fill s3 ring" cx="246.2" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="202.9" x2="279.5" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="2.81
+gpt-5.6-sol
+Engaging voice
+95% CI 1.977 to 3.642
+n = 7 answers"><circle class="hit" cx="241.3" cy="106.0" r="12"/><circle class="fill s4 ring" cx="241.3" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="179.0" x2="272.8" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="2.476
+gpt-6.1-sol
+Engaging voice
+95% CI 1.456 to 3.496
+n = 7 answers"><circle class="hit" cx="225.9" cy="134.0" r="12"/><circle class="fill s5 ring" cx="225.9" cy="134.0" r="5"/></g></svg></figure><figure class="panel"><figcaption>Appropriate depth</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Appropriate depth. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0</text><line class="grid" x1="158.0" x2="158.0" y1="4.0" y2="148.0"/><text class="tick" x="158.0" y="162.0" text-anchor="middle">1</text><line class="grid" x1="204.0" x2="204.0" y1="4.0" y2="148.0"/><text class="tick" x="204.0" y="162.0" text-anchor="middle">2</text><line class="grid" x1="250.0" x2="250.0" y1="4.0" y2="148.0"/><text class="tick" x="250.0" y="162.0" text-anchor="middle">3</text><line class="grid" x1="296.0" x2="296.0" y1="4.0" y2="148.0"/><text class="tick" x="296.0" y="162.0" text-anchor="middle">4</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="148.0"/><text class="tick" x="342.0" y="162.0" text-anchor="middle">5</text><text class="axis-title" x="227.0" y="178.0" text-anchor="middle">Mean score (0 to 5; 5 best)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><line class="whisker s1" x1="169.2" x2="258.0" y1="22.0" y2="22.0"/><g class="mark" tabindex="0" data-tip="2.208
+claude-sonnet-5-5
+Appropriate depth
+95% CI 1.244 to 3.173
+n = 8 answers"><circle class="hit" cx="213.6" cy="22.0" r="12"/><circle class="fill s1 ring" cx="213.6" cy="22.0" r="5"/></g><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><line class="whisker s2" x1="170.2" x2="268.4" y1="50.0" y2="50.0"/><g class="mark" tabindex="0" data-tip="2.333
+claude-opus-5-5
+Appropriate depth
+95% CI 1.265 to 3.401
+n = 7 answers"><circle class="hit" cx="219.3" cy="50.0" r="12"/><circle class="fill s2 ring" cx="219.3" cy="50.0" r="5"/></g><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><line class="whisker s3" x1="179.1" x2="278.8" y1="78.0" y2="78.0"/><g class="mark" tabindex="0" data-tip="2.542
+claude-fable-5-1
+Appropriate depth
+95% CI 1.458 to 3.626
+n = 8 answers"><circle class="hit" cx="228.9" cy="78.0" r="12"/><circle class="fill s3 ring" cx="228.9" cy="78.0" r="5"/></g><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><line class="whisker s4" x1="181.0" x2="292.6" y1="106.0" y2="106.0"/><g class="mark" tabindex="0" data-tip="2.714
+gpt-5.6-sol
+Appropriate depth
+95% CI 1.501 to 3.927
+n = 7 answers"><circle class="hit" cx="236.8" cy="106.0" r="12"/><circle class="fill s4 ring" cx="236.8" cy="106.0" r="5"/></g><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><line class="whisker s5" x1="162.6" x2="276.1" y1="134.0" y2="134.0"/><g class="mark" tabindex="0" data-tip="2.333
+gpt-6.1-sol
+Appropriate depth
+95% CI 1.1 to 3.567
+n = 7 answers"><circle class="hit" cx="219.3" cy="134.0" r="12"/><circle class="fill s5 ring" cx="219.3" cy="134.0" r="5"/></g></svg></figure></div><details><summary>Table view</summary><div class="scroll"><table class="data"><thead><tr><th scope="col">Model</th><th scope="col">Pass rate</th><th scope="col">Grounded</th><th scope="col">Answers the question</th><th scope="col">Right scope</th><th scope="col">Matches the real reply</th><th scope="col">Speech quality</th><th scope="col">Safety and tone</th><th scope="col">Good teaching</th><th scope="col">Explains the concept effectively</th><th scope="col">Accurate</th><th scope="col">Engaging voice</th><th scope="col">Appropriate depth</th></tr></thead><tbody><tr><td>claude-sonnet-5-5</td><td>8% [0% to 28%] (n=8)</td><td>3.92 [2.46 to 5.00] (n=4)</td><td>2.12 [1.27 to 2.98] (n=8)</td><td>2.54 [1.19 to 3.89] (n=8)</td><td>1.96 [1.15 to 2.77] (n=8)</td><td>2.81 [2.00 to 3.62] (n=7)</td><td>4.00 [3.32 to 4.68] (n=8)</td><td>2.04 [1.26 to 2.82] (n=8)</td><td>2.04 [1.23 to 2.85] (n=8)</td><td>2.88 [2.03 to 3.72] (n=8)</td><td>2.58 [1.69 to 3.47] (n=8)</td><td>2.21 [1.24 to 3.17] (n=8)</td></tr><tr><td>claude-opus-5-5</td><td>8% [0% to 28%] (n=8)</td><td>4.08 [2.99 to 5.00] (n=4)</td><td>2.17 [1.31 to 3.02] (n=8)</td><td>2.42 [1.00 to 3.83] (n=8)</td><td>2.00 [1.16 to 2.84] (n=8)</td><td>2.83 [1.81 to 3.85] (n=8)</td><td>4.38 [3.70 to 5.00] (n=8)</td><td>2.24 [1.28 to 3.19] (n=7)</td><td>2.24 [1.28 to 3.19] (n=7)</td><td>3.10 [1.97 to 4.22] (n=7)</td><td>3.00 [1.72 to 4.28] (n=7)</td><td>2.33 [1.26 to 3.40] (n=7)</td></tr><tr><td>claude-fable-5-1</td><td>25% [0% to 64%] (n=8)</td><td>3.75 [2.23 to 5.00] (n=4)</td><td>2.50 [1.30 to 3.70] (n=8)</td><td>2.42 [1.03 to 3.80] (n=8)</td><td>2.25 [1.00 to 3.55] (n=8)</td><td>3.00 [2.11 to 3.89] (n=8)</td><td>4.38 [3.79 to 4.96] (n=8)</td><td>2.42 [1.43 to 3.40] (n=8)</td><td>2.38 [1.51 to 3.24] (n=8)</td><td>2.88 [1.58 to 4.17] (n=8)</td><td>2.92 [2.09 to 3.74] (n=8)</td><td>2.54 [1.46 to 3.63] (n=8)</td></tr><tr><td>gpt-5.6-sol</td><td>21% [0% to 54%] (n=8)</td><td>3.67 [2.37 to 4.97] (n=4)</td><td>2.46 [1.20 to 3.71] (n=8)</td><td>2.25 [1.00 to 3.69] (n=8)</td><td>2.38 [1.22 to 3.53] (n=8)</td><td>2.79 [1.76 to 3.82] (n=8)</td><td>4.12 [3.31 to 4.94] (n=8)</td><td>2.38 [1.34 to 3.42] (n=7)</td><td>2.38 [1.47 to 3.30] (n=7)</td><td>3.29 [1.87 to 4.70] (n=7)</td><td>2.81 [1.98 to 3.64] (n=7)</td><td>2.71 [1.50 to 3.93] (n=7)</td></tr><tr><td>gpt-6.1-sol</td><td>12% [0% to 42%] (n=8)</td><td>4.58 [3.79 to 5.00] (n=4)</td><td>2.29 [1.10 to 3.48] (n=8)</td><td>2.42 [1.03 to 3.80] (n=8)</td><td>2.12 [1.06 to 3.19] (n=8)</td><td>2.58 [1.67 to 3.50] (n=8)</td><td>4.17 [3.25 to 5.00] (n=8)</td><td>2.19 [1.16 to 3.23] (n=7)</td><td>2.14 [1.14 to 3.15] (n=7)</td><td>3.38 [2.21 to 4.55] (n=7)</td><td>2.48 [1.46 to 3.50] (n=7)</td><td>2.33 [1.10 to 3.57] (n=7)</td></tr></tbody></table></div></details></section>
+<section id="selfgrade"><h2>Self-grading check</h2><p class="intro">A judge from the same family as the model tends to be lenient. The diamond drops those judges.</p><div class="grid"><figure class="panel"><figcaption>Pass rate: all judges (dot) versus without same-family judges (diamond)</figcaption><svg viewBox="0 0 360 198" width="100%" role="img" aria-label="Pass rate with and without same-family judges. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="158.0"/><text class="tick" x="112.0" y="172.0" text-anchor="middle">0%</text><line class="grid" x1="169.5" x2="169.5" y1="4.0" y2="158.0"/><text class="tick" x="169.5" y="172.0" text-anchor="middle">25%</text><line class="grid" x1="227.0" x2="227.0" y1="4.0" y2="158.0"/><text class="tick" x="227.0" y="172.0" text-anchor="middle">50%</text><line class="grid" x1="284.5" x2="284.5" y1="4.0" y2="158.0"/><text class="tick" x="284.5" y="172.0" text-anchor="middle">75%</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="158.0"/><text class="tick" x="342.0" y="172.0" text-anchor="middle">100%</text><text class="axis-title" x="227.0" y="188.0" text-anchor="middle">Pass rate (% of judge verdicts)</text><text class="label" x="104" y="27.0" text-anchor="end">claude-sonnet-5-5</text><line class="link" x1="130.4" x2="125.8" y1="23.0" y2="23.0"/><g class="mark" tabindex="0" data-tip="6%
+claude-sonnet-5-5
+without same-family judges
+n = 16 verdicts"><circle class="hit" cx="125.8" cy="23.0" r="12"/><path class="hollow s1" d="M125.8,17.0 l6,6 l-6,6 l-6,-6 z"/></g><g class="mark" tabindex="0" data-tip="8%
+claude-sonnet-5-5
+all judges
+n = 24 verdicts"><circle class="hit" cx="130.4" cy="23.0" r="12"/><circle class="fill s1 ring" cx="130.4" cy="23.0" r="5"/></g><text class="label" x="104" y="57.0" text-anchor="end">claude-opus-5-5</text><line class="link" x1="130.4" x2="125.8" y1="53.0" y2="53.0"/><g class="mark" tabindex="0" data-tip="6%
+claude-opus-5-5
+without same-family judges
+n = 16 verdicts"><circle class="hit" cx="125.8" cy="53.0" r="12"/><path class="hollow s2" d="M125.8,47.0 l6,6 l-6,6 l-6,-6 z"/></g><g class="mark" tabindex="0" data-tip="8%
+claude-opus-5-5
+all judges
+n = 24 verdicts"><circle class="hit" cx="130.4" cy="53.0" r="12"/><circle class="fill s2 ring" cx="130.4" cy="53.0" r="5"/></g><text class="label" x="104" y="87.0" text-anchor="end">claude-fable-5-1</text><line class="link" x1="169.5" x2="169.5" y1="83.0" y2="83.0"/><g class="mark" tabindex="0" data-tip="25%
+claude-fable-5-1
+without same-family judges
+n = 16 verdicts"><circle class="hit" cx="169.5" cy="83.0" r="12"/><path class="hollow s3" d="M169.5,77.0 l6,6 l-6,6 l-6,-6 z"/></g><g class="mark" tabindex="0" data-tip="25%
+claude-fable-5-1
+all judges
+n = 24 verdicts"><circle class="hit" cx="169.5" cy="83.0" r="12"/><circle class="fill s3 ring" cx="169.5" cy="83.0" r="5"/></g><text class="label" x="104" y="117.0" text-anchor="end">gpt-5.6-sol</text><line class="link" x1="160.3" x2="169.5" y1="113.0" y2="113.0"/><g class="mark" tabindex="0" data-tip="25%
+gpt-5.6-sol
+without same-family judges
+n = 16 verdicts"><circle class="hit" cx="169.5" cy="113.0" r="12"/><path class="hollow s4" d="M169.5,107.0 l6,6 l-6,6 l-6,-6 z"/></g><g class="mark" tabindex="0" data-tip="21%
+gpt-5.6-sol
+all judges
+n = 24 verdicts"><circle class="hit" cx="160.3" cy="113.0" r="12"/><circle class="fill s4 ring" cx="160.3" cy="113.0" r="5"/></g><text class="label" x="104" y="147.0" text-anchor="end">gpt-6.1-sol</text><line class="link" x1="139.6" x2="139.6" y1="143.0" y2="143.0"/><g class="mark" tabindex="0" data-tip="12%
+gpt-6.1-sol
+without same-family judges
+n = 16 verdicts"><circle class="hit" cx="139.6" cy="143.0" r="12"/><path class="hollow s5" d="M139.6,137.0 l6,6 l-6,6 l-6,-6 z"/></g><g class="mark" tabindex="0" data-tip="12%
+gpt-6.1-sol
+all judges
+n = 24 verdicts"><circle class="hit" cx="139.6" cy="143.0" r="12"/><circle class="fill s5 ring" cx="139.6" cy="143.0" r="5"/></g></svg><p class="note">Same family: a Claude judge on a Claude model&#x27;s answer, or a GPT judge on a GPT model&#x27;s answer.</p></figure></div><div class="scroll"><table class="data"><thead><tr><th scope="col">Model</th><th scope="col">claude-opus-5-5</th><th scope="col">gpt-6.1-sol</th><th scope="col">gemini-3.8-flash</th></tr></thead><tbody><tr><td>claude-sonnet-5-5</td><td>12% (n=8) (same family)</td><td>0% (n=8)</td><td>12% (n=8)</td></tr><tr><td>claude-opus-5-5</td><td>12% (n=8) (self)</td><td>0% (n=8)</td><td>12% (n=8)</td></tr><tr><td>claude-fable-5-1</td><td>25% (n=8) (same family)</td><td>25% (n=8)</td><td>25% (n=8)</td></tr><tr><td>gpt-5.6-sol</td><td>25% (n=8)</td><td>12% (n=8) (same family)</td><td>25% (n=8)</td></tr><tr><td>gpt-6.1-sol</td><td>12% (n=8)</td><td>12% (n=8) (self)</td><td>12% (n=8)</td></tr></tbody></table></div></section>
+<section id="routes"><h2>Routing and retrieval (measured, no judge)</h2><p class="intro">Did the twin take the right path, and did it find the slides a good answer needs?</p><div class="grid"><figure class="panel"><figcaption>Right route (slides, Canvas, FAQ, referral, web or decline)</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Right route (slides, Canvas, FAQ, referral, web or decline). Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0%</text><line class="grid" x1="162.5" x2="162.5" y1="4.0" y2="148.0"/><text class="tick" x="162.5" y="162.0" text-anchor="middle">25%</text><line class="grid" x1="213.0" x2="213.0" y1="4.0" y2="148.0"/><text class="tick" x="213.0" y="162.0" text-anchor="middle">50%</text><line class="grid" x1="263.5" x2="263.5" y1="4.0" y2="148.0"/><text class="tick" x="263.5" y="162.0" text-anchor="middle">75%</text><line class="grid" x1="314.0" x2="314.0" y1="4.0" y2="148.0"/><text class="tick" x="314.0" y="162.0" text-anchor="middle">100%</text><text class="axis-title" x="213.0" y="178.0" text-anchor="middle">% of answers (0 to 100%)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><g class="mark" tabindex="0" data-tip="25%
+claude-sonnet-5-5
+Right route (slides, Canvas, FAQ, referral, web or decline)
+n = 8"><rect class="hit" x="112" y="9.0" width="242.0" height="26"/><path class="fill s1" d="M112.0,15.0 h46.5 a4.0,4.0 0 0 1 4.0,4.0 v6.0 a4.0,4.0 0 0 1 -4.0,4.0 h-46.5 z"/></g><text class="value" x="168.5" y="26.0">25%</text><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><g class="mark" tabindex="0" data-tip="25%
+claude-opus-5-5
+Right route (slides, Canvas, FAQ, referral, web or decline)
+n = 8"><rect class="hit" x="112" y="37.0" width="242.0" height="26"/><path class="fill s2" d="M112.0,43.0 h46.5 a4.0,4.0 0 0 1 4.0,4.0 v6.0 a4.0,4.0 0 0 1 -4.0,4.0 h-46.5 z"/></g><text class="value" x="168.5" y="54.0">25%</text><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><g class="mark" tabindex="0" data-tip="25%
+claude-fable-5-1
+Right route (slides, Canvas, FAQ, referral, web or decline)
+n = 8"><rect class="hit" x="112" y="65.0" width="242.0" height="26"/><path class="fill s3" d="M112.0,71.0 h46.5 a4.0,4.0 0 0 1 4.0,4.0 v6.0 a4.0,4.0 0 0 1 -4.0,4.0 h-46.5 z"/></g><text class="value" x="168.5" y="82.0">25%</text><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><g class="mark" tabindex="0" data-tip="25%
+gpt-5.6-sol
+Right route (slides, Canvas, FAQ, referral, web or decline)
+n = 8"><rect class="hit" x="112" y="93.0" width="242.0" height="26"/><path class="fill s4" d="M112.0,99.0 h46.5 a4.0,4.0 0 0 1 4.0,4.0 v6.0 a4.0,4.0 0 0 1 -4.0,4.0 h-46.5 z"/></g><text class="value" x="168.5" y="110.0">25%</text><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><g class="mark" tabindex="0" data-tip="25%
+gpt-6.1-sol
+Right route (slides, Canvas, FAQ, referral, web or decline)
+n = 8"><rect class="hit" x="112" y="121.0" width="242.0" height="26"/><path class="fill s5" d="M112.0,127.0 h46.5 a4.0,4.0 0 0 1 4.0,4.0 v6.0 a4.0,4.0 0 0 1 -4.0,4.0 h-46.5 z"/></g><text class="value" x="168.5" y="138.0">25%</text></svg></figure><figure class="panel"><figcaption>Retrieval hit: an expected slide was used</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Retrieval hit: an expected slide was used. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0%</text><line class="grid" x1="162.5" x2="162.5" y1="4.0" y2="148.0"/><text class="tick" x="162.5" y="162.0" text-anchor="middle">25%</text><line class="grid" x1="213.0" x2="213.0" y1="4.0" y2="148.0"/><text class="tick" x="213.0" y="162.0" text-anchor="middle">50%</text><line class="grid" x1="263.5" x2="263.5" y1="4.0" y2="148.0"/><text class="tick" x="263.5" y="162.0" text-anchor="middle">75%</text><line class="grid" x1="314.0" x2="314.0" y1="4.0" y2="148.0"/><text class="tick" x="314.0" y="162.0" text-anchor="middle">100%</text><text class="axis-title" x="213.0" y="178.0" text-anchor="middle">% of answers (0 to 100%)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><text class="muted" x="116" y="26.0">n/a</text><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><text class="muted" x="116" y="54.0">n/a</text><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><text class="muted" x="116" y="82.0">n/a</text><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><text class="muted" x="116" y="110.0">n/a</text><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><text class="muted" x="116" y="138.0">n/a</text></svg></figure><figure class="panel"><figcaption>Slide precision: share of slides that were expected</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Slide precision: share of slides that were expected. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0%</text><line class="grid" x1="162.5" x2="162.5" y1="4.0" y2="148.0"/><text class="tick" x="162.5" y="162.0" text-anchor="middle">25%</text><line class="grid" x1="213.0" x2="213.0" y1="4.0" y2="148.0"/><text class="tick" x="213.0" y="162.0" text-anchor="middle">50%</text><line class="grid" x1="263.5" x2="263.5" y1="4.0" y2="148.0"/><text class="tick" x="263.5" y="162.0" text-anchor="middle">75%</text><line class="grid" x1="314.0" x2="314.0" y1="4.0" y2="148.0"/><text class="tick" x="314.0" y="162.0" text-anchor="middle">100%</text><text class="axis-title" x="213.0" y="178.0" text-anchor="middle">% of answers (0 to 100%)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><text class="muted" x="116" y="26.0">n/a</text><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><text class="muted" x="116" y="54.0">n/a</text><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><text class="muted" x="116" y="82.0">n/a</text><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><text class="muted" x="116" y="110.0">n/a</text><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><text class="muted" x="116" y="138.0">n/a</text></svg></figure><figure class="panel"><figcaption>Answers whose slides all came from one course</figcaption><svg viewBox="0 0 360 188" width="100%" role="img" aria-label="Answers whose slides all came from one course. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="148.0"/><text class="tick" x="112.0" y="162.0" text-anchor="middle">0%</text><line class="grid" x1="162.5" x2="162.5" y1="4.0" y2="148.0"/><text class="tick" x="162.5" y="162.0" text-anchor="middle">25%</text><line class="grid" x1="213.0" x2="213.0" y1="4.0" y2="148.0"/><text class="tick" x="213.0" y="162.0" text-anchor="middle">50%</text><line class="grid" x1="263.5" x2="263.5" y1="4.0" y2="148.0"/><text class="tick" x="263.5" y="162.0" text-anchor="middle">75%</text><line class="grid" x1="314.0" x2="314.0" y1="4.0" y2="148.0"/><text class="tick" x="314.0" y="162.0" text-anchor="middle">100%</text><text class="axis-title" x="213.0" y="178.0" text-anchor="middle">% of answers (0 to 100%)</text><text class="label" x="104" y="26.0" text-anchor="end">claude-sonnet-5-5</text><g class="mark" tabindex="0" data-tip="0%
+claude-sonnet-5-5
+Answers whose slides all came from one course
+n = 2"><rect class="hit" x="112" y="9.0" width="242.0" height="26"/><rect class="fill s1" x="112.0" y="15.0" width="1" height="14.0"/></g><text class="value" x="118.0" y="26.0">0%</text><text class="label" x="104" y="54.0" text-anchor="end">claude-opus-5-5</text><g class="mark" tabindex="0" data-tip="0%
+claude-opus-5-5
+Answers whose slides all came from one course
+n = 2"><rect class="hit" x="112" y="37.0" width="242.0" height="26"/><rect class="fill s2" x="112.0" y="43.0" width="1" height="14.0"/></g><text class="value" x="118.0" y="54.0">0%</text><text class="label" x="104" y="82.0" text-anchor="end">claude-fable-5-1</text><g class="mark" tabindex="0" data-tip="0%
+claude-fable-5-1
+Answers whose slides all came from one course
+n = 2"><rect class="hit" x="112" y="65.0" width="242.0" height="26"/><rect class="fill s3" x="112.0" y="71.0" width="1" height="14.0"/></g><text class="value" x="118.0" y="82.0">0%</text><text class="label" x="104" y="110.0" text-anchor="end">gpt-5.6-sol</text><g class="mark" tabindex="0" data-tip="0%
+gpt-5.6-sol
+Answers whose slides all came from one course
+n = 2"><rect class="hit" x="112" y="93.0" width="242.0" height="26"/><rect class="fill s4" x="112.0" y="99.0" width="1" height="14.0"/></g><text class="value" x="118.0" y="110.0">0%</text><text class="label" x="104" y="138.0" text-anchor="end">gpt-6.1-sol</text><g class="mark" tabindex="0" data-tip="0%
+gpt-6.1-sol
+Answers whose slides all came from one course
+n = 2"><rect class="hit" x="112" y="121.0" width="242.0" height="26"/><rect class="fill s5" x="112.0" y="127.0" width="1" height="14.0"/></g><text class="value" x="118.0" y="138.0">0%</text></svg></figure></div><details><summary>Table view</summary><div class="scroll"><table class="data"><thead><tr><th scope="col">Model</th><th scope="col">Right route</th><th scope="col">Retrieval hit</th><th scope="col">Slide precision</th><th scope="col">One course only</th><th scope="col">Fell back to notes</th></tr></thead><tbody><tr><td>claude-sonnet-5-5</td><td>25% (n=8)</td><td>n/a (n=0)</td><td>n/a (n=0)</td><td>0% (n=2)</td><td>0%</td></tr><tr><td>claude-opus-5-5</td><td>25% (n=8)</td><td>n/a (n=0)</td><td>n/a (n=0)</td><td>0% (n=2)</td><td>0%</td></tr><tr><td>claude-fable-5-1</td><td>25% (n=8)</td><td>n/a (n=0)</td><td>n/a (n=0)</td><td>0% (n=2)</td><td>0%</td></tr><tr><td>gpt-5.6-sol</td><td>25% (n=8)</td><td>n/a (n=0)</td><td>n/a (n=0)</td><td>0% (n=2)</td><td>0%</td></tr><tr><td>gpt-6.1-sol</td><td>25% (n=8)</td><td>n/a (n=0)</td><td>n/a (n=0)</td><td>0% (n=2)</td><td>0%</td></tr></tbody></table></div></details><details><summary>By question type</summary><div class="scroll"><table class="data"><thead><tr><th scope="col">Model</th><th scope="col">Question type</th><th scope="col">Questions (n)</th><th scope="col">Right route</th><th scope="col">Retrieval hit</th><th scope="col">Pass rate</th><th scope="col">Pass rate, other families</th><th scope="col">Teaching mean (1–5)</th><th scope="col">Routes taken</th></tr></thead><tbody><tr><td>claude-sonnet-5-5</td><td>Beyond the slides</td><td>8</td><td>25%</td><td>n/a</td><td>8%</td><td>6%</td><td>2.35</td><td>course_info 4, slides 2, web 2</td></tr><tr><td>claude-opus-5-5</td><td>Beyond the slides</td><td>8</td><td>25%</td><td>n/a</td><td>8%</td><td>6%</td><td>2.58</td><td>course_info 4, slides 2, web 2</td></tr><tr><td>claude-fable-5-1</td><td>Beyond the slides</td><td>8</td><td>25%</td><td>n/a</td><td>25%</td><td>25%</td><td>2.62</td><td>course_info 4, slides 2, web 2</td></tr><tr><td>gpt-5.6-sol</td><td>Beyond the slides</td><td>8</td><td>25%</td><td>n/a</td><td>21%</td><td>25%</td><td>2.71</td><td>course_info 4, slides 2, web 2</td></tr><tr><td>gpt-6.1-sol</td><td>Beyond the slides</td><td>8</td><td>25%</td><td>n/a</td><td>12%</td><td>12%</td><td>2.50</td><td>course_info 4, slides 2, web 2</td></tr></tbody></table></div></details></section>
+<section id="cost"><h2>Cost, quality and speed</h2><p class="intro">Cost from each answer&#x27;s tokens and the price table (an estimate, not a bill).</p><div class="grid"><figure class="panel"><figcaption>Cost versus pass rate</figcaption><svg viewBox="0 0 360 300" width="100%" role="img" aria-label="Cost versus pass rate. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="52.0" x2="344.0" y1="254.0" y2="254.0"/><text class="tick" x="46.0" y="258.0" text-anchor="end">0%</text><line class="grid" x1="52.0" x2="344.0" y1="193.0" y2="193.0"/><text class="tick" x="46.0" y="197.0" text-anchor="end">25%</text><line class="grid" x1="52.0" x2="344.0" y1="132.0" y2="132.0"/><text class="tick" x="46.0" y="136.0" text-anchor="end">50%</text><line class="grid" x1="52.0" x2="344.0" y1="71.0" y2="71.0"/><text class="tick" x="46.0" y="75.0" text-anchor="end">75%</text><line class="grid" x1="52.0" x2="344.0" y1="10.0" y2="10.0"/><text class="tick" x="46.0" y="14.0" text-anchor="end">100%</text><text class="axis-title" x="12" y="132.0" text-anchor="middle" transform="rotate(-90 12 132.0)">Pass rate, other families (%)</text><line class="base" x1="52.0" x2="52.0" y1="10" y2="254"/><text class="tick" x="52.0" y="268" text-anchor="middle">$0</text><line class="grid" x1="125.0" x2="125.0" y1="10" y2="254"/><text class="tick" x="125.0" y="268" text-anchor="middle">$0.025</text><line class="grid" x1="198.0" x2="198.0" y1="10" y2="254"/><text class="tick" x="198.0" y="268" text-anchor="middle">$0.05</text><line class="grid" x1="271.0" x2="271.0" y1="10" y2="254"/><text class="tick" x="271.0" y="268" text-anchor="middle">$0.075</text><line class="grid" x1="344.0" x2="344.0" y1="10" y2="254"/><text class="tick" x="344.0" y="268" text-anchor="middle">$0.1</text><text class="axis-title" x="198.0" y="292" text-anchor="middle">Cost per model answer (USD)</text><g class="mark" tabindex="0" data-tip="6% at $0.0124
+claude-sonnet-5-5
+Cost versus pass rate"><circle class="hit" cx="88.4" cy="239.4" r="12"/><circle class="fill s1 ring" cx="88.4" cy="239.4" r="6"/></g><g class="mark" tabindex="0" data-tip="6% at $0.0286
+claude-opus-5-5
+Cost versus pass rate"><circle class="hit" cx="135.4" cy="239.4" r="12"/><circle class="fill s2 ring" cx="135.4" cy="239.4" r="6"/></g><g class="mark" tabindex="0" data-tip="25% at $0.069
+claude-fable-5-1
+Cost versus pass rate"><circle class="hit" cx="253.5" cy="193.0" r="12"/><circle class="fill s3 ring" cx="253.5" cy="193.0" r="6"/></g><g class="mark" tabindex="0" data-tip="25% at $0.0221
+gpt-5.6-sol
+Cost versus pass rate"><circle class="hit" cx="116.4" cy="193.0" r="12"/><circle class="fill s4 ring" cx="116.4" cy="193.0" r="6"/></g><g class="mark" tabindex="0" data-tip="12% at $0.0177
+gpt-6.1-sol
+Cost versus pass rate"><circle class="hit" cx="103.6" cy="224.7" r="12"/><circle class="fill s5 ring" cx="103.6" cy="224.7" r="6"/></g><text class="label" x="145.4" y="231.4">claude-opus-5-5</text><text class="label" x="141.1" y="185.0">claude-fable-5-1</text><text class="label" x="126.4" y="207.0">gpt-5.6-sol</text></svg></figure><figure class="panel"><figcaption>Cost versus teaching quality</figcaption><svg viewBox="0 0 360 300" width="100%" role="img" aria-label="Cost versus teaching quality. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="52.0" x2="344.0" y1="254.0" y2="254.0"/><text class="tick" x="46.0" y="258.0" text-anchor="end">0</text><line class="grid" x1="52.0" x2="344.0" y1="193.0" y2="193.0"/><text class="tick" x="46.0" y="197.0" text-anchor="end">1.25</text><line class="grid" x1="52.0" x2="344.0" y1="132.0" y2="132.0"/><text class="tick" x="46.0" y="136.0" text-anchor="end">2.5</text><line class="grid" x1="52.0" x2="344.0" y1="71.0" y2="71.0"/><text class="tick" x="46.0" y="75.0" text-anchor="end">3.75</text><line class="grid" x1="52.0" x2="344.0" y1="10.0" y2="10.0"/><text class="tick" x="46.0" y="14.0" text-anchor="end">5</text><text class="axis-title" x="12" y="132.0" text-anchor="middle" transform="rotate(-90 12 132.0)">Teaching mean (0 to 5)</text><line class="base" x1="52.0" x2="52.0" y1="10" y2="254"/><text class="tick" x="52.0" y="268" text-anchor="middle">$0</text><line class="grid" x1="125.0" x2="125.0" y1="10" y2="254"/><text class="tick" x="125.0" y="268" text-anchor="middle">$0.025</text><line class="grid" x1="198.0" x2="198.0" y1="10" y2="254"/><text class="tick" x="198.0" y="268" text-anchor="middle">$0.05</text><line class="grid" x1="271.0" x2="271.0" y1="10" y2="254"/><text class="tick" x="271.0" y="268" text-anchor="middle">$0.075</text><line class="grid" x1="344.0" x2="344.0" y1="10" y2="254"/><text class="tick" x="344.0" y="268" text-anchor="middle">$0.1</text><text class="axis-title" x="198.0" y="292" text-anchor="middle">Cost per model answer (USD)</text><g class="mark" tabindex="0" data-tip="2.35 at $0.0124
+claude-sonnet-5-5
+Cost versus teaching quality"><circle class="hit" cx="88.4" cy="139.3" r="12"/><circle class="fill s1 ring" cx="88.4" cy="139.3" r="6"/></g><g class="mark" tabindex="0" data-tip="2.581 at $0.0286
+claude-opus-5-5
+Cost versus teaching quality"><circle class="hit" cx="135.4" cy="128.0" r="12"/><circle class="fill s2 ring" cx="135.4" cy="128.0" r="6"/></g><g class="mark" tabindex="0" data-tip="2.625 at $0.069
+claude-fable-5-1
+Cost versus teaching quality"><circle class="hit" cx="253.5" cy="125.9" r="12"/><circle class="fill s3 ring" cx="253.5" cy="125.9" r="6"/></g><g class="mark" tabindex="0" data-tip="2.714 at $0.0221
+gpt-5.6-sol
+Cost versus teaching quality"><circle class="hit" cx="116.4" cy="121.6" r="12"/><circle class="fill s4 ring" cx="116.4" cy="121.6" r="6"/></g><g class="mark" tabindex="0" data-tip="2.505 at $0.0177
+gpt-6.1-sol
+Cost versus teaching quality"><circle class="hit" cx="103.6" cy="131.8" r="12"/><circle class="fill s5 ring" cx="103.6" cy="131.8" r="6"/></g><text class="label" x="98.4" y="153.3">claude-sonnet-5-5</text><text class="label" x="145.4" y="120.0">claude-opus-5-5</text><line class="leader" x1="253.5" y1="125.9" x2="243.5" y2="99.9"/><text class="label" x="141.1" y="103.9">claude-fable-5-1</text><line class="leader" x1="116.4" y1="121.6" x2="126.4" y2="81.6"/><text class="label" x="126.4" y="85.6">gpt-5.6-sol</text><line class="leader" x1="103.6" y1="131.8" x2="113.6" y2="169.8"/><text class="label" x="113.6" y="173.8">gpt-6.1-sol</text></svg></figure><figure class="panel"><figcaption>Time to answer (each dot is one answer; the bar marks the median)</figcaption><svg viewBox="0 0 360 218" width="100%" role="img" aria-label="Time to answer per model. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="112.0" x2="112.0" y1="4.0" y2="178.0"/><text class="tick" x="112.0" y="192.0" text-anchor="middle">0 s</text><line class="grid" x1="169.5" x2="169.5" y1="4.0" y2="178.0"/><text class="tick" x="169.5" y="192.0" text-anchor="middle">12.5 s</text><line class="grid" x1="227.0" x2="227.0" y1="4.0" y2="178.0"/><text class="tick" x="227.0" y="192.0" text-anchor="middle">25 s</text><line class="grid" x1="284.5" x2="284.5" y1="4.0" y2="178.0"/><text class="tick" x="284.5" y="192.0" text-anchor="middle">37.5 s</text><line class="grid" x1="342.0" x2="342.0" y1="4.0" y2="178.0"/><text class="tick" x="342.0" y="192.0" text-anchor="middle">50 s</text><text class="axis-title" x="227.0" y="208.0" text-anchor="middle">Seconds to answer</text><text class="label" x="104" y="29.0" text-anchor="end">claude-sonnet-5-5</text><circle class="fill s1 faint" cx="118.6" cy="17.0" r="3"/><circle class="fill s1 faint" cx="121.5" cy="33.0" r="3"/><circle class="fill s1 faint" cx="122.1" cy="31.4" r="3"/><circle class="fill s1 faint" cx="122.4" cy="29.8" r="3"/><circle class="fill s1 faint" cx="136.1" cy="28.2" r="3"/><circle class="fill s1 faint" cx="143.6" cy="26.6" r="3"/><circle class="fill s1 faint" cx="144.1" cy="25.0" r="3"/><circle class="fill s1 faint" cx="144.6" cy="23.4" r="3"/><g class="mark" tabindex="0" data-tip="median 5.2 s
+claude-sonnet-5-5
+90th percentile 7.1 s
+n = 8 answers"><rect class="hit" x="112" y="11.0" width="230" height="28"/><line class="median" x1="136.1" x2="136.1" y1="14.0" y2="36.0"/></g><text class="label" x="104" y="63.0" text-anchor="end">claude-opus-5-5</text><circle class="fill s2 faint" cx="129.8" cy="51.0" r="3"/><circle class="fill s2 faint" cx="130.4" cy="67.0" r="3"/><circle class="fill s2 faint" cx="133.8" cy="65.4" r="3"/><circle class="fill s2 faint" cx="136.0" cy="63.8" r="3"/><circle class="fill s2 faint" cx="166.0" cy="62.2" r="3"/><circle class="fill s2 faint" cx="169.3" cy="60.6" r="3"/><circle class="fill s2 faint" cx="184.8" cy="59.0" r="3"/><circle class="fill s2 faint" cx="190.1" cy="57.4" r="3"/><g class="mark" tabindex="0" data-tip="median 11.7 s
+claude-opus-5-5
+90th percentile 17.0 s
+n = 8 answers"><rect class="hit" x="112" y="45.0" width="230" height="28"/><line class="median" x1="166.0" x2="166.0" y1="48.0" y2="70.0"/></g><text class="label" x="104" y="97.0" text-anchor="end">claude-fable-5-1</text><circle class="fill s3 faint" cx="129.7" cy="85.0" r="3"/><circle class="fill s3 faint" cx="134.8" cy="101.0" r="3"/><circle class="fill s3 faint" cx="137.4" cy="99.4" r="3"/><circle class="fill s3 faint" cx="145.7" cy="97.8" r="3"/><circle class="fill s3 faint" cx="170.4" cy="96.2" r="3"/><circle class="fill s3 faint" cx="177.6" cy="94.6" r="3"/><circle class="fill s3 faint" cx="201.7" cy="93.0" r="3"/><circle class="fill s3 faint" cx="213.7" cy="91.4" r="3"/><g class="mark" tabindex="0" data-tip="median 12.7 s
+claude-fable-5-1
+90th percentile 22.1 s
+n = 8 answers"><rect class="hit" x="112" y="79.0" width="230" height="28"/><line class="median" x1="170.4" x2="170.4" y1="82.0" y2="104.0"/></g><text class="label" x="104" y="131.0" text-anchor="end">gpt-5.6-sol</text><circle class="fill s4 faint" cx="122.0" cy="119.0" r="3"/><circle class="fill s4 faint" cx="125.1" cy="135.0" r="3"/><circle class="fill s4 faint" cx="127.3" cy="133.4" r="3"/><circle class="fill s4 faint" cx="128.8" cy="131.8" r="3"/><circle class="fill s4 faint" cx="155.9" cy="130.2" r="3"/><circle class="fill s4 faint" cx="176.8" cy="128.6" r="3"/><circle class="fill s4 faint" cx="194.0" cy="127.0" r="3"/><circle class="fill s4 faint" cx="303.6" cy="125.4" r="3"/><g class="mark" tabindex="0" data-tip="median 9.5 s
+gpt-5.6-sol
+90th percentile 41.7 s
+n = 8 answers"><rect class="hit" x="112" y="113.0" width="230" height="28"/><line class="median" x1="155.9" x2="155.9" y1="116.0" y2="138.0"/></g><text class="label" x="104" y="165.0" text-anchor="end">gpt-6.1-sol</text><circle class="fill s5 faint" cx="125.3" cy="153.0" r="3"/><circle class="fill s5 faint" cx="125.4" cy="169.0" r="3"/><circle class="fill s5 faint" cx="129.2" cy="167.4" r="3"/><circle class="fill s5 faint" cx="140.3" cy="165.8" r="3"/><circle class="fill s5 faint" cx="178.3" cy="164.2" r="3"/><circle class="fill s5 faint" cx="179.1" cy="162.6" r="3"/><circle class="fill s5 faint" cx="204.1" cy="161.0" r="3"/><circle class="fill s5 faint" cx="273.9" cy="159.4" r="3"/><g class="mark" tabindex="0" data-tip="median 14.4 s
+gpt-6.1-sol
+90th percentile 35.2 s
+n = 8 answers"><rect class="hit" x="112" y="147.0" width="230" height="28"/><line class="median" x1="178.3" x2="178.3" y1="150.0" y2="172.0"/></g></svg><p class="note">Answers that called the model only (slides, Canvas, web). FAQ answers and declines take under a second.</p></figure></div><details><summary>Table view</summary><div class="scroll"><table class="data"><thead><tr><th scope="col">Model</th><th scope="col">Cost per model answer (USD)</th><th scope="col">Cost per answer, all routes (USD)</th><th scope="col">Total (USD)</th><th scope="col">Median time, model answers</th><th scope="col">Mean time, all answers</th><th scope="col">Model answers (n)</th></tr></thead><tbody><tr><td>claude-sonnet-5-5</td><td>0.0124</td><td>0.0124</td><td>0.100</td><td>3.8 s</td><td>4.3 s</td><td>8</td></tr><tr><td>claude-opus-5-5</td><td>0.0286</td><td>0.0286</td><td>0.229</td><td>8.5 s</td><td>9.3 s</td><td>8</td></tr><tr><td>claude-fable-5-1</td><td>0.0690</td><td>0.0690</td><td>0.552</td><td>10.0 s</td><td>11.3 s</td><td>8</td></tr><tr><td>gpt-5.6-sol</td><td>0.0221</td><td>0.0221</td><td>0.177</td><td>6.6 s</td><td>11.9 s</td><td>8</td></tr><tr><td>gpt-6.1-sol</td><td>0.0177</td><td>0.0177</td><td>0.141</td><td>10.3 s</td><td>12.5 s</td><td>8</td></tr></tbody></table></div></details></section>
+<section id="retest"><h2>Test-retest: does a model&#x27;s answer score the same twice?</h2><p class="intro">ICC (0 to 1): 0.8 or more = scores repeat closely; 0.5 to 0.8 = moderate; below 0.5 = mostly noise. Spearman (-1 to 1): do the answers keep the same order from one run to the next? 1 = same order. Verdict flip rate: how often the same judge gave pass once and fail the other time (0% = never).</p><p class="note">No repeated answers in this run.</p><details><summary>Table view</summary><div class="scroll"><table class="data"><thead><tr><th scope="col">Model</th><th scope="col">ICC(2,1) run 1 vs 2</th><th scope="col">Spearman</th><th scope="col">ICC, teaching scores only (n)</th><th scope="col">Verdict flip rate</th><th scope="col">Same route both runs</th><th scope="col">Questions (n)</th></tr></thead><tbody></tbody></table></div><div class="scroll"><table class="data"><thead><tr><th scope="col">Dimension</th><th scope="col">ICC(2,1) run 1 vs 2</th><th scope="col">Same score</th><th scope="col">Pairs (n)</th></tr></thead><tbody></tbody></table></div></details></section>
+<section id="judges"><h2>Judge reliability</h2><p class="intro">Test-retest for each judge, and agreement between judges. Cohen&#x27;s kappa on pass/fail: 1 = always the same verdict; 0 = no better than chance; 0.6 or more is usually read as substantial agreement.</p><div class="scroll"><table class="heatmap matrix"><thead><tr><th>Judge</th><th scope="col">claude-opus-5-5</th><th scope="col">gpt-6.1-sol</th><th scope="col">gemini-3.8-flash</th></tr></thead><tbody><tr><th scope="row">claude-opus-5-5</th><td class="heat h0" tabindex="0" data-tip="n/a same verdict on a second scoring
+claude-opus-5-5
+kappa n/a
+n = 0 answers">n/a</td><td class="heat h7" tabindex="0" data-tip="92% same verdict
+claude-opus-5-5 and gpt-6.1-sol
+kappa 0.69
+mean score gap 0.43 points
+n = 40 answers">92%</td><td class="heat h7" tabindex="0" data-tip="100% same verdict
+claude-opus-5-5 and gemini-3.8-flash
+kappa 1.00
+mean score gap 0.54 points
+n = 40 answers">100%</td></tr><tr><th scope="row">gpt-6.1-sol</th><td class="heat h7" tabindex="0" data-tip="92% same verdict
+gpt-6.1-sol and claude-opus-5-5
+kappa 0.69
+mean score gap 0.43 points
+n = 40 answers">92%</td><td class="heat h0" tabindex="0" data-tip="n/a same verdict on a second scoring
+gpt-6.1-sol
+kappa n/a
+n = 0 answers">n/a</td><td class="heat h7" tabindex="0" data-tip="92% same verdict
+gpt-6.1-sol and gemini-3.8-flash
+kappa 0.69
+mean score gap 0.75 points
+n = 40 answers">92%</td></tr><tr><th scope="row">gemini-3.8-flash</th><td class="heat h7" tabindex="0" data-tip="100% same verdict
+gemini-3.8-flash and claude-opus-5-5
+kappa 1.00
+mean score gap 0.54 points
+n = 40 answers">100%</td><td class="heat h7" tabindex="0" data-tip="92% same verdict
+gemini-3.8-flash and gpt-6.1-sol
+kappa 0.69
+mean score gap 0.75 points
+n = 40 answers">92%</td><td class="heat h0" tabindex="0" data-tip="n/a same verdict on a second scoring
+gemini-3.8-flash
+kappa n/a
+n = 0 answers">n/a</td></tr></tbody></table></div><p class="note">Each cell: the share of answers where the two judges gave the same pass or fail verdict (0 to 100%). The diagonal is test-retest: the same judge scoring the same answer a second time.</p><div class="grid"><figure class="panel"><figcaption>Do the three judges agree? Krippendorff&#x27;s alpha (ordinal) per dimension</figcaption><svg viewBox="0 0 360 312" width="100%" role="img" aria-label="Krippendorff&#x27;s alpha per dimension. Values are in the table view." class="chart" preserveAspectRatio="xMinYMin meet"><line class="base" x1="150.0" x2="150.0" y1="4" y2="272"/><text class="tick" x="150.0" y="286" text-anchor="middle">0</text><line class="grid" x1="192.5" x2="192.5" y1="4" y2="272"/><text class="tick" x="192.5" y="286" text-anchor="middle">0.25</text><line class="grid" x1="235.0" x2="235.0" y1="4" y2="272"/><text class="tick" x="235.0" y="286" text-anchor="middle">0.5</text><line class="grid" x1="277.5" x2="277.5" y1="4" y2="272"/><text class="tick" x="277.5" y="286" text-anchor="middle">0.75</text><line class="grid" x1="320.0" x2="320.0" y1="4" y2="272"/><text class="tick" x="320.0" y="286" text-anchor="middle">1</text><text class="axis-title" x="235.0" y="304" text-anchor="middle">Alpha (1 = perfect agreement, 0 = chance)</text><text class="label" x="142" y="24.0" text-anchor="end">Grounded</text><g class="mark" tabindex="0" data-tip="alpha 0.40
+Grounded
+same score 47%, within one 93%
+n = 10 answers"><rect class="hit" x="150" y="9.0" width="170" height="22"/><path class="fill s1" d="M150.0,14.0 h63.7 a4.0,4.0 0 0 1 4.0,4.0 v4.0 a4.0,4.0 0 0 1 -4.0,4.0 h-63.7 z"/></g><text class="value" x="223.7" y="24.0">0.40</text><text class="label" x="142" y="48.0" text-anchor="end">Answers the question</text><g class="mark" tabindex="0" data-tip="alpha 0.85
+Answers the question
+same score 57%, within one 94%
+n = 40 answers"><rect class="hit" x="150" y="33.0" width="170" height="22"/><path class="fill s1" d="M150.0,38.0 h140.5 a4.0,4.0 0 0 1 4.0,4.0 v4.0 a4.0,4.0 0 0 1 -4.0,4.0 h-140.5 z"/></g><text class="value" x="300.5" y="48.0">0.85</text><text class="label" x="142" y="72.0" text-anchor="end">Right scope</text><g class="mark" tabindex="0" data-tip="alpha 0.71
+Right scope
+same score 75%, within one 92%
+n = 40 answers"><rect class="hit" x="150" y="57.0" width="170" height="22"/><path class="fill s1" d="M150.0,62.0 h117.6 a4.0,4.0 0 0 1 4.0,4.0 v4.0 a4.0,4.0 0 0 1 -4.0,4.0 h-117.6 z"/></g><text class="value" x="277.6" y="72.0">0.71</text><text class="label" x="142" y="96.0" text-anchor="end">Matches the reply</text><g class="mark" tabindex="0" data-tip="alpha 0.79
+Matches the real reply
+same score 57%, within one 94%
+n = 40 answers"><rect class="hit" x="150" y="81.0" width="170" height="22"/><path class="fill s1" d="M150.0,86.0 h130.1 a4.0,4.0 0 0 1 4.0,4.0 v4.0 a4.0,4.0 0 0 1 -4.0,4.0 h-130.1 z"/></g><text class="value" x="290.1" y="96.0">0.79</text><text class="label" x="142" y="120.0" text-anchor="end">Speech quality</text><g class="mark" tabindex="0" data-tip="alpha 0.80
+Speech quality
+same score 56%, within one 99%
+n = 30 answers"><rect class="hit" x="150" y="105.0" width="170" height="22"/><path class="fill s1" d="M150.0,110.0 h131.3 a4.0,4.0 0 0 1 4.0,4.0 v4.0 a4.0,4.0 0 0 1 -4.0,4.0 h-131.3 z"/></g><text class="value" x="291.3" y="120.0">0.80</text><text class="label" x="142" y="144.0" text-anchor="end">Safety and tone</text><g class="mark" tabindex="0" data-tip="alpha 0.57
+Safety and tone
+same score 54%, within one 95%
+n = 40 answers"><rect class="hit" x="150" y="129.0" width="170" height="22"/><path class="fill s1" d="M150.0,134.0 h92.2 a4.0,4.0 0 0 1 4.0,4.0 v4.0 a4.0,4.0 0 0 1 -4.0,4.0 h-92.2 z"/></g><text class="value" x="252.2" y="144.0">0.57</text><text class="label" x="142" y="168.0" text-anchor="end">Good teaching</text><g class="mark" tabindex="0" data-tip="alpha 0.61
+Good teaching
+same score 40%, within one 81%
+n = 29 answers"><rect class="hit" x="150" y="153.0" width="170" height="22"/><path class="fill s1" d="M150.0,158.0 h100.6 a4.0,4.0 0 0 1 4.0,4.0 v4.0 a4.0,4.0 0 0 1 -4.0,4.0 h-100.6 z"/></g><text class="value" x="260.6" y="168.0">0.61</text><text class="label" x="142" y="192.0" text-anchor="end">Explains the concept</text><g class="mark" tabindex="0" data-tip="alpha 0.55
+Explains the concept effectively
+same score 45%, within one 78%
+n = 29 answers"><rect class="hit" x="150" y="177.0" width="170" height="22"/><path class="fill s1" d="M150.0,182.0 h89.5 a4.0,4.0 0 0 1 4.0,4.0 v4.0 a4.0,4.0 0 0 1 -4.0,4.0 h-89.5 z"/></g><text class="value" x="249.5" y="192.0">0.55</text><text class="label" x="142" y="216.0" text-anchor="end">Accurate</text><g class="mark" tabindex="0" data-tip="alpha 0.58
+Accurate
+same score 38%, within one 86%
+n = 29 answers"><rect class="hit" x="150" y="201.0" width="170" height="22"/><path class="fill s1" d="M150.0,206.0 h94.3 a4.0,4.0 0 0 1 4.0,4.0 v4.0 a4.0,4.0 0 0 1 -4.0,4.0 h-94.3 z"/></g><text class="value" x="254.3" y="216.0">0.58</text><text class="label" x="142" y="240.0" text-anchor="end">Engaging voice</text><g class="mark" tabindex="0" data-tip="alpha 0.43
+Engaging voice
+same score 55%, within one 95%
+n = 29 answers"><rect class="hit" x="150" y="225.0" width="170" height="22"/><path class="fill s1" d="M150.0,230.0 h68.4 a4.0,4.0 0 0 1 4.0,4.0 v4.0 a4.0,4.0 0 0 1 -4.0,4.0 h-68.4 z"/></g><text class="value" x="228.4" y="240.0">0.43</text><text class="label" x="142" y="264.0" text-anchor="end">Appropriate depth</text><g class="mark" tabindex="0" data-tip="alpha 0.72
+Appropriate depth
+same score 39%, within one 93%
+n = 29 answers"><rect class="hit" x="150" y="249.0" width="170" height="22"/><path class="fill s1" d="M150.0,254.0 h117.9 a4.0,4.0 0 0 1 4.0,4.0 v4.0 a4.0,4.0 0 0 1 -4.0,4.0 h-117.9 z"/></g><text class="value" x="277.9" y="264.0">0.72</text></svg><p class="note">Krippendorff&#x27;s alpha (ordinal): agreement among the judges beyond chance; 1 = perfect, 0 = chance, 0.8 or more is reliable, 0.67 to 0.8 tentative, below 0.67 the judges disagree too much to trust one alone.</p></figure></div><div class="scroll"><table class="data"><thead><tr><th scope="col">Judge</th><th scope="col">ICC(2,1) of scores</th><th scope="col">Teaching ICC</th><th scope="col">Same score</th><th scope="col">Within one point</th><th scope="col">Kappa on pass/fail</th><th scope="col">Same verdict</th><th scope="col">Answers (n)</th></tr></thead><tbody><tr><td>claude-opus-5-5</td><td>n/a</td><td>n/a</td><td>n/a</td><td>n/a</td><td>n/a</td><td>n/a</td><td>0</td></tr><tr><td>gpt-6.1-sol</td><td>n/a</td><td>n/a</td><td>n/a</td><td>n/a</td><td>n/a</td><td>n/a</td><td>0</td></tr><tr><td>gemini-3.8-flash</td><td>n/a</td><td>n/a</td><td>n/a</td><td>n/a</td><td>n/a</td><td>n/a</td><td>0</td></tr></tbody></table></div><details><summary>Agreement per dimension</summary><div class="scroll"><table class="data"><thead><tr><th scope="col">Dimension</th><th scope="col">Krippendorff&#x27;s alpha</th><th scope="col">Same score (judge pairs)</th><th scope="col">Within one point</th><th scope="col">Answers (n)</th></tr></thead><tbody><tr><td>Grounded</td><td>0.40</td><td>47%</td><td>93%</td><td>10</td></tr><tr><td>Answers the question</td><td>0.85</td><td>57%</td><td>94%</td><td>40</td></tr><tr><td>Right scope</td><td>0.71</td><td>75%</td><td>92%</td><td>40</td></tr><tr><td>Matches the real reply</td><td>0.79</td><td>57%</td><td>94%</td><td>40</td></tr><tr><td>Speech quality</td><td>0.80</td><td>56%</td><td>99%</td><td>30</td></tr><tr><td>Safety and tone</td><td>0.57</td><td>54%</td><td>95%</td><td>40</td></tr><tr><td>Good teaching</td><td>0.61</td><td>40%</td><td>81%</td><td>29</td></tr><tr><td>Explains the concept effectively</td><td>0.55</td><td>45%</td><td>78%</td><td>29</td></tr><tr><td>Accurate</td><td>0.58</td><td>38%</td><td>86%</td><td>29</td></tr><tr><td>Engaging voice</td><td>0.43</td><td>55%</td><td>95%</td><td>29</td></tr><tr><td>Appropriate depth</td><td>0.72</td><td>39%</td><td>93%</td><td>29</td></tr><tr><td>Verdict (pass/fail)</td><td>0.81</td><td>95%</td><td></td><td></td></tr></tbody></table></div></details></section>
+<section id="questions"><h2>Question by question (run 1)</h2><p class="intro">What each model did with each invented question: the route it took and how many of the three judges passed it.</p><div class="scroll"><table class="data"><thead><tr><th scope="col">Id</th><th scope="col">Question</th><th scope="col">Type</th><th scope="col">Expected</th><th scope="col">claude-sonnet-5-5</th><th scope="col">claude-opus-5-5</th><th scope="col">claude-fable-5-1</th><th scope="col">gpt-5.6-sol</th><th scope="col">gpt-6.1-sol</th></tr></thead><tbody><tr><td>q021</td><td>Should my project group use CrewAI or LangGraph for a multi-agent app? Which one is easier to get started with?</td><td>Beyond the slides</td><td>web</td><td>slides (wrong route), 0/3 pass</td><td>slides (wrong route), 0/3 pass</td><td>slides (wrong route), 0/3 pass</td><td>slides (wrong route), 0/3 pass</td><td>slides (wrong route), 0/3 pass</td></tr><tr><td>q022</td><td>how does prompt caching work with the Claude or OpenAI API, and how much does it actually save on cost?</td><td>Beyond the slides</td><td>web</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td></tr><tr><td>q023</td><td>How do I evaluate whether my RAG chatbot is giving good answers? Are there standard metrics for that?</td><td>Beyond the slides</td><td>web</td><td>slides (wrong route), 0/3 pass</td><td>slides (wrong route), 0/3 pass</td><td>slides (wrong route), 0/3 pass</td><td>slides (wrong route), 0/3 pass</td><td>slides (wrong route), 0/3 pass</td></tr><tr><td>q024</td><td>fine tuning vs RAG for an internal company knowledge bot, which would you pick and why</td><td>Beyond the slides</td><td>web</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td></tr><tr><td>q025</td><td>How do I choose an embedding model for semantic search over our support docs? Does a bigger vector size mean better results?</td><td>Beyond the slides</td><td>web</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td></tr><tr><td>q026</td><td>how do I self-host n8n with Docker on my own computer and connect it to Gmail?</td><td>Beyond the slides</td><td>web</td><td>web, 2/3 pass</td><td>web, 2/3 pass</td><td>web, 3/3 pass</td><td>web, 3/3 pass</td><td>web, 3/3 pass</td></tr><tr><td>q027</td><td>Our vector search keeps missing exact product codes like part numbers. Should we add keyword search or reranking? How would that work?</td><td>Beyond the slides</td><td>web</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td><td>course_info (wrong route), 0/3 pass</td></tr><tr><td>q028</td><td>how would I build my own MCP server in Python so an agent can query our sales database?</td><td>Beyond the slides</td><td>web</td><td>web, 0/3 pass</td><td>web, 0/3 pass</td><td>web, 3/3 pass</td><td>web, 2/3 pass</td><td>web, 0/3 pass</td></tr></tbody></table></div></section>
+<footer><p>Written by <code>evals/compare.py</code> (docs/SPEC.md, Block 8b). Question set: questions.course.jsonl.
+Run 20261008T065000Z-web, finished 2026-10-08T05:01:31+00:00.</p></footer>
+</main><div id="tip" hidden></div>
+<script>
+(function(){
+  var tipEl=document.getElementById('tip');
+  function show(el,x,y){var lines=(el.getAttribute('data-tip')||'').split('\n');tipEl.replaceChildren();
+    lines.forEach(function(t,i){var n=document.createElement(i===0?'b':'span');n.textContent=t;tipEl.appendChild(n);});
+    tipEl.hidden=false;var w=tipEl.offsetWidth,h=tipEl.offsetHeight;
+    tipEl.style.left=Math.max(8,Math.min(window.innerWidth-w-8,x+14))+'px';tipEl.style.top=Math.max(8,Math.min(window.innerHeight-h-8,y+14))+'px';}
+  document.addEventListener('pointerover',function(e){var el=e.target.closest('[data-tip]');if(el)show(el,e.clientX,e.clientY);});
+  document.addEventListener('pointermove',function(e){var el=e.target.closest('[data-tip]');if(el)show(el,e.clientX,e.clientY);else tipEl.hidden=true;});
+  document.addEventListener('focusin',function(e){var el=e.target.closest('[data-tip]');if(!el)return;var r=el.getBoundingClientRect();show(el,r.left+r.width/2,r.top+r.height/2);});
+  document.addEventListener('focusout',function(){tipEl.hidden=true;});
+  var root=document.documentElement;document.getElementById('theme').addEventListener('click',function(){
+    var dark=root.getAttribute('data-theme')?root.getAttribute('data-theme')==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.setAttribute('data-theme',dark?'light':'dark');});
+})();
+</script></body></html>

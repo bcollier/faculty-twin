@@ -558,7 +558,7 @@ def response_from(playlist: dict[str, Any], info: dict[str, Any], content: stora
         text = _answer_text(playlist) or str(playlist.get("text") or playlist.get("message") or "")
         links = [{"title": str(link.get("title") or "")[:200], "url": str(link.get("url") or "")[:500]}
                  for link in (playlist.get("sources") or playlist.get("links") or []) if isinstance(link, dict)]
-        closest = [str(seg.get("slide_id")) for seg in (playlist.get("closest") or segs)
+        closest = [str(seg.get("slide_id")) for seg in (playlist.get("related") or playlist.get("closest") or segs)
                    if isinstance(seg, dict) and seg.get("slide_id")]
         return {**base, "status": "ok", "narration_source": "web",
                 "segments": [{"n": 1, "slide_id": "web", "narration": text, "evidence": None}],

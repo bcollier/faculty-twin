@@ -277,6 +277,13 @@ def convert_compare(run_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]
         "notes": notes,
         "lease": None,
     }
+    if meta.get("only_types"):
+        # A subset (for example only the web questions) is not comparable with full runs: listed, never plotted.
+        run["status"] = "excluded"
+        run["excluded"] = True
+        run["status_note"] = (f"Only the {', '.join(meta['only_types'])} questions of {meta.get('questions_file')}: "
+                              "listed for its results, left out of the report card's lines.")
+        run["notes"].insert(0, run["status_note"])
     run["summary"] = eval_runs.summarize(run, rows)
     return run, rows
 
@@ -287,7 +294,7 @@ def import_compare(run_dir: Path, bucket: eval_store.Bucket, out=print) -> int:
     for row in rows:
         eval_store.write_row(bucket, run_json["id"], row)
     eval_store.write_results(bucket, run_json["id"], rows)
-    eval_store.mark_finished(bucket, run_json["id"], "done", run_json["finished_at"])
+    eval_store.mark_finished(bucket, run_json["id"], run_json["status"], run_json["finished_at"])
     eval_store.upsert_index(bucket, eval_runs.index_entry(run_json))
     out(f"{run_json['id']}: {len(rows)} rows, {len(run_json['generators'])} answering models, "
         f"{len(run_json['judges'])} judges.")
