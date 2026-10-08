@@ -366,6 +366,8 @@ flowchart LR
 
 The Settings page (`public/admin.html`, with `admin.js`, `admin-analytics.js` and `admin-evals.js`) is Ben's control panel, behind a separate admin passcode and a 12-hour cookie. Model, Voice, Limits and access, Answer thresholds and Prompts all write rows in the `settings` table, which every warm function re-reads through a 30-second cache, so a change reaches students within half a minute without a deploy. Courses and source material create `sources` rows and upload files straight from the browser into the bucket's `inbox/`, which the local worker picks up. Prompts and Evals keep their history and results as JSON files in the private bucket; Analytics and Activity read the question log and usage counters. The slide threshold's default is Ben's hand-written `NOT_COVERED_THRESHOLD`; Settings can only override it at run time, and "Reset to default" goes back to his value. See the screenshots in [screenshots/README.md](screenshots/README.md).
 
+Added Oct 8: **Student alerts** (`admin-alerts.js`, `app/admin_alerts.py`). When a student reports a broken quiz, a broken submission, or an API key out of credits, the first step of `answer()` (`app/alerts.py`) works out the course and the Canvas item and texts Ben's cell through Twilio's Messages API, with a scrubbed quote, a 2 hour dedupe, a daily cap, and one alert per visitor per day. Every alert is also stored in the bucket at `alerts/<UTC>.json`, so the Settings panel shows it even when Twilio is not set up. See "Instructor alerts" in [SPEC.md](SPEC.md).
+
 ## 7. The eval harness
 
 ```mermaid
