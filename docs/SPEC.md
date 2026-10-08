@@ -360,7 +360,7 @@ The browser only ever talks to the backend, except to fetch a file through a lin
 | `VOYAGE_API_KEY`, `VOYAGE_MODEL` | Embeddings for the index and for questions |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` | Voice; the voice id is the default when `settings.voice_id` is empty |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET` | Storage and Postgres, server side only. Bucket defaults to `twin-content` |
-| `STUDENT_PASSCODE`, `ADMIN_PASSCODE` | Bootstrap passcodes; a rotated student passcode lives as a hash in `settings` |
+| `STUDENT_PASSCODE`, `ADMIN_PASSCODE` | Bootstrap passcodes; a rotated student passcode lives as a hash in `settings`. *Added Oct 8 (code review):* when Supabase is configured but a cold instance cannot read `settings` at all, student login answers 503 ("Sign-in is not available right now. Please try again in a minute.") and student cookies are not accepted, rather than falling back to `STUDENT_PASSCODE`, which after a rotation is the old passcode. A warm instance keeps using its last good copy |
 | `SESSION_SECRET`, `AUDIO_SIGNING_SECRET` | Cookie signing and audio-link signing |
 | `DAILY_VOICE_CHAR_CAP` | Default daily voice cap, overridable in Settings |
 | `DAILY_FREE_VOICE_CHAR_CAP` | Added Oct 5. Default daily cap for the free Microsoft voices (200,000 characters), overridable in Settings |

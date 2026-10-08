@@ -6,6 +6,12 @@ student_passcode_hash, index_version, pricing (Analytics price table). Rows are 
 so a busy function does not hit Postgres on every request. When Supabase is not
 configured (local dev, tests) the env-var defaults apply and writes go to an
 in-memory dict.
+
+When Supabase is configured but a read fails, the last good copy is used (possibly
+empty). `get_required` is for the few keys where "missing" must not mean "use the
+env default" (the rotated student passcode hash): it raises `SettingsUnavailable`
+when this instance has never read the table successfully (a cold start while
+Supabase is down), so the caller can fail closed.
 """
 
 from __future__ import annotations
@@ -23,10 +29,15 @@ _cache: dict[str, Any] = {}
 _cache_at = 0.0
 _generation = 0  # bumped by every write on this instance; a read that started before it is not cached
 _local: dict[str, Any] = {}  # used only when Supabase is not configured
+_ever_read = False  # this instance has read the settings table successfully at least once
+
+
+class SettingsUnavailable(RuntimeError):
+    """The settings table could not be read, and this instance has no good copy of it."""
 
 
 def _load() -> dict[str, Any]:
-    global _cache, _cache_at
+    global _cache, _cache_at, _ever_read
     now = time.monotonic()
     with _lock:
         if _cache_at and now - _cache_at < CACHE_SECONDS:
@@ -37,6 +48,7 @@ def _load() -> dict[str, Any]:
     try:
         rows = supa.select("settings", {"select": "key,value"})
         values = {r["key"]: r["value"] for r in rows}
+        _ever_read = True
     except supa.SupabaseError as exc:
         config.log.warning("settings read failed, using defaults: %s", exc)
         values = dict(_cache)  # last good copy, possibly empty
@@ -50,6 +62,18 @@ def _load() -> dict[str, Any]:
 
 def get(key: str, default: Any = None) -> Any:
     value = _load().get(key)
+    return default if value is None else value
+
+
+def get_required(key: str, default: Any = None) -> Any:
+    """Like `get`, but raises SettingsUnavailable on a cold instance that could not read the table.
+
+    Added Oct 8 (code review): used where falling back to an env default would be unsafe.
+    """
+    values = _load()
+    if config.supabase_configured() and not _ever_read:
+        raise SettingsUnavailable("the settings table could not be read")
+    value = values.get(key)
     return default if value is None else value
 
 
@@ -71,11 +95,12 @@ def put(values: dict[str, Any]) -> None:
 
 
 def clear_cache() -> None:
-    global _cache_at, _cache, _generation
+    global _cache_at, _cache, _generation, _ever_read
     with _lock:
         _cache_at = 0.0
         _cache = {}
         _generation += 1
+        _ever_read = False
     _local.clear()
 
 

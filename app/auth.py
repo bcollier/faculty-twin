@@ -12,6 +12,12 @@ the passcode signs everyone out.
 The student passcode can be rotated from Settings: a PBKDF2 hash is stored in
 the `settings` table (key `student_passcode_hash`). Until then the
 STUDENT_PASSCODE env var is the passcode.
+
+Fail closed (added Oct 8, code review): when Supabase is configured but this
+instance has never read the settings table (a cold start while Supabase is
+down), the stored hash cannot be known, so login answers 503 and student
+cookies are not accepted. Falling back to STUDENT_PASSCODE there would let the
+old passcode back in after a rotation. A warm instance keeps its last good copy.
 """
 
 from __future__ import annotations
@@ -76,8 +82,20 @@ def _generation(material: str) -> str:
     return hmac.new(config.session_secret(), ("gen:" + material).encode(), hashlib.sha256).hexdigest()[:16]
 
 
+SIGN_IN_UNAVAILABLE = "Sign-in is not available right now. Please try again in a minute."
+
+
+def _stored_student_hash() -> str | None:
+    """The rotated passcode hash, None when there is none. Raises SettingsUnavailable when it cannot be read."""
+    stored = settings_store.get_required("student_passcode_hash")
+    return str(stored) if stored else None
+
+
 def student_generation() -> str | None:
-    stored = settings_store.get("student_passcode_hash")
+    try:
+        stored = _stored_student_hash()
+    except settings_store.SettingsUnavailable:
+        return None  # no cookie is valid until the hash can be read
     if stored:
         return _generation(str(stored))
     env_code = config.env("STUDENT_PASSCODE")
@@ -90,9 +108,13 @@ def admin_generation() -> str | None:
 
 
 def check_student_passcode(passcode: str) -> bool:
-    stored = settings_store.get("student_passcode_hash")
+    try:
+        stored = _stored_student_hash()
+    except settings_store.SettingsUnavailable as exc:
+        config.log.warning("student login refused: the settings table could not be read")
+        raise HTTPException(503, SIGN_IN_UNAVAILABLE) from exc
     if stored:
-        return verify_passcode_hash(passcode, str(stored))
+        return verify_passcode_hash(passcode, stored)
     env_code = config.env("STUDENT_PASSCODE")
     if not env_code:
         raise HTTPException(503, "The course passcode is not set up yet.")
