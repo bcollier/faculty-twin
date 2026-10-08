@@ -56,6 +56,7 @@ export function wrap(text, width, maxLines = 4) {
   return lines;
 }
 
+/** Append one SVG <text> to `parent` with each line as a <tspan>, `lh` apart; returns the text node. */
 function textBlock(parent, lines, { x, y, size, lh, fill, weight = 400, anchor = 'start', family = SANS }) {
   const t = paint(node('text', { x, y, 'font-size': size, 'font-weight': weight, 'text-anchor': anchor }),
     { fill, 'font-family': family });
