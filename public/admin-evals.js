@@ -376,18 +376,32 @@ function renderActive() {
   $('#ev-pause').hidden = !E.driving;
 }
 
+/* Drives one run. Cancel (or a finished run) can clear E.active while a step is in flight, so the loop
+   holds its own `run` and stops as soon as E.active is no longer that run; E.driving is always reset. */
 async function drive() {
   if (!E.active || E.driving) return;
+  const run = E.active;
   E.driving = true;
   E.paused = false;
   renderActive();
+  try {
+    await driveRun(run);
+  } finally {
+    E.driving = false;
+    if (E.active === run) E.paused = true;
+    renderActive();
+  }
+}
+
+async function driveRun(run) {
   const st = $('#ev-active-status');
   let failures = 0;
   say(st, 'Running. Keep this page open; you can pause at any time and resume later.');
-  while (!E.paused && E.active) {
+  while (!E.paused && E.active === run) {
     let r;
     try {
-      r = await api(`/api/admin/evals/runs/${encodeURIComponent(E.active.id)}/step`, { method: 'POST', timeout: 75000 });
+      r = await api(`/api/admin/evals/runs/${encodeURIComponent(run.id)}/step`, { method: 'POST', timeout: 75000 });
+      if (E.active !== run) return; // cancelled (or replaced) while the step was running
     } catch (ex) {
       if (ex instanceof EvalAuthError) { say(st, ex.message, 'err'); break; }
       failures += 1;
@@ -402,7 +416,7 @@ async function drive() {
       break;
     }
     failures = 0;
-    E.active.progress = r.data.progress;
+    run.progress = r.data.progress;
     renderActive();
     if (r.data.waiting) {
       say(st, `${r.data.waiting.reason} Waiting ${r.data.waiting.seconds} s.`);
@@ -413,18 +427,14 @@ async function drive() {
     if (row) say(st, `Answered ${row.qid} with ${row.generator} (${outcomeText(row)}) in ${row.seconds} s.`);
     if (r.data.progress.finished) {
       say(st, `Finished: ${r.data.progress.status}.`, 'ok');
-      const id = E.active.id;
       E.active = null;
       E.driving = false;
       renderActive();
       await Promise.all([loadRuns(), loadCard()]);
-      openRun(id);
+      openRun(run.id);
       return;
     }
   }
-  E.driving = false;
-  E.paused = true;
-  renderActive();
 }
 $('#ev-resume').addEventListener('click', drive);
 $('#ev-pause').addEventListener('click', () => { E.paused = true; say($('#ev-active-status'), 'Pausing after this answer...'); });

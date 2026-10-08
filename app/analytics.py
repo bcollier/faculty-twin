@@ -297,7 +297,9 @@ def aggregate(
         score = r.get("top_score")
         if score is not None and (g["best_score"] is None or float(score) > g["best_score"]):
             g["best_score"] = float(score)
-    gap_list = sorted(gaps.values(), key=lambda g: (-g["count"], str(g["last_at"] or "")), reverse=False)[:TOP_N]
+    # Most asked first; ties newest first (two stable sorts), so the cut at TOP_N drops the oldest.
+    gap_list = sorted(gaps.values(), key=lambda g: str(g["last_at"] or ""), reverse=True)
+    gap_list = sorted(gap_list, key=lambda g: -g["count"])[:TOP_N]
 
     faq_titles = faq_titles or {}
     faq_list = [{"id": k, "title": faq_titles.get(k, k), "count": v} for k, v in faq_hits.most_common()]
