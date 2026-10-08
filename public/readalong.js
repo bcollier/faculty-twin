@@ -123,6 +123,7 @@ export function stem(raw) {
   return w;
 }
 
+/** A word worth lighting up on the slide: once normalized, 3 characters or more, a letter among them, not a stopword. */
 function isContent(word) {
   const n = normWord(word);
   return n.length >= 3 && !STOPWORDS.has(n) && /[a-z]/.test(n);
