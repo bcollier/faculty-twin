@@ -147,3 +147,20 @@ def test_failed_judge_calls_are_skipped_and_counted():
     c = eval_explore.compare(RUN_A, ROWS_A)
     assert c["errors_skipped"] == {"openrouter:gemini": 1}
     assert "openrouter:gemini" not in c["judges"]  # a judge with only errors gets no column of fake fails
+
+
+def test_every_answer_kind_has_a_label_in_both_eval_views():
+    """A new answer kind (like cross_course on Oct 8) must get a name in Settings > Evals, not a raw code."""
+    import re
+    from pathlib import Path
+
+    from app import eval_core
+
+    root = Path(__file__).resolve().parents[1]
+    for name, table in (("admin-evals.js", "OUTCOMES"), ("admin-evals-explore.js", "OUTCOME_NAMES")):
+        js = (root / "public" / name).read_text()
+        block = js[js.index(f"const {table} = {{") :]
+        block = block[: block.index("};")]
+        keys = set(re.findall(r"\b([a-z_]+):", block))
+        missing = set(eval_core.ROUTE_OF_KIND) - keys
+        assert not missing, f"{name} has no label for {sorted(missing)}"
