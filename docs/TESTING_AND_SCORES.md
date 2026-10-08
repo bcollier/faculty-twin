@@ -32,7 +32,8 @@ The path is saved with the question as its **kind**.
 | 0 | Added Oct 8. A student reports a broken quiz, a broken submission, or an API key out of credits: a keyword pre-check, then one small classifier call (`app/alerts.py`, docs/SPEC.md "Instructor alerts") | `alert` | no | yes (the classifier) | "Thanks, I've flagged this for Prof. Collier." when a text went out or the alert was stored for Settings, otherwise "Please email Prof. Collier or the TA." with the TA card |
 | 1 | The question matches a suggested question (same words, ignoring case and punctuation, course fits the filter) | `stored_topic` | no | no | The stored, pre-generated walkthrough, with fresh signed links |
 | 2 | The question matches an entry in my course FAQ (`app/faq.py`, `app/faq_entries.json`) | `faq` | no | no | My written FAQ answer, word for word, with link buttons and TA contact cards |
-| 3 | Embed the question with Voyage once, rank every visible slide and every course-info chunk from Canvas with the same vector (`rank()` in `app/retrieval.py`). The best info chunk scores at least the course-info threshold (0.55 unless changed in Settings) and beats the best slide (`app/course_info.py`) | `course_info` | yes | yes (one grounded answer call) | A short answer in my voice written only from the top 3 Canvas chunks, with buttons that open those Canvas pages |
+| 2a | Added Oct 8. Embed the question once; a request only I can act on (a regrade, an extension, an absence, a meeting, access problems: `personal_request()` in `app/logistics.py`, keywords only) | `logistics` | yes | no | The "that one is for me directly" referral, with the Calendly button |
+| 3 | Embed the question with Voyage once, rank every visible slide and every course-info chunk from Canvas with the same vector (`rank()` in `app/retrieval.py`). The best info chunk scores at least the course-info threshold (0.55 unless changed in Settings) and beats the best slide by the course-info margin (0.05 unless changed in Settings; added Oct 8) (`app/course_info.py`) | `course_info` | yes | yes (one grounded answer call) | A short answer in my voice written only from the top 3 Canvas chunks, with buttons that open those Canvas pages |
 | 4 | No slide at or above the slide threshold (0.52 unless changed in Settings), and either web answers are off, or the scope check (`app/web_answer.py`, added Oct 8) says it is off-topic or is unsure, or today's web answer cap is used up | `not_covered` | yes | only the scope check, when its keyword pre-check misses | The not-covered reply |
 | 4a | No slide clears the threshold and the scope check says it is about meetings, grades, deadlines and the like | `logistics` | yes | only if the keyword pre-check missed it | The "that one is for me directly" referral |
 | 4b | No slide clears the threshold and the scope check says it is course-adjacent (AI, data, agents, coding tools), web answers are on and today's cap has room | `web` | yes | yes (the scope check unless keywords decide, then one call with the provider's web search tool) | "Beyond my slides: from the web": a short answer from a web search, 2 to 4 source links, and the closest slides in my course |
@@ -111,7 +112,7 @@ four decimals; the page shows three.
 
 For a **From Canvas** row it is the best course-info chunk's score instead
 (the same cosine similarity, against the Canvas index), which is at least
-the course-info threshold and higher than every slide.
+the course-info threshold and at least the course-info margin higher than every slide.
 
 The log stores the score, not the threshold in force when the question was
 asked. After changing a threshold in Settings, compare rows against the
@@ -252,13 +253,14 @@ Settings, Limits and access, **Answer thresholds** holds both cutoffs:
 | Threshold | What it decides | Default when Settings has no override |
 | --- | --- | --- |
 | Slide threshold | "Slides scoring 0.52 or higher are used." Below it on every slide, the question is not covered | `NOT_COVERED_THRESHOLD` in `app/retrieval.py` (0.52, chosen by hand) |
-| Course-info threshold | The best Canvas chunk must score at least this and beat the best slide to answer from Canvas | the `INFO_THRESHOLD` environment variable, else 0.55 |
+| Course-info threshold | The best Canvas chunk must score at least this and beat the best slide by the margin to answer from Canvas | the `INFO_THRESHOLD` environment variable, else 0.55 |
+| Course-info margin (added Oct 8) | How much the best Canvas chunk must beat the best slide by. Close calls go to the slides | the `INFO_MARGIN` environment variable, else 0.05 |
 
 - Each shows its current value and where it comes from: my code default, the
   environment variable, or a Settings override.
-- Values run from 0.30 to 0.90 and are kept to 3 decimals. "Reset to default"
+- Thresholds run from 0.30 to 0.90 and the margin from 0.00 to 0.30, kept to 3 decimals. "Reset to default"
   removes the override, so the default above applies again.
-- The values are stored as `slide_threshold` and `info_threshold` in the
+- The values are stored as `slide_threshold`, `info_threshold` and `info_margin` in the
   `settings` table and read through its 30-second cache on every question, so
   a change reaches every warm server within 30 seconds. No deploy needed.
 - Every change is recorded (who, when, old value to new value) in
@@ -286,8 +288,13 @@ when there is one, otherwise the `INFO_THRESHOLD` environment variable
 (default 0.55). Both are read on every question; an override in Settings
 applies within 30 seconds, while a change to the variable in Vercel takes
 effect on the next deploy. The best Canvas chunk
-must score at least this much **and** beat the best slide; otherwise the
-question goes on to the slides as before. 0.55 starts just above the
+must score at least this much **and** beat the best slide by the margin
+(added Oct 8, default 0.05); otherwise the question goes on to the slides,
+or to the web path when no slide clears the slide threshold. The Oct 8
+course-set comparison is why: Canvas class summaries beat the right slides
+by only 0.003 to 0.011 on three concept questions and answered them from
+Canvas. A request only I can act on (a regrade, an extension) never gets a
+Canvas answer, whatever the scores. 0.55 starts just above the
 logistics band from the Oct 7 eval (0.54 to 0.55 against slides), so a
 question has to match a Canvas page clearly before it is answered from one.
 Re-check it with real questions once the Canvas index is built: a policy or

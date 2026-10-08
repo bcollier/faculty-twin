@@ -294,9 +294,17 @@ def answer(
     info["top_score"] = best_slide
     info["top_slide_id"] = records[ranked[0][0]].get("id") if ranked else None  # Analytics topics
 
-    # Course info from Canvas (spec step 6a): wins when it clears the info threshold and beats every slide.
+    # A request only Ben can act on (a regrade, an extension, an absence) goes to him, never to Canvas or
+    # the slides (spec steps 6a and 7a). Keyword check only: no model call.
+    if logistics.personal_request(question):
+        info["kind"], info["kind_source"] = logistics.LOGISTICS, "keyword"
+        return _referral(question, course, content), info
+
+    # Course info from Canvas (spec step 6a): wins when it clears the info threshold and beats the best
+    # slide by the info margin. Otherwise the slides answer, or, when no slide clears its threshold, the
+    # web path (step 7b) gets its turn even though a weaker Canvas chunk exists.
     hits = course_info.top_hits(info_ranked, info_records)
-    if hits and hits[0].score >= course_info.threshold() and (best_slide is None or hits[0].score > best_slide):
+    if hits and course_info.wins(hits[0].score, best_slide):
         used_model()
         with usage.purpose("course_info"):
             result = course_info.answer(

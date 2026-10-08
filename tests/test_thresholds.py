@@ -205,3 +205,50 @@ def test_info_answer_flips_at_the_overridden_threshold(with_info, student, monke
     assert _ask(student, "Is the lab required?")["kind"] == "course_info"
     settings_store.put({"info_threshold": 0.75})
     assert _ask(student, "Is the lab required?").get("kind") != "course_info"
+
+
+# ---------------------------------------------------------------- the course-info margin (added Oct 8)
+
+def test_info_margin_precedence(monkeypatch):
+    assert thresholds.info_margin_effective() == (0.05, "code")
+    assert course_info.margin() == 0.05
+    monkeypatch.setenv("INFO_MARGIN", "0.08")
+    assert thresholds.info_margin_effective() == (0.08, "env")
+    monkeypatch.setenv("INFO_MARGIN", "lots")
+    assert thresholds.info_margin_effective() == (0.05, "code")
+    settings_store.put({"info_margin": 0.1})
+    assert thresholds.info_margin_effective() == (0.1, "settings")
+    settings_store.put({"info_margin": 0.0})  # zero is a real value: Canvas then only has to beat the slides
+    assert thresholds.info_margin_effective() == (0.0, "settings")
+    settings_store.put({"info_margin": 0.5})  # out of range: ignored
+    assert thresholds.info_margin_effective() == (0.05, "code")
+
+
+def test_get_thresholds_view_has_the_margin(admin):
+    body = admin.get("/api/admin/thresholds").json()
+    assert body["margin"] == {"value": 0.05, "default": 0.05, "source": "code", "override": None,
+                              "min": 0.0, "max": 0.3}
+
+
+@pytest.mark.parametrize("value", [-0.01, 0.31, "abc"])
+def test_put_margin_rejects_out_of_range(admin, value):
+    assert admin.put("/api/admin/thresholds", json={"info_margin": value}).status_code == 400
+    assert thresholds.info_margin_effective() == (0.05, "code")
+
+
+def test_put_margin_saves_resets_and_records_history(admin):
+    body = admin.put("/api/admin/thresholds", json={"info_margin": 0.0812}).json()
+    assert body["margin"]["value"] == 0.081 and body["margin"]["source"] == "settings"
+    body = admin.put("/api/admin/thresholds", json={"info_margin": 0}).json()
+    assert body["margin"]["value"] == 0.0 and body["margin"]["source"] == "settings"
+    body = admin.put("/api/admin/thresholds", json={"info_margin": None}).json()
+    assert body["margin"]["source"] == "code"
+    assert [(h["setting"], h["old"], h["new"]) for h in body["history"]] == [
+        ("info_margin", 0.0, 0.05), ("info_margin", 0.081, 0.0), ("info_margin", 0.05, 0.081)]
+
+
+def test_settings_page_has_the_margin_field():
+    html = (ROOT / "public" / "admin.html").read_text()
+    js = (ROOT / "public" / "admin.js").read_text()
+    assert 'id="info-margin"' in html and 'id="info-margin-form"' in html
+    assert "info_margin" in js

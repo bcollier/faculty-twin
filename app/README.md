@@ -29,7 +29,7 @@ One FastAPI app, deployed on Vercel as a single Python function (`app/main.py`, 
 | `narration.py` | The narration call and its validators (slide ids, 110 words, 900 characters, grounding, injection, PG, access codes, name tokens), retry once, then speaker notes |
 | `llm.py` | One `complete_json()` for Anthropic, OpenAI and OpenRouter, plain httpx; the provider and model come from Settings |
 | `prompts.py` | The registry of every prompt a model sees, editable in Settings > Prompts, with versioned history in the bucket |
-| `thresholds.py` | The effective slide and course-info thresholds (code default, environment, or Settings override) and their routes |
+| `thresholds.py` | The effective slide and course-info thresholds and the course-info margin (code default, environment, or Settings override) and their routes |
 
 **Voice**
 

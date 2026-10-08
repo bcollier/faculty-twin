@@ -8,9 +8,13 @@ index of Canvas material after the course FAQ and before slide narration:
 1. The question is embedded once; the same vector scores the slides and the
    info chunks, both with Ben's `rank()` (app/retrieval.py, unchanged).
 2. When the best info chunk scores at least the info threshold (Settings
-   override, else env `INFO_THRESHOLD`, else 0.55; app/thresholds.py) and beats the best slide, the top 3 chunks go to one model call
-   through app/llm.py (the active provider and model) with a strict grounding
-   prompt: Ben's first-person voice, at most 120 words, only from the chunks.
+   override, else env `INFO_THRESHOLD`, else 0.55; app/thresholds.py) and beats
+   the best slide by at least the info margin (Settings override, else env
+   `INFO_MARGIN`, else 0.05; added Oct 8), and the question is not a personal
+   request only Ben can act on (`logistics.personal_request`), the top 3 chunks
+   go to one model call through app/llm.py (the active provider and model) with
+   a strict grounding prompt: Ben's first-person voice, at most 120 words, only
+   from the chunks.
 3. The reply is validated (word cap, no web addresses, no `[student]`, no
    access-code-like tokens, grounded in the chunks' words, no long echo of the
    question). Any failure falls back to the first sentences of the top chunk.
@@ -80,6 +84,23 @@ class Result:
 def threshold() -> float:
     """The Settings override (`info_threshold`), else env `INFO_THRESHOLD`, else 0.55. Read per question."""
     return thresholds.info_threshold()
+
+
+def margin() -> float:
+    """The Settings override (`info_margin`), else env `INFO_MARGIN`, else 0.05. Read per question."""
+    return thresholds.info_margin()
+
+
+def wins(best_info: Optional[float], best_slide: Optional[float]) -> bool:
+    """True when the best Canvas chunk should answer instead of the slides (docs/SPEC.md step 6a).
+
+    It must clear the info threshold and beat the best slide by the margin. Added Oct 8: the course-set
+    eval had Canvas class summaries answering concept questions they led the slides by 0.003 to 0.011.
+    """
+    if best_info is None or best_info < threshold():
+        return False
+    # Rounded so a lead of exactly the margin counts (0.68 - 0.63 is 0.04999... in floating point).
+    return best_slide is None or round(best_info - best_slide, 6) >= margin()
 
 
 def searchable(content: Any, course: Optional[str]) -> tuple[list[dict[str, Any]], Optional[np.ndarray]]:

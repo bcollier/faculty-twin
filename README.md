@@ -409,7 +409,7 @@ Without `VOYAGE_API_KEY`, `build_index` writes everything except `embeddings.npy
 | Voice | Picks his ElevenLabs clone, another ElevenLabs voice, a free Microsoft voice, or captions only, with previews; sets the fallback when ElevenLabs fails or hits its cap. The label students see always matches the voice |
 | Courses and source material | Adds courses and sessions, hides a session from students, uploads slides, captions, video or notebooks straight to the bucket for the worker |
 | Limits and access | The two daily voice caps and passcode rotation (rotating signs every student out) |
-| Answer thresholds | Overrides the slide threshold (default 0.52, Ben's value in `app/retrieval.py`) and the course-info threshold (0.55), with a reset and a change history |
+| Answer thresholds | Overrides the slide threshold (default 0.52, Ben's value in `app/retrieval.py`), the course-info threshold (0.55) and the course-info margin (0.05, added Oct 8), with a reset and a change history |
 | Activity | Today's counters and the last 50 questions with their kind badge, top score, model and latency |
 | Prompts | Edits any prompt a model sees, with a word diff against the default and the saved version, a draft test, a required note, and restorable history. The safety checks in code run whatever the prompt says |
 | Analytics | Questions, covered rate, spend estimate by provider and model, tokens by purpose, voice characters, topics by course, session and slide, engagement, model scores. Test traffic is hidden unless ticked |
