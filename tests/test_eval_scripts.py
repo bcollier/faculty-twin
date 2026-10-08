@@ -82,3 +82,35 @@ def test_import_history_writes_runs_baseline_and_calibration(tmp_path):
     assert {c["judge"] for c in card["calibration"]} == {"openai:gpt-6.1-sol", "openai:gpt-6-luna"}
     printed = "\n".join(lines)
     assert not any(r["question"] in printed for r in rows)
+
+
+def test_import_run_uploads_any_cli_folder_with_jev_probabilities(tmp_path):
+    rows = [dict(r) for r in PARITY["results"]]
+    for r in rows:  # an invented Jev judgement with its probability on every row
+        r["judgements"] = [{"judge": "jev:jev-latest", "verdict": "pass", "p_pass": 0.81,
+                            "scores": {"grounded": 4.2}, "rationale": "P(pass) 0.81."}]
+    folder = tmp_path / "20261008T183422Z"
+    _fake_run(folder, rows, "jev:jev-latest", 12.0)
+    bucket, lines = eval_store.MemoryBucket(), []
+    gen = import_eval_history.parse_generator("anthropic:claude-sonnet-5-5")
+    assert import_eval_history.import_run(folder, bucket, gen, ["Retrieval before PR #105."], out=lines.append) == 0
+    run = eval_store.read_run(bucket, "20261008T183422Z")
+    assert run["status"] == "done" and "jev:jev-latest" in run["name"]
+    assert run["notes"][0] == import_eval_history.CLI_RUN_NOTE and run["notes"][1] == "Retrieval before PR #105."
+    results = eval_store.read_results(bucket, "20261008T183422Z")
+    assert len(results) == len(rows) and results[0]["judgements"][0]["p_pass"] == 0.81
+    assert [r["id"] for r in eval_store.read_index(bucket)] == ["20261008T183422Z"]
+    printed = "\n".join(lines)
+    assert f"{len(rows)} judgements with P(pass)" in printed
+    assert not any(r["question"] in printed for r in rows)
+
+
+def test_import_run_needs_a_generator_and_a_safe_folder(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError):
+        import_eval_history.parse_generator("claude-sonnet-5-5")
+    with pytest.raises(eval_store.StoreError):
+        import_eval_history.import_run(tmp_path / "not-a-run-id", eval_store.MemoryBucket(),
+                                       {"provider": "anthropic", "model": "m"})
+    assert import_eval_history.main(["--run", str(tmp_path / "20261008T183422Z")]) == 2
