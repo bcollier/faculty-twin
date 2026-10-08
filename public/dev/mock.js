@@ -256,15 +256,23 @@ const MODELS = {
   }),
 };
 
-const LOG = Array.from({ length: 50 }, (_, i) => ({
-  created_at: new Date(Date.now() - i * 17 * 60e3).toISOString(),
-  question: i % 9 === 4 ? 'Mock off-topic question' : `Mock student question number ${50 - i}`,
-  covered: i % 9 !== 4,
-  top_score: i % 9 === 4 ? 0.21 : 0.55 + ((i * 7) % 30) / 100,
-  provider: i % 4 === 0 ? 'openrouter' : 'anthropic',
-  model: i % 4 === 0 ? 'qwen/mock-model-6' : 'claude-sonnet-5-5',
-  latency_ms: 900 + ((i * 337) % 2400),
-}));
+const MOCK_KINDS = ['course_content', 'course_content', 'stored_topic', 'faq', 'not_covered', 'logistics'];
+const LOG = Array.from({ length: 50 }, (_, i) => {
+  const kind = MOCK_KINDS[i % MOCK_KINDS.length];
+  const searched = kind === 'course_content' || kind === 'not_covered' || kind === 'logistics';
+  const model = kind === 'course_content' || kind === 'logistics';
+  return {
+    at: new Date(Date.now() - i * 17 * 60e3).toISOString(),
+    question: kind === 'not_covered' ? 'Mock off-topic question' : `Mock student question number ${50 - i}`,
+    covered: kind === 'course_content' || kind === 'stored_topic',
+    kind,
+    kind_inferred: i > 40,
+    top_score: !searched ? null : kind === 'not_covered' ? 0.41 : 0.55 + ((i * 7) % 15) / 100,
+    provider: model ? (i % 4 === 0 ? 'openrouter' : 'anthropic') : null,
+    model: model ? (i % 4 === 0 ? 'qwen/mock-model-6' : 'claude-sonnet-5-5') : null,
+    latency_ms: kind === 'faq' ? 2 : kind === 'stored_topic' ? 140 : 900 + ((i * 337) % 2400),
+  };
+});
 
 /* ---------------- router ---------------- */
 

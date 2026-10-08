@@ -745,6 +745,24 @@ function renderToday() {
     el('div', {}, el('dt', { text: humanize(k) }), el('dd', { text: fmtNum(v) }))));
 }
 
+/* What answered each question (question_log.kind). docs/TESTING_AND_SCORES.md explains each one. */
+const KIND_BADGES = {
+  course_content: { text: 'Covered', cls: 'ok', title: 'Slides found at or above the threshold, narrated by the model.' },
+  stored_topic: { text: 'Stored answer', cls: 'ok', title: 'A suggested question: its stored answer was replayed. No search, no model.' },
+  faq: { text: 'FAQ', cls: 'info', title: 'Answered from my course FAQ, word for word. No search, no model.' },
+  logistics: { text: 'Referred to Ben', cls: 'info', title: 'A logistics question: the student was sent to me.' },
+  not_covered: { text: 'Not covered', cls: 'warn', title: 'No slide scored at or above the threshold.' },
+};
+function kindBadge(x) {
+  const fallback = x.covered ? KIND_BADGES.course_content : KIND_BADGES.not_covered;
+  const b = KIND_BADGES[x.kind] || fallback;
+  const title = x.kind_inferred ? `${b.title} (Inferred from the score: logged before kinds were recorded.)` : b.title;
+  return el('span', { class: `pill ${b.cls}`, text: b.text, title });
+}
+function modelText(x) {
+  return [x.provider, x.model].filter(Boolean).join(' / ') || 'none';
+}
+
 async function loadActivity() {
   try {
     const [st, lg] = await Promise.all([api('/api/admin/status'), api('/api/admin/log')]);
@@ -752,11 +770,11 @@ async function loadActivity() {
     const rows = lg.ok ? asList(lg.data, 'rows', 'log', 'items').slice(0, 50) : [];
     $('#log-body').replaceChildren(...(rows.length ? rows.map(x => el('tr', {},
       el('td', { class: 'small muted', text: fmtWhen(x.created_at || x.at || x.time) }),
-      el('td', {}, el('span', { class: `pill ${x.covered ? 'ok' : 'warn'}`, text: x.covered ? 'Covered' : 'Not covered' })),
+      el('td', {}, kindBadge(x)),
       el('td', { class: 'full', text: x.question || '' }),
-      el('td', { class: 'num', 'data-label': 'Top score', text: x.top_score != null ? Number(x.top_score).toFixed(3) : '' }),
+      el('td', { class: 'num', 'data-label': 'Top score', title: x.top_score != null ? null : 'No search ran', text: x.top_score != null ? Number(x.top_score).toFixed(3) : '' }),
       el('td', { class: 'num', 'data-label': 'Latency', text: x.latency_ms != null ? `${fmtNum(x.latency_ms)} ms` : '' }),
-      el('td', { class: 'small full', text: [x.provider, x.model].filter(Boolean).join(' / ') }),
+      el('td', { class: `small full${x.provider || x.model ? '' : ' muted'}`, 'data-label': 'Model', title: x.provider || x.model ? null : 'No model was called for this question', text: modelText(x) }),
     )) : [el('tr', {}, el('td', { colspan: '6', class: 'muted', text: lg.ok ? 'No questions logged yet.' : detail(lg, 'Couldn\'t load the log.') }))]));
   } catch (e) { /* auth handled in api(); network shows on next refresh */ }
 }

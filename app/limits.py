@@ -274,7 +274,11 @@ def log_question(
     course: str | None = None,
     kind: str | None = None,
 ) -> None:
-    """`kind` is "course_content", "logistics", or None (not covered, or never classified)."""
+    """One question-log row. See docs/TESTING_AND_SCORES.md for what each field means.
+
+    `kind` is what answered: "course_content", "stored_topic", "faq", "logistics",
+    or "not_covered". `provider` and `model` are None when no model was called.
+    """
     increment(f"{'covered' if covered else 'not_covered'}:{_today()}", 1)
     row = {
         # Scrubbed of emails, numbers, and recognisable names first (app/privacy.py).
@@ -304,14 +308,31 @@ def log_question(
     del _mem_log[:-200]
 
 
+LOG_COLUMNS = "at,question,covered,top_score,provider,model,latency_ms,course"
+
+
+def missing_kind_column(exc: Exception) -> bool:
+    """True when PostgREST refused a request because question_log has no `kind` column yet.
+
+    A select of an unknown column fails with Postgres code 42703 ("column
+    question_log.kind does not exist"); an insert fails with PGRST204 ("Could not
+    find the 'kind' column ... in the schema cache").
+    """
+    text = str(exc)
+    return "kind" in text and ("42703" in text or "PGRST204" in text or "does not exist" in text
+                               or "Could not find" in text)
+
+
 def recent_questions(limit: int = 50) -> list[dict[str, Any]]:
+    """The newest question-log rows. Works before and after the `kind` column exists."""
     if config.supabase_configured():
-        return supa.select(
-            "question_log",
-            {
-                "select": "at,question,covered,top_score,provider,model,latency_ms,course",
-                "order": "at.desc",
-                "limit": str(limit),
-            },
-        )
+        params = {"select": LOG_COLUMNS + ",kind", "order": "at.desc", "limit": str(limit)}
+        try:
+            return supa.select("question_log", params)
+        except supa.SupabaseError as exc:
+            if not missing_kind_column(exc):
+                raise
+            # Run `alter table question_log add column if not exists kind text;` (supabase/schema.sql).
+            config.log.warning("question_log has no kind column yet; reading without it")
+            return supa.select("question_log", {**params, "select": LOG_COLUMNS})
     return list(reversed(_mem_log[-limit:]))

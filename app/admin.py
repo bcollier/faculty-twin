@@ -27,8 +27,25 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
-from . import auth, config, edge_voice, limits, llm, playlist, settings_store, speech, storage, supa, voices
+from . import (
+    auth,
+    config,
+    edge_voice,
+    faq,
+    limits,
+    llm,
+    logistics,
+    playlist,
+    retrieval,
+    settings_store,
+    speech,
+    storage,
+    supa,
+    voices,
+)
 from .main import (
+    NOT_COVERED,
+    STORED_TOPIC,
     PasscodeBody,
     RetrievalNotReady,
     Retriever,
@@ -438,10 +455,47 @@ def status(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
     }
 
 
+# Kinds that answer without calling any model: their rows show "none" for the model.
+NO_MODEL_KINDS = {STORED_TOPIC, faq.KIND, NOT_COVERED}
+
+
+def infer_kind(row: dict[str, Any]) -> str:
+    """Best guess at what answered an older row that has no `kind` (docs/TESTING_AND_SCORES.md).
+
+    A stored suggested question and an FAQ hit run no search, so their top score
+    is empty; a logistics referral has a score at or over the threshold but is not covered.
+    """
+    score = row.get("top_score")
+    if row.get("covered"):
+        return STORED_TOPIC if score is None else logistics.COURSE_CONTENT
+    if score is None:
+        return faq.KIND
+    if retrieval.NOT_COVERED_THRESHOLD is not None and float(score) >= retrieval.NOT_COVERED_THRESHOLD:
+        return logistics.LOGISTICS
+    return NOT_COVERED
+
+
+def activity_row(row: dict[str, Any]) -> dict[str, Any]:
+    """A question-log row for the Activity table: a kind on every row, no model where none was called."""
+    out = dict(row)
+    kind = out.get("kind")
+    inferred = False
+    if not kind:
+        kind, inferred = infer_kind(out), True
+    elif kind == logistics.COURSE_CONTENT and out.get("covered") and out.get("top_score") is None:
+        # Rows logged before stored_topic existed recorded a stored playlist as course_content.
+        kind, inferred = STORED_TOPIC, True
+    out["kind"] = kind
+    out["kind_inferred"] = inferred
+    if kind in NO_MODEL_KINDS:
+        out["provider"] = out["model"] = None
+    return out
+
+
 @router.get("/log")
 def question_log(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
     try:
-        return {"rows": limits.recent_questions(50)}
+        return {"rows": [activity_row(r) for r in limits.recent_questions(50)]}
     except supa.SupabaseError as exc:
         raise _db_error(exc) from exc
 

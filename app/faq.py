@@ -30,6 +30,7 @@ from typing import Any, Optional
 
 from . import config
 
+KIND = "faq"
 ENTRIES_FILE = Path(__file__).with_name("faq_entries.json")
 COURSE_LABELS = {"70445": "70-445", "45884": "45-884"}
 CALENDLY = {"label": "Book a 30-minute meeting", "url": "https://calendly.com/bencollierphd"}
@@ -134,7 +135,7 @@ def reply(question: str, course: Optional[str], m: Match, follow_ups: list[str])
     return {
         "question": question,
         "covered": False,
-        "kind": "faq",
+        "kind": KIND,
         "faq_id": m.entry.id,
         "title": m.entry.title,
         "segments": [],
