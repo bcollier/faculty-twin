@@ -26,9 +26,6 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
-# Ben's hand-written retrieval (AGENTS.md, "Code Ben writes by hand"): agents never edit it,
-# so it is not held to rules an agent would have to fix.
-"app/retrieval.py" = ["ALL"]
 # Prompt text the models read as written: wrapping a line would change the prompt.
 "app/prompts.py" = ["E501"]
 # Test data, fake model replies and assertion messages read better on one line.

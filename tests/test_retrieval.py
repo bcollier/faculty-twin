@@ -1,8 +1,4 @@
-"""Tests for the hand-written retrieval code in app/retrieval.py.
-
-These three tests fail until Ben writes `rank` and `select_segments`
-(they raise NotImplementedError today). They are deliberately not marked
-xfail: a red test is the to-do list.
+"""Tests for the retrieval code in app/retrieval.py (`rank` and `select_segments`, first written by Ben).
 
 The vectors are synthetic. Direction 0 is "the topic"; every slide is a unit
 vector, so its cosine with the question is easy to read off: a slide built as

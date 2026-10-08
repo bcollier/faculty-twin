@@ -2,6 +2,8 @@
 
 Oct 5, 2026 · Ben Collier · revised Oct 5 (two full courses, private content, Settings page)
 
+> **Changed Oct 8: the course assignment is over.** Faculty Twin is now a project I keep improving, not a 15-113 submission. The deadlines, tiers, deliverables checklist, and "Code Ben writes by hand" rules below are history: they no longer limit scope or say who may edit which code. Planned work is in [V2.md](V2.md).
+
 > **How to read the revisions.** I made decisions on October 5 that change scope and architecture. Where a decision changed, the original reasoning stays in place and a short **Changed Oct 5** note says what changed and why. Where the two disagree, the note wins.
 
 ## What we are building
@@ -1245,6 +1247,8 @@ Kept for the record. They describe the one-deck build.
 **Check:** ask a question on the deployed site and click through the whole answer on a computer and a phone.
 
 ## Code Ben writes by hand
+
+> **Changed Oct 8.** The assignment is over. These four pieces were written by me and stay as written until changed, but they are ordinary code now: agents may edit them, no commit trailer is needed, and `ruff` lints `app/retrieval.py`.
 
 The graders want to see changes you made yourself and can explain without notes. These four pieces are small, central to how the app behaves, and close to what you teach, so they are the ones to write without an AI tool.
 
