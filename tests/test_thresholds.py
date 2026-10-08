@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from page_source import page_source  # tests/fixtures is on sys.path (tests/conftest.py)
 from test_api import TEST_FAKE_embedder as FRUIT_EMBEDDER
 from test_course_info import FakeModel, with_info  # noqa: F401  (pytest fixture)
 from test_course_info import TEST_FAKE_embedder as INFO_EMBEDDER
@@ -233,6 +234,6 @@ def test_put_margin_saves_resets_and_records_history(admin):
 
 def test_settings_page_has_the_margin_field():
     html = (ROOT / "public" / "admin.html").read_text()
-    js = (ROOT / "public" / "admin.js").read_text()
+    js = page_source("admin.js")
     assert 'id="info-margin"' in html and 'id="info-margin-form"' in html
     assert "info_margin" in js

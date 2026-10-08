@@ -445,7 +445,7 @@ The pipeline, eval and CI diagrams, every endpoint with the file and function th
 | `prompt_log.md` | The prompts used to build the project, verbatim (required next to the README) |
 | `AGENTS.md` | Rules for AI coding agents in this repo (branching, privacy, copy) |
 | [`app/`](app/README.md) | The backend: one FastAPI app on Vercel. Routing, retrieval (`retrieval.py`, first written by Ben, rebuilt Oct 8), narration, voice, signed links, Settings API (`app/admin/`, one module per Settings section) |
-| [`public/`](public/README.md) | The frontend: the student page (`index.html`, `app.js` and its sections in `student/`, with Ben's `onClipEnded()` in `student/player.js`), the Settings page (`admin.html` and its scripts), styles |
+| [`public/`](public/README.md) | The frontend: the student page (`index.html`, `app.js` and its sections in `student/`, with Ben's `onClipEnded()` in `student/player.js`), the Settings page (`admin.html`, `admin.js` and its sections in `settings/`, and the section scripts `admin-*.js`), styles |
 | [`indexer/`](indexer/README.md) | The content pipeline and the upload worker, run on the local build machine |
 | [`evals/`](evals/README.md) | The eval harness: question checks, judges, rubric, reports, calibration cases |
 | [`localvoice/`](localvoice/README.md) | Local open-source voices for pre-generated audio (roadmap work) |

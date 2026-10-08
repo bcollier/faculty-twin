@@ -256,7 +256,7 @@ async function buildAnswer(question, course) {
 }
 
 /* admin state */
-// A session as GET /api/admin/courses lists it (app/admin.py list_courses).
+// A session as GET /api/admin/courses lists it (app/admin/courses.py, list_courses).
 function sessionRow(course, session, date, title, has) {
   return {
     id: `${course}-s${String(session).padStart(2, '0')}`, session, date, title, visible: true,
