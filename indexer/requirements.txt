@@ -1,0 +1,13 @@
+# Packages the content pipeline stages need on top of the root requirements.txt.
+# Never merged into the root file: Vercel bundles that one, and the function does not use these.
+# indexer/worker.py runs every stage with
+#   uv run --no-project --with-requirements requirements.txt --with-requirements indexer/requirements.txt ...
+# Versions match requirements-test.txt, which the test suite uses for the same code.
+python-pptx==1.0.2
+pypdf==6.19.0
+nbformat==5.11.1
+pillow==12.3.0
+scipy==1.18.1
+scikit-learn==1.9.1
+rapidfuzz==3.14.6
+nicknames==1.0.1

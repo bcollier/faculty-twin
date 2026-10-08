@@ -464,18 +464,17 @@ def embed_records(
     if todo and not key:
         return None, cached, 0
     if todo:
-        own = client is None
-        client = client or httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0))
+        session = client or httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0))
         try:
-            _embed_into_cache(todo, cache, key or "", client, sleep, log, usage)
+            _embed_into_cache(todo, cache, key or "", session, sleep, log, usage)
+            asked = set(todo)
+            vecs = [_trusted(cache.get(t)) for t in texts]
+            for i, vec in enumerate(vecs):
+                if vec is None and texts[i] in asked:
+                    vecs[i] = _placeholder_vector(records[i], cache, key, session, sleep, log, usage)
         finally:
-            if own:
-                client.close()
-        asked = set(todo)
-        vecs = [_trusted(cache.get(t)) for t in texts]
-        for i, vec in enumerate(vecs):
-            if vec is None and texts[i] in asked:
-                vecs[i] = _placeholder_vector(records[i], cache, key, client, sleep, log, usage)
+            if client is None:  # only close a client made here, and only after the placeholder retries
+                session.close()
     if any(v is None for v in vecs):
         raise EmbeddingError("some embeddings are missing from the cache after embedding")
     if not all(usable(v) for v in vecs):  # the guarantee rank() relies on: no zero-norm row

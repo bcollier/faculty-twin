@@ -192,6 +192,20 @@ class ZeroVoyage(pf.FakeVoyage):
         return httpx.Response(200, json={"data": data, "model": body["model"], "usage": {"total_tokens": 1}})
 
 
+def test_a_zero_vector_is_re_embedded_on_the_cli_path_too(archive, tmp_path, monkeypatch):
+    # Refactor review (Oct 8): with no injected client (the CLI), embed_records closed the client it made
+    # and then handed it to the placeholder retry, which failed with "client has been closed".
+    zero = ZeroVoyage(lambda text: text.startswith("Bananas"))
+    real_client = httpx.Client
+    monkeypatch.setattr(build_index.httpx, "Client",
+                        lambda *a, **k: real_client(transport=httpx.MockTransport(zero)))
+    code = build_index.build(archive, key="test-voyage-key", code_map=pf.code_map(tmp_path),
+                             sleep=lambda s: None, log=[].append)
+    assert code == 0
+    content = storage.load_local(archive / "_build")
+    assert (np.linalg.norm(content.matrix, axis=1) > 0.5).all()
+
+
 def test_a_zero_vector_is_re_embedded_with_the_placeholder_text(archive, tmp_path):
     zero = ZeroVoyage(lambda text: text.startswith("Bananas"))
     lines: list[str] = []
