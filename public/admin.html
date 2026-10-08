@@ -258,6 +258,28 @@
           </form>
         </div>
 
+        <h3 class="h-sub" id="web-h">Web answers (beyond my slides)</h3>
+        <form id="web-form" novalidate aria-labelledby="web-h">
+          <p class="hint">When no slide covers a question but it is about AI, data, agents or coding tools (for example "How do I set up n8n?"), the twin can answer from a live web search with the active model. The card is labeled "Beyond my slides: from the web", shows 2 to 4 source links and the closest slides in my course, and is never read in my voice clone. Off-topic and logistics questions are never answered from the web.</p>
+          <div class="grid-2">
+            <div>
+              <div class="field"><label class="check"><input type="checkbox" id="web-on"> Answer course-adjacent questions from the web</label></div>
+              <div class="field">
+                <label for="web-cap">Daily web answer cap</label>
+                <input id="web-cap" type="number" min="0" max="100000" step="10" aria-describedby="web-cap-hint">
+                <p class="hint" id="web-cap-hint"></p>
+              </div>
+            </div>
+            <div class="field">
+              <label for="web-voice">Speak web answers</label>
+              <select id="web-voice" aria-describedby="web-voice-hint"></select>
+              <p class="hint" id="web-voice-hint">Off means text only. Only the free Microsoft voices are offered; students see "AI voice (a stock voice, not mine)." next to the Listen button.</p>
+            </div>
+          </div>
+          <button class="btn btn-primary" type="submit">Save web answers</button>
+          <p class="status-line" id="web-status" role="status"></p>
+        </form>
+
         <h3 class="h-sub" id="thresholds-h">Answer thresholds</h3>
         <div id="sec-thresholds" aria-labelledby="thresholds-h">
           <p class="hint">Every question is scored against every slide and Canvas page with cosine similarity (the score from <code>rank()</code>, the same Top score shown in Activity). Measured so far, across two 10-question checks: on-topic questions scored 0.543 to 0.712 and off-topic ones 0.377 to 0.509. Higher thresholds decline more real questions; lower ones let off-topic questions through. <a href="https://github.com/bcollier/faculty-twin/blob/main/docs/TESTING_AND_SCORES.md#changing-the-thresholds-in-settings" target="_blank" rel="noopener">How the thresholds were chosen</a>. After a change, <a href="https://github.com/bcollier/faculty-twin/blob/main/docs/TESTING_AND_SCORES.md#run-a-new-test" target="_blank" rel="noopener">run an eval</a> to check it. Changes reach every server within 30 seconds.</p>

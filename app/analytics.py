@@ -169,13 +169,14 @@ def aggregate(
     faq_hits: Counter = Counter()
     sms = {"messages": 0, "segments": 0, "cost": 0.0}  # instructor alert texts (app/alerts.py)
     spend_day: dict[str, dict[str, float]] = {d: defaultdict(float) for d in day_list}
-    raw_tokens: dict[tuple[str, str, str, str], dict[str, int]] = defaultdict(lambda: {"in": 0, "out": 0, "calls": 0})
+    raw_tokens: dict[tuple[str, str, str, str], dict[str, int]] = defaultdict(
+        lambda: {"in": 0, "out": 0, "calls": 0, "searches": 0})
 
     for key, count in counters.items():
         k = usage.parse_key(key)
         if not k or k["day"] < first:
             continue
-        if k["kind"] == "usage" and k["metric"] in ("in", "out", "calls"):
+        if k["kind"] == "usage" and k["metric"] in ("in", "out", "calls", "searches"):
             raw_tokens[(k["day"], k["purpose"], k["provider"], k["model"])][k["metric"]] += count
         elif k["kind"] == "embed" and k["metric"] in ("tokens", "calls"):
             row = embed_rows.setdefault(k["model"], {"model": k["model"], "tokens": 0, "calls": 0})
@@ -197,23 +198,33 @@ def aggregate(
             faq_hits[k["name"]] += count
 
     unpriced: set[str] = set()
+    search_spend = 0.0  # USD for web searches (inside the model costs too; also reported on its own)
     for (day, purpose_name, provider, model), t in raw_tokens.items():
         cost = pricing.llm_cost(table, provider, model, t["in"], t["out"], live)
         if cost is None:
             unpriced.add(f"{provider}/{model}")
+        if t["searches"]:  # web searches are priced per search on top of the tokens
+            fee = pricing.search_cost(table, provider, t["searches"])
+            if fee is None:
+                unpriced.add(f"{provider} web search")
+            search_spend += fee or 0.0
+        else:
+            fee = None
         row = llm_rows.setdefault((provider, model), {"provider": provider, "model": model, "tokens_in": 0,
-                                                      "tokens_out": 0, "calls": 0, "cost": 0.0, "priced": True})
+                                                      "tokens_out": 0, "calls": 0, "searches": 0, "cost": 0.0,
+                                                      "priced": True})
         prow = purpose_rows.setdefault(purpose_name, {"purpose": purpose_name, "tokens_in": 0, "tokens_out": 0,
-                                                       "calls": 0, "cost": 0.0})
+                                                       "calls": 0, "searches": 0, "cost": 0.0})
         for target in (row, prow):
             target["tokens_in"] += t["in"]
             target["tokens_out"] += t["out"]
             target["calls"] += t["calls"]
-            target["cost"] += cost or 0.0
+            target["searches"] += t["searches"]
+            target["cost"] += (cost or 0.0) + (fee or 0.0)
         if cost is None:
             row["priced"] = False
         if day in spend_day:
-            spend_day[day][f"{provider} / {model}"] += cost or 0.0
+            spend_day[day][f"{provider} / {model}"] += (cost or 0.0) + (fee or 0.0)
 
     for row in embed_rows.values():
         cost = pricing.embed_cost(table, row["model"], row["tokens"])
@@ -304,7 +315,8 @@ def aggregate(
             "median_latency_ms": round(median(latencies)) if latencies else None,
             "est_spend_usd": _round(llm_total + embed_total + tts_total + sms["cost"], 4),
             "spend_parts": {"models": _round(llm_total, 4), "embeddings": _round(embed_total, 4),
-                            "voice": _round(tts_total, 4), "sms": _round(sms["cost"], 4)},
+                            "voice": _round(tts_total, 4), "sms": _round(sms["cost"], 4),
+                            "web_searches": _round(search_spend, 4)},
             "unpriced": sorted(unpriced),
         },
         "spend": {"series": series, "days": spend_series},

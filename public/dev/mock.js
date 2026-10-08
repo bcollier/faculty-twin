@@ -6,6 +6,7 @@
 // Student page scenarios (type these words in a question):
 //   (anything else)  covered answer, 4 segments; part 2 has code, part 3 has a class clip
 //   stanley / weather  not covered
+//   n8n / webanswer  "Beyond my slides: from the web" card (add "listen" for a stock-voice Listen button)
 //   faqmeet          FAQ answer with a link button (Calendly)
 //   faqta            FAQ answer for two courses with two TA contact cards
 //   logistics        logistics referral with the Calendly button and a TA card
@@ -191,7 +192,7 @@ async function buildAnswer(question, course) {
 
 /* admin state */
 const admin = {
-  settings: { provider: 'anthropic', model: 'claude-sonnet-5-5', voice_id: 'eleven:mock-voice-ben', voice_kind: 'clone',
+  settings: { provider: 'anthropic', model: 'claude-sonnet-5-5', web_answers_enabled: true, daily_web_answer_cap: 200, web_answers_today: 3, web_answer_voice: 'none', voice_id: 'eleven:mock-voice-ben', voice_kind: 'clone',
     voice_label: 'AI voice made from my recordings.', voice_fallback: 'captions', voice_fallback_voice: 'edge:en-US-AndrewMultilingualNeural',
     daily_voice_char_cap: 20000, daily_free_voice_char_cap: 200000, index_version: 7 },
   courses: COURSES.map(c => ({
@@ -353,6 +354,18 @@ async function route(url, method, body) {
       return json(200, { question: body.question, covered: false, kind: 'logistics', segments: [], sources: [], follow_ups: [],
         message: 'mock', links: [{ label: 'Book a 30-minute meeting', url: 'https://calendly.com/bencollierphd' }],
         contacts: [{ course: '70445', course_label: '70-445', name: '', email: 'ta-one@example.edu' }] });
+    }
+    if (q.includes('n8n') || q.includes('webanswer')) {
+      const spoken = q.includes('listen');
+      return json(200, { question: body.question, covered: true, kind: 'web', label: 'Beyond my slides: from the web',
+        title: 'Beyond my slides', segments: [], sources: [], follow_ups: [],
+        message: 'Placeholder web answer (mock). Install it with one command, open the editor in your browser, and build a workflow from a trigger node and a few action nodes.',
+        answers: [{ text: 'Placeholder web answer (mock).' }],
+        links: [{ label: 'Example docs page', url: 'https://example.com/docs' }, { label: 'Example guide', url: 'https://example.org/guide' }],
+        related: [1, 2, 3].map(n => ({ slide_id: `70445-s06-00${n}`, course: '70445', session: 6, slide_number: n,
+          title: `Mock related slide ${n}`, date: '2026-09-15', image: slideSvg({ course: '70445', session: 6, slide: n, title: `Mock related slide ${n}` }) })),
+        audio: spoken ? '/api/audio?t=bW9jaw&v=mock&s=mock' : null,
+        voice: spoken ? { kind: 'free', label: 'AI voice (a stock voice, not mine).' } : null });
     }
     if (q.includes('stanley') || q.includes('weather')) {
       return json(200, { question: body.question, covered: false, segments: [], sources: [], follow_ups: [] });

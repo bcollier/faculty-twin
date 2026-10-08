@@ -42,6 +42,7 @@ from . import (
     thresholds,
     usage,
     voices,
+    web_answer,
 )
 from .storage import Content
 
@@ -139,6 +140,11 @@ def get_completer() -> Callable[..., str]:
     return llm.complete_json
 
 
+def get_searcher() -> Callable[..., "web_answer.WebReply"]:
+    """The web search call for beyond-the-slides answers. Tests swap in a TEST FAKE."""
+    return web_answer.search
+
+
 def get_content() -> Content:
     return storage.store.get_or_503()
 
@@ -198,8 +204,8 @@ class RetrievalNotReady(Exception):
 # What answered a question, as written to question_log.kind (docs/SPEC.md, Data formats).
 STORED_TOPIC = "stored_topic"
 NOT_COVERED = "not_covered"
-LOG_KINDS = (logistics.COURSE_CONTENT, STORED_TOPIC, faq.KIND, course_info.KIND, logistics.LOGISTICS, NOT_COVERED,
-             alerts.KIND)
+LOG_KINDS = (logistics.COURSE_CONTENT, STORED_TOPIC, faq.KIND, course_info.KIND, logistics.LOGISTICS,
+             web_answer.KIND, NOT_COVERED, alerts.KIND)
 
 
 def answer(
@@ -212,12 +218,15 @@ def answer(
     provider: Optional[str] = None,
     model: Optional[str] = None,
     visitor: Optional[str] = None,
+    searcher: Optional[Callable[..., Any]] = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Run retrieval + narration. Returns (playlist, info for logging).
 
     `info["kind"]` says which path answered (one of LOG_KINDS). `info["provider"]`
     and `info["model"]` stay None unless a model was called for this question
-    (the logistics classifier or narration), so the question log is honest.
+    (the logistics classifier, the web scope check, a web answer, or narration),
+    so the question log is honest. `searcher` is the web search call for step 7b
+    (default `web_answer.search`).
     """
     if provider is None or model is None:
         provider, model = settings_store.llm_choice()
@@ -302,7 +311,9 @@ def answer(
         raise RetrievalNotReady() from exc
     if not chosen:
         info["kind"] = NOT_COVERED
-        return playlist.not_covered(question), info
+        # Beyond the slides (spec step 7b): a course-adjacent question may get a web answer.
+        return _beyond_the_slides(question, course, content, records, ranked, completer,
+                                  searcher or get_searcher(), provider, model, info, used_model)
 
     # Logistics check (spec step 7a): meetings, absences, grades, deadlines and Canvas go to Ben.
     kind = logistics.classify(question, completer, provider=provider, model=model)
@@ -311,10 +322,7 @@ def answer(
     if kind.source != "keyword":  # "llm", or "error" after a call was tried
         used_model()
     if kind.kind == logistics.LOGISTICS:
-        referral = logistics.referral(question, _suggested_questions(content, course))
-        referral["links"] = [dict(faq.CALENDLY)]
-        referral["contacts"] = faq.ta_contacts(course)
-        return referral, info
+        return _referral(question, course, content), info
 
     codes = {r["id"]: (playlist.related_code(content, r) or {}).get("source") for r in chosen}
     used_model()
@@ -322,6 +330,56 @@ def answer(
     info["narration"] = result.source
     info["errors"] = result.errors
     return playlist.build_playlist(content, question, chosen, result.narrations, result.follow_ups, voice), info
+
+
+def _referral(question: str, course: Optional[str], content: Content) -> dict[str, Any]:
+    """The logistics referral (spec step 7a): Ben's words, the Calendly button, the TA cards."""
+    referral = logistics.referral(question, _suggested_questions(content, course))
+    referral["links"] = [dict(faq.CALENDLY)]
+    referral["contacts"] = faq.ta_contacts(course)
+    return referral
+
+
+def _beyond_the_slides(
+    question: str,
+    course: Optional[str],
+    content: Content,
+    records: list[dict[str, Any]],
+    ranked: list[tuple[int, float]],
+    completer: Callable[..., str],
+    searcher: Callable[..., Any],
+    provider: str,
+    model: str,
+    info: dict[str, Any],
+    used_model: Callable[[], None],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Spec step 7b: no slide covers the question. Off: the usual decline. On: scope check, then maybe the web."""
+    declined = playlist.not_covered(question)
+    if not web_answer.enabled():
+        return declined, info
+    scope = web_answer.classify(question, completer, provider=provider, model=model)
+    info["web_scope"], info["web_scope_source"] = scope.scope, scope.source
+    if scope.source != "keyword":
+        used_model()
+    if scope.scope == web_answer.LOGISTICS:
+        info["kind"] = logistics.LOGISTICS
+        return _referral(question, course, content), info
+    if scope.scope != web_answer.COURSE_ADJACENT:
+        return declined, info
+    if not web_answer.take_budget():  # today's web answers are used up (or the cap is 0)
+        info["web_capped"] = True
+        return declined, info
+    used_model()
+    related = web_answer.related_slides(content, ranked, records)
+    with usage.purpose("web_answer"):
+        result = web_answer.answer(question, related, _suggested_questions(content, course), searcher,
+                                   provider=provider, model=model)
+    if result is None:
+        return declined, info
+    info["kind"] = web_answer.KIND
+    info["narration"] = result.source
+    info["errors"] = result.errors
+    return result.reply, info
 
 
 def _check_retrieval_ready(retriever: Retriever, dim: int) -> None:
@@ -431,6 +489,7 @@ def ask(
     retriever: Retriever = Depends(get_retriever),
     embedder: Callable[[str], np.ndarray] = Depends(get_embedder),
     completer: Callable[..., str] = Depends(get_completer),
+    searcher: Callable[..., Any] = Depends(get_searcher),
 ) -> dict[str, Any]:
     question = clean_question(body.question)
     course = clean_course(body.course)
@@ -444,7 +503,8 @@ def ask(
     ):
         try:
             result, info = answer(question, course, content, retriever, embedder, completer,
-                                  visitor=None if test_purpose else auth.visitor_key(session))
+                                  visitor=None if test_purpose else auth.visitor_key(session),
+                                  searcher=searcher)
         except RetrievalNotReady:
             raise HTTPException(503, "retrieval not implemented yet")
     latency = int((time.monotonic() - started) * 1000)
@@ -506,10 +566,13 @@ async def audio(
     if text is None:
         raise HTTPException(403, "This audio link is not valid.")
     plan = voices.current(resolve_kind=False)
-    if plan.primary is None:
-        raise HTTPException(404, "The voice is turned off. Captions only.")
-    voice = plan.match(v)
+    web_voice = web_answer.voice()  # a free voice for web answers only (never the clone), or None
+    voice = plan.match(v) if plan.primary is not None else None
+    if voice is None and web_voice is not None and web_voice.tag == v:
+        voice = web_voice
     if voice is None:
+        if plan.primary is None and web_voice is None:
+            raise HTTPException(404, "The voice is turned off. Captions only.")
         raise HTTPException(403, "This audio link is from an older voice setting. Please ask again.")
     # Each tier has its own daily cap (ElevenLabs costs money; the free voices are capped higher).
     if not limits.take_voice_chars(

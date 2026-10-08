@@ -215,6 +215,26 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .stage-message-body { max-width: 34rem; }
 .stage-actions { display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; margin: .5rem 0 1rem; }
 .stage-message .chips { justify-content: center; }
+/* Beyond my slides: a web answer. Its own label colour so it never reads as my course material. */
+.stage-label.web-label {
+  display: inline-block; color: var(--warn); background: var(--warn-soft); border: 1px solid var(--warn);
+  border-radius: 999px; padding: .15rem .65rem; letter-spacing: .04em;
+}
+.stage-extra { text-align: left; margin: .5rem 0 1rem; display: grid; gap: 1rem; }
+.stage-extra h3 { font-size: .9rem; margin: 0 0 .4rem; color: var(--ink-2); }
+.web-sources { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.web-sources a {
+  display: block; padding: .5rem .7rem; min-height: var(--tap); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--accent); text-decoration: none; overflow-wrap: anywhere;
+}
+.web-sources a:hover { border-color: var(--accent); }
+.web-sources a:focus-visible { outline: none; box-shadow: var(--focus); }
+.web-sources .host { display: block; font-size: .8rem; color: var(--ink-3); }
+.web-listen { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+.web-listen .small { color: var(--ink-3); font-size: .85rem; }
+.related-slides { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .5rem; }
+.related-slides .source-btn { flex-direction: column; align-items: stretch; height: 100%; }
+.related-slides .source-btn img { width: 100%; }
 .spinner {
   width: 36px; height: 36px; margin: 0 auto 1rem; border-radius: 50%;
   border: 3px solid var(--line); border-top-color: var(--accent); animation: spin 1s linear infinite;
