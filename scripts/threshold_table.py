@@ -4,7 +4,7 @@ This is the table the threshold in app/retrieval.py was chosen from: on-topic
 questions should score at or above it, off-topic questions below it. See
 docs/TESTING_AND_SCORES.md ("Re-check the threshold").
 
-- Scores come from `app.retrieval.rank` (Ben's code, called unchanged) over the
+- Scores come from `app.retrieval.rank` (the same function /api/ask uses) over the
   slides students can see, from the local index in CONTENT_DIR.
 - All questions are embedded in one Voyage request (same model and input type
   as `/api/ask`), so the free tier's 3 requests a minute is not a problem. That

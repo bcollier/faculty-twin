@@ -5,7 +5,7 @@
    draft (five per course, from the slide titles) for Ben to edit; later runs
    never overwrite it.
 2. With the keys in `.env`, each question runs through the real `/api/ask`
-   path in-process (`app.main.answer`: Voyage embedding, Ben's hand-written
+   path in-process (`app.main.answer`: Voyage embedding,
    retrieval in app/retrieval.py, the active narration model). Nothing here
    ranks or selects slides. If app/retrieval.py still raises
    NotImplementedError, the script stops before spending any API call.

@@ -6,7 +6,7 @@ about running the course, and much of that is already written down on Canvas.
 index of Canvas material after the course FAQ and before slide narration:
 
 1. The question is embedded once; the same vector scores the slides and the
-   info chunks, both with Ben's `rank()` (app/retrieval.py, unchanged).
+   info chunks, both with `rank()` (app/retrieval.py).
 2. When the best info chunk scores at least the info threshold (Settings
    override, else env `INFO_THRESHOLD`, else 0.55; app/thresholds.py) and beats
    the best slide by at least the info margin (Settings override, else env
