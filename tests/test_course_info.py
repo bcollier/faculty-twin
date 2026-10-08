@@ -412,6 +412,52 @@ def test_bad_replies_fall_back(reply):
     assert result.reply["answers"][0]["text"] == SYLLABUS_TEXT
 
 
+class Replies:
+    """TEST FAKE completer: hands out the given replies (or raises the given errors) in order, counting calls."""
+
+    def __init__(self, *replies):
+        self.replies = list(replies)
+        self.calls = 0
+
+    def __call__(self, system, user, max_tokens, provider=None, model=None):
+        self.calls += 1
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+
+def _syllabus_answer(model):
+    return course_info.answer("What does the syllabus say about AI tools?", None, _hits("info-70445-syllabus-1"),
+                              [], model)
+
+
+def test_a_reply_that_is_not_json_is_retried_once():
+    # Oct 8 code review: one stray "Sure! Here is..." reply threw the model answer away for raw Canvas text.
+    model = Replies("Sure! I allow AI tools for brainstorming.", json.dumps({"answer": GOOD_ANSWER}))
+    result = _syllabus_answer(model)
+    assert model.calls == 2 and result.source == "llm" and result.reason is None
+    assert result.reply["answers"][0]["text"] == GOOD_ANSWER
+    assert result.errors and "not JSON" in result.errors[0]
+
+
+def test_two_replies_that_are_not_json_fall_back_with_not_json():
+    model = Replies("not json", "still not json")
+    result = _syllabus_answer(model)
+    assert model.calls == 2 and result.source == "fallback" and result.reason == "not_json"
+
+
+@pytest.mark.parametrize("first", [
+    json.dumps({"answer": "The final exam is worth ninety percent and happens on Saturday in Wean Hall."}),  # ungrounded
+    json.dumps({"text": GOOD_ANSWER}),  # JSON, but no answer
+    llm.LLMError("anthropic returned 400: Your credit balance is too low"),
+])
+def test_other_failures_are_not_retried(first):
+    model = Replies(first, json.dumps({"answer": GOOD_ANSWER}))
+    result = _syllabus_answer(model)
+    assert model.calls == 1 and result.source == "fallback"
+
+
 def test_good_reply_passes_and_em_dashes_are_cleaned():
     model = FakeModel(info_reply=json.dumps({"answer": "I allow AI tools for brainstorming — say how you used them."}))
     result = course_info.answer("ai?", None, _hits("info-70445-syllabus-1"), ["a", "b", "c", "d"], model)
