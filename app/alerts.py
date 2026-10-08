@@ -34,14 +34,15 @@ import json
 import math
 import re
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 
-from . import config, course_info, faq, limits, privacy, prompts, settings_store, supa, usage
+from . import config, course_info, faq, limits, llm, privacy, prompts, settings_store, supa, usage
 
 KIND = "alert"
 TYPES = ("api_credits", "submission", "quiz", "other_course_tech")
@@ -100,15 +101,17 @@ STRONG: dict[str, re.Pattern[str]] = {
     "submission": _rx(
         r"\b(?:can'?t|cannot|can not|unable to|won'?t let me|not able to|couldn'?t|could not) (?:submit|upload|turn in|"
         r"hand in)\b",
-        r"\b(?:submission|submit button|submit page|upload)s?\b.{0,40}\b(?:broken|error\w*|fail\w*|not working|doesn'?t "
-        r"work|isn'?t working|won'?t (?:go through|work|upload|submit|load)|stuck|gr[ae]yed out|disabled|missing|crash\w*)\b",
+        r"\b(?:submission|submit button|submit page|upload)s?\b.{0,40}\b(?:broken|error\w*|fail\w*|not working|"
+        r"doesn'?t work|isn'?t working|won'?t (?:go through|work|upload|submit|load)|stuck|gr[ae]yed out|disabled|"
+        r"missing|crash\w*)\b",
         r"\bgradescope\b.{0,50}\b(?:error\w*|broken|fail\w*|not working|won'?t|can'?t|down)\b",
         r"\b(?:error\w*|broken|down)\b.{0,30}\bgradescope\b",
     ),
     "quiz": _rx(
         r"\bquiz(?:zes)?\b.{0,50}\b(?:broken|won'?t (?:load|open|start|submit|work|let me|accept)|not loading|"
         r"isn'?t loading|doesn'?t load|not working|isn'?t working|doesn'?t work|crash\w*|froze|frozen|"
-        r"glitch\w*|buggy|not opening|(?:gives?|gave|got|getting|shows?|showing|throws?|threw) (?:me )?(?:an? )?error)\b",
+        r"glitch\w*|buggy|not opening|"
+        r"(?:gives?|gave|got|getting|shows?|showing|throws?|threw) (?:me )?(?:an? )?error)\b",
         r"\b(?:can'?t|cannot|can not|unable to|couldn'?t|could not) (?:open|start|access|take|load|submit|see|find) "
         r"(?:the |my |this |today'?s |our |a )?(?:\w+ )?quiz\b",
         r"\b(?:access|quiz) code\b.{0,40}\b(?:not working|doesn'?t work|isn'?t working|didn'?t work|invalid|wrong|"
@@ -148,6 +151,8 @@ _PROBLEM_WORDS = _rx(
 
 @dataclass
 class KeywordHit:
+    """The problem phrase found, and whether it is strong enough to alert without the classifier."""
+
     type: str
     phrase: str
     strong: bool
@@ -163,7 +168,7 @@ def is_concept_question(question: str) -> bool:
     return bool(_CONCEPT_START.search(text)) and not _PROBLEM_WORDS.search(text)
 
 
-def keyword_hit(question: str) -> Optional[KeywordHit]:
+def keyword_hit(question: str) -> KeywordHit | None:
     """The first problem phrase in the question (strong before weak), or None. Concept questions never hit."""
     text = _text(question)
     if not text or is_concept_question(text):
@@ -186,10 +191,12 @@ def keyword_hit(question: str) -> Optional[KeywordHit]:
 
 @dataclass
 class Classified:
+    """What the incident classifier said: incident or not, its type, course, item and confidence."""
+
     incident: bool
-    type: Optional[str]
-    course: Optional[str]
-    item: Optional[str]
+    type: str | None
+    course: str | None
+    item: str | None
     confidence: float
 
 
@@ -204,7 +211,8 @@ def _assignment_titles(content: Any) -> dict[str, list[str]]:
     return out
 
 
-def build_user_prompt(question: str, course: Optional[str], content: Any) -> str:
+def build_user_prompt(question: str, course: str | None, content: Any) -> str:
+    """The classifier prompt: the message, the course filter, and the course's assignment titles."""
     payload = {
         "message": question,
         "course_filter": course,
@@ -214,14 +222,8 @@ def build_user_prompt(question: str, course: Optional[str], content: Any) -> str
 
 
 def parse_classifier(raw: str) -> Classified:
-    text = (raw or "").strip()
-    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, re.S)
-    if fence:
-        text = fence.group(1)
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end <= start:
-        raise ValueError("reply was not JSON")
-    data = json.loads(text[start : end + 1])
+    """The classifier's reply, checked. Raises ValueError when it has no incident flag."""
+    data = llm.extract_json(raw, whole_first=False)
     if not isinstance(data, dict) or not isinstance(data.get("incident"), bool):
         raise ValueError("reply had no incident flag")
     try:
@@ -235,8 +237,8 @@ def parse_classifier(raw: str) -> Classified:
     return Classified(bool(data["incident"]), kind, course, item, confidence)
 
 
-def classify(question: str, course: Optional[str], content: Any, complete: Callable[..., str],
-             provider: Optional[str] = None, model: Optional[str] = None) -> Optional[Classified]:
+def classify(question: str, course: str | None, content: Any, complete: Callable[..., str],
+             provider: str | None = None, model: str | None = None) -> Classified | None:
     """One small model call; None when it fails or the reply is not usable."""
     try:
         with usage.purpose("incident_classifier"):
@@ -262,8 +264,8 @@ _STOP = {
 _GENERIC = {"quiz", "lab", "homework", "assignment", "exercise", "memo", "project", "exam", "module", "week", "part",
             "check", "discussion", "submission", "participation", "optional", "final", "survey"}
 _ALIASES = {"hw": "homework", "assignment": "homework", "wk": "week"}
-_NUMBERED = re.compile(r"\b(quiz|lab|homework|hw|memo|module|week|wk|part|project|assignment|exercise)\s*#?\s*0*(\d{1,2})\b",
-                       re.I)
+_NUMBERED = re.compile(
+    r"\b(quiz|lab|homework|hw|memo|module|week|wk|part|project|assignment|exercise)\s*#?\s*0*(\d{1,2})\b", re.I)
 MATCH_MIN = 1.5
 
 
@@ -289,11 +291,13 @@ def title_score(query: str, title: str) -> float:
 
 @dataclass
 class Resolution:
-    course: Optional[str] = None
-    source: Optional[str] = None  # "filter" | "title" | "classifier" | None
-    item: Optional[str] = None
-    url: Optional[str] = None
-    score: Optional[float] = None
+    """Which course and Canvas item an alert is about, and how sure the match is."""
+
+    course: str | None = None
+    source: str | None = None  # "filter" | "title" | "classifier" | None
+    item: str | None = None
+    url: str | None = None
+    score: float | None = None
 
 
 def _items(content: Any) -> list[dict[str, Any]]:
@@ -314,7 +318,7 @@ def _items(content: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _best(query: str, items: list[dict[str, Any]], course: Optional[str]) -> dict[str, tuple[float, dict[str, Any]]]:
+def _best(query: str, items: list[dict[str, Any]], course: str | None) -> dict[str, tuple[float, dict[str, Any]]]:
     """Best item per course (assignments and quizzes first; other kinds only when none of those match)."""
     best: dict[str, tuple[float, dict[str, Any]]] = {}
     for pool in ([i for i in items if i["kind"] in ("assignment", "quiz")],
@@ -330,8 +334,8 @@ def _best(query: str, items: list[dict[str, Any]], course: Optional[str]) -> dic
     return best
 
 
-def resolve_course(question: str, course_filter: Optional[str], content: Any,
-                   classified: Optional[Classified] = None) -> Resolution:
+def resolve_course(question: str, course_filter: str | None, content: Any,
+                   classified: Classified | None = None) -> Resolution:
     """The course filter, then Canvas titles (a tie between courses settles nothing), then the classifier."""
     query = question + (" " + classified.item if classified and classified.item else "")
     items = _items(content)
@@ -357,15 +361,17 @@ def resolve_course(question: str, course_filter: Optional[str], content: Any,
 
 @dataclass
 class Detection:
+    """Whether a message reports a broken course tool, and what about."""
+
     incident: bool
-    type: Optional[str] = None
-    keyword: Optional[KeywordHit] = None
-    classified: Optional[Classified] = None
-    classifier_source: Optional[str] = None  # "llm" | "error" | None (not called)
+    type: str | None = None
+    keyword: KeywordHit | None = None
+    classified: Classified | None = None
+    classifier_source: str | None = None  # "llm" | "error" | None (not called)
     resolution: Resolution = field(default_factory=Resolution)
 
     @property
-    def confidence(self) -> Optional[float]:
+    def confidence(self) -> float | None:
         return self.classified.confidence if self.classified else None
 
     def public(self) -> dict[str, Any]:
@@ -379,7 +385,7 @@ class Detection:
         }
 
 
-def decide(hit: Optional[KeywordHit], classified: Optional[Classified]) -> bool:
+def decide(hit: KeywordHit | None, classified: Classified | None) -> bool:
     """Alert at confidence >= 0.6, or on a strong keyword hit unless the classifier is confident it is not one."""
     if hit is None:
         return False
@@ -388,8 +394,9 @@ def decide(hit: Optional[KeywordHit], classified: Optional[Classified]) -> bool:
     return hit.strong
 
 
-def detect(question: str, course: Optional[str], content: Any, complete: Callable[..., str],
-           provider: Optional[str] = None, model: Optional[str] = None) -> Detection:
+def detect(question: str, course: str | None, content: Any, complete: Callable[..., str],
+           provider: str | None = None, model: str | None = None) -> Detection:
+    """Keyword pre-check, then the classifier: whether this message reports a broken quiz, submission or key."""
     hit = keyword_hit(question)
     if hit is None:
         return Detection(False)
@@ -431,6 +438,7 @@ def scrub(text: str) -> str:
 
 
 def shorten(text: str, limit: int) -> str:
+    """At most `limit` characters, cut at a space in the second half, with "..."."""
     if len(text) <= limit:
         return text
     cut = text[: max(limit - 3, 1)]
@@ -450,7 +458,7 @@ def eastern_time(when: datetime) -> str:
     return f"{local.strftime('%b')} {local.day} {local.strftime('%I:%M %p').lstrip('0')} ET"
 
 
-def _problem(kind: str, item: Optional[str]) -> str:
+def _problem(kind: str, item: str | None) -> str:
     if kind == "api_credits":
         return f"an API key may be out of credits ('{item}')" if item else "an API key may be out of credits"
     if kind == "submission":
@@ -460,7 +468,7 @@ def _problem(kind: str, item: Optional[str]) -> str:
     return f"'{item}' may have a tech problem" if item else "a course tool may have a tech problem"
 
 
-def compose(course: Optional[str], kind: str, item: Optional[str], url: Optional[str], quote: str, reports: int,
+def compose(course: str | None, kind: str, item: str | None, url: str | None, quote: str, reports: int,
             when: datetime) -> str:
     """The text Ben gets: at most 300 plain characters, no names and no ids."""
     where = f"in {faq.COURSE_LABELS[course]}" if course in faq.COURSE_LABELS else "(course unclear)"
@@ -469,7 +477,7 @@ def compose(course: Optional[str], kind: str, item: Optional[str], url: Optional
     url = url if url and url.startswith("https://") and len(url) <= 120 and " " not in url else None
     tail = " ".join(x for x in (url, eastern_time(when)) if x)
 
-    def build(q: str, it: Optional[str]) -> str:
+    def build(q: str, it: str | None) -> str:
         return (f"Faculty Twin: simple problem to fix {where} ({TYPE_LABELS.get(kind, kind)}{count}): "
                 f"{_problem(kind, it)}. Student said: '{q}'. {tail}")
 
@@ -494,6 +502,8 @@ def test_message(when: datetime) -> str:
 
 @dataclass
 class TwilioConfig:
+    """The Twilio account, token and sender from the environment."""
+
     sid: str
     token: str
     sender: str
@@ -501,6 +511,7 @@ class TwilioConfig:
 
     @property
     def problems(self) -> list[str]:
+        """What is missing or malformed in the Twilio settings (empty when ready)."""
         out = []
         if not self.sid or not self.sid.startswith("AC"):
             out.append("TWILIO_ACCOUNT_SID is not set (it starts with AC)")
@@ -521,21 +532,24 @@ def twilio_config() -> TwilioConfig:
     return TwilioConfig(*(str(config.env(name) or "").strip() for name in ENV_VARS))
 
 
-def masked_destination() -> Optional[str]:
+def masked_destination() -> str | None:
     digits = re.sub(r"\D", "", str(config.env("ALERT_TO_PHONE") or ""))
     return f"***-***-{digits[-4:]}" if len(digits) >= 4 else None
 
 
 @dataclass
 class SendResult:
+    """What Twilio said about one text."""
+
     status: str  # "sent" | "failed" | "not_configured"
-    sid: Optional[str] = None
-    twilio_status: Optional[str] = None
-    error_code: Optional[Any] = None
-    error: Optional[str] = None
+    sid: str | None = None
+    twilio_status: str | None = None
+    error_code: Any | None = None
+    error: str | None = None
 
 
 def build_request(cfg: TwilioConfig, body: str) -> tuple[str, dict[str, str]]:
+    """The Twilio Messages API request for one text to Ben's phone."""
     data = {"To": cfg.to, "Body": body}
     if cfg.sender.startswith("MG"):
         data["MessagingServiceSid"] = cfg.sender
@@ -549,7 +563,7 @@ def _http() -> httpx.Client:
     return httpx.Client(timeout=TWILIO_TIMEOUT)
 
 
-def send_sms(body: str, client: Optional[httpx.Client] = None) -> SendResult:
+def send_sms(body: str, client: httpx.Client | None = None) -> SendResult:
     """POST one message to Twilio. Never raises; never returns or logs the auth token."""
     cfg = twilio_config()
     if not cfg.ready:
@@ -582,6 +596,7 @@ def enabled() -> bool:
 
 
 def daily_cap() -> int:
+    """Texts allowed per day: the Settings value, else ALERT_DAILY_CAP, within 0 and MAX_DAILY_CAP."""
     raw = settings_store.get("alert_daily_cap")
     if raw is None:
         raw = config.env_int("ALERT_DAILY_CAP", DEFAULT_DAILY_CAP)
@@ -591,8 +606,8 @@ def daily_cap() -> int:
         return DEFAULT_DAILY_CAP
 
 
-def _day(now: Optional[datetime] = None) -> str:
-    return (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
+def _day(now: datetime | None = None) -> str:
+    return (now or datetime.now(UTC)).strftime("%Y-%m-%d")
 
 
 def sent_key(day: str) -> str:
@@ -607,7 +622,7 @@ def visitor_key(visitor: str, day: str) -> str:
     return f"alert_visitor:{visitor}:{day}"
 
 
-def take_send(now: Optional[datetime] = None) -> bool:
+def take_send(now: datetime | None = None) -> bool:
     """One text from today's cap. Fails closed."""
     cap = daily_cap()
     if cap <= 0:
@@ -628,8 +643,8 @@ def reset_memory() -> None:
         _local.clear()
 
 
-def new_id(now: Optional[datetime] = None) -> str:
-    return (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%S.%fZ")
+def new_id(now: datetime | None = None) -> str:
+    return (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%S.%fZ")
 
 
 def save(record: dict[str, Any]) -> bool:
@@ -648,7 +663,7 @@ def save(record: dict[str, Any]) -> bool:
     return True
 
 
-def _read(name: str) -> Optional[dict[str, Any]]:
+def _read(name: str) -> dict[str, Any] | None:
     try:
         data = json.loads(supa.download(f"{PREFIX}/{name}"))
     except (supa.SupabaseError, ValueError):
@@ -669,22 +684,22 @@ def recent(limit: int = LIST_LIMIT) -> list[dict[str, Any]]:
     return [r for r in rows if r]
 
 
-def _norm_item(item: Optional[str]) -> str:
+def _norm_item(item: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (item or "").lower()).strip()
 
 
-def signature(course: Optional[str], kind: Optional[str], item: Optional[str]) -> str:
+def signature(course: str | None, kind: str | None, item: str | None) -> str:
     return f"{course or ''}|{kind or ''}|{_norm_item(item)}"
 
 
-def _at(record: dict[str, Any]) -> Optional[datetime]:
+def _at(record: dict[str, Any]) -> datetime | None:
     try:
         return datetime.fromisoformat(str(record.get("at")))
     except ValueError:
         return None
 
 
-def previous(records: list[dict[str, Any]], sig: str) -> Optional[dict[str, Any]]:
+def previous(records: list[dict[str, Any]], sig: str) -> dict[str, Any] | None:
     """The newest alert (not a repeat or test) with this signature."""
     for r in records:
         if r.get("kind") == "alert" and r.get("signature") == sig:
@@ -705,15 +720,18 @@ def with_counts(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 @dataclass
 class Outcome:
+    """What happened to one alert: whether it was stored or sent, why, and the record."""
+
     flagged: bool
-    status: str  # sent | failed | not_configured | repeat | over_cap | disabled | visitor_limit | dry_run | store_failed
-    record: Optional[dict[str, Any]] = None
+    # sent | failed | not_configured | repeat | over_cap | disabled | visitor_limit | dry_run | store_failed
+    status: str
+    record: dict[str, Any] | None = None
 
 
-def raise_alert(det: Detection, question: str, visitor: Optional[str], now: Optional[datetime] = None,
-                client: Optional[httpx.Client] = None) -> Outcome:
+def raise_alert(det: Detection, question: str, visitor: str | None, now: datetime | None = None,
+                client: httpx.Client | None = None) -> Outcome:
     """Guards, dedupe, the text, and the record. Only real student traffic (a visitor) can text."""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     if visitor is None:
         return Outcome(False, "dry_run")
     if not enabled():
@@ -725,13 +743,7 @@ def raise_alert(det: Detection, question: str, visitor: Optional[str], now: Opti
     res = det.resolution
     sig = signature(res.course, det.type, res.item)
     quote = scrub(question)
-    base = {
-        "id": new_id(now), "at": now.isoformat(), "course": res.course, "course_source": res.source,
-        "type": det.type, "item": res.item, "item_url": res.url, "match_score": res.score,
-        "confidence": det.confidence, "keyword": det.keyword.phrase if det.keyword else None,
-        "strong": bool(det.keyword and det.keyword.strong), "classifier": det.classifier_source,
-        "quote": shorten(quote, QUOTE_CHARS), "signature": sig,
-    }
+    base = _record_base(det, quote, sig, now)
     try:
         records = recent(RECENT_SCAN)
     except supa.SupabaseError as exc:
@@ -747,6 +759,26 @@ def raise_alert(det: Detection, question: str, visitor: Optional[str], now: Opti
     body = compose(res.course, det.type or "other_course_tech", res.item, res.url, quote, reports, now)
     record = {**base, "kind": "alert", "reports": reports, "of": last["id"] if last else None, "message": body,
               "segments": segments(body)}
+    return _send_and_record(record, body, now, client)
+
+
+def _record_base(det: Detection, quote: str, sig: str, now: datetime) -> dict[str, Any]:
+    """The fields every stored alert record has: what was detected, where, and the scrubbed quote."""
+    res = det.resolution
+    return {
+        "id": new_id(now), "at": now.isoformat(), "course": res.course, "course_source": res.source,
+        "type": det.type, "item": res.item, "item_url": res.url, "match_score": res.score,
+        "confidence": det.confidence, "keyword": det.keyword.phrase if det.keyword else None,
+        "strong": bool(det.keyword and det.keyword.strong), "classifier": det.classifier_source,
+        "quote": shorten(quote, QUOTE_CHARS), "signature": sig,
+    }
+
+
+def _send_and_record(record: dict[str, Any], body: str, now: datetime, client: httpx.Client | None) -> Outcome:
+    """Text Ben (unless today's cap is spent) and store the record with Twilio's answer.
+
+    Without Twilio set up nothing is called, and the record says why: Settings still shows the alert.
+    """
     if not twilio_config().ready:
         sent = send_sms(body)  # reports why without calling anyone
     elif not take_send(now):
@@ -766,9 +798,9 @@ def raise_alert(det: Detection, question: str, visitor: Optional[str], now: Opti
     return Outcome(stored, sent.status if stored else "store_failed", record)
 
 
-def send_test(now: Optional[datetime] = None, client: Optional[httpx.Client] = None) -> dict[str, Any]:
+def send_test(now: datetime | None = None, client: httpx.Client | None = None) -> dict[str, Any]:
     """Settings "Send test text": a fixed message, counted against the daily cap. Stored like an alert."""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     body = test_message(now)
     record = {"id": new_id(now), "at": now.isoformat(), "kind": "test", "type": "test", "course": None,
               "item": None, "reports": 1, "message": body, "segments": segments(body)}
@@ -784,11 +816,12 @@ def send_test(now: Optional[datetime] = None, client: Optional[httpx.Client] = N
 
 # ---------------------------------------------------------------- the student's reply
 
-def _what(kind: Optional[str]) -> str:
-    return {"api_credits": "an API key", "submission": "a submission", "quiz": "a quiz"}.get(kind or "", "a course tool")
+def _what(kind: str | None) -> str:
+    names = {"api_credits": "an API key", "submission": "a submission", "quiz": "a quiz"}
+    return names.get(kind or "", "a course tool")
 
 
-def reply(question: str, course: Optional[str], det: Detection, outcome: Outcome) -> dict[str, Any]:
+def reply(question: str, course: str | None, det: Detection, outcome: Outcome) -> dict[str, Any]:
     """The FAQ-style card. "Flagged" only when a text was sent or the alert was stored for Settings."""
     res = det.resolution
     what = _what(det.type)
@@ -825,9 +858,9 @@ class Handled:
     info: dict[str, Any]
 
 
-def check(question: str, course: Optional[str], content: Any, complete: Callable[..., str],
-          provider: Optional[str] = None, model: Optional[str] = None,
-          visitor: Optional[str] = None) -> Optional[Handled]:
+def check(question: str, course: str | None, content: Any, complete: Callable[..., str],
+          provider: str | None = None, model: str | None = None,
+          visitor: str | None = None) -> Handled | None:
     """The hook at the start of `answer()`: None (answer as usual) unless the question reports an incident."""
     try:
         det = detect(question, course, content, complete, provider=provider, model=model)
