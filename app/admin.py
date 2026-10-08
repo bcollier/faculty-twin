@@ -213,6 +213,7 @@ class SettingsBody(BaseModel):
     web_answers_enabled: bool | None = None
     daily_web_answer_cap: int | None = None
     web_answer_voice: str | None = None  # "none" (text only) or "edge:<ShortName>"
+    open_access_until: float | None = None  # epoch seconds; 0 closes open access now
 
 
 def settings_view() -> dict[str, Any]:
@@ -237,6 +238,7 @@ def settings_view() -> dict[str, Any]:
         "model_warning": model_warning(provider, model),
         "max_price_per_mtok": max_price_per_mtok(),
         "student_passcode_source": "settings" if settings_store.get("student_passcode_hash") else "env",
+        "open_access_until": auth.open_access_until() or None,
         **web_view(),
         "index_version": settings_store.index_version(),
     }
@@ -327,6 +329,8 @@ def put_settings(body: SettingsBody, _: auth.Session = Depends(auth.require_admi
         if not 6 <= len(code) <= 100:
             raise HTTPException(400, "The student passcode must be 6 to 100 characters.")
         values["student_passcode_hash"] = auth.hash_passcode(code)  # rotating signs every student out
+    if body.open_access_until is not None:
+        values["open_access_until"] = _open_access_value(body.open_access_until)
     if not values:
         raise HTTPException(400, "Nothing to save.")
     if "model" in values:
@@ -336,6 +340,15 @@ def put_settings(body: SettingsBody, _: auth.Session = Depends(auth.require_admi
     except supa.SupabaseError as exc:
         raise _db_error(exc) from exc
     return settings_view()
+
+
+def _open_access_value(until: float) -> int:
+    """0 closes open access now; otherwise a time in the next 48 hours."""
+    if until <= 0:
+        return 0
+    if not time.time() < until <= time.time() + auth.OPEN_MAX_SECONDS:
+        raise HTTPException(400, "Open access must end within the next 48 hours.")
+    return int(until)
 
 
 def _model_values(body: SettingsBody) -> dict[str, Any]:

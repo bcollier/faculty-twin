@@ -263,6 +263,16 @@
             <button class="btn btn-primary" type="submit">Change passcode</button>
             <p class="status-line" id="pass-status" role="status"></p>
           </form>
+          <form id="open-form" novalidate aria-labelledby="open-h">
+            <h3 class="h-sub" id="open-h">Open to everyone (no passcode)</h3>
+            <p class="hint">For a day like grading: anyone with the link can use the student page without the passcode. It closes on its own at the time shown, and closing it signs those visitors out. Per-visitor limits and the daily voice caps still apply.</p>
+            <p class="status-line" id="open-now" role="status"></p>
+            <div class="actions">
+              <button class="btn btn-primary" type="button" id="open-midnight">Open until midnight tonight</button>
+              <button class="btn" type="button" id="open-close">Close now (passcode again)</button>
+            </div>
+            <p class="status-line" id="open-status" role="status"></p>
+          </form>
         </div>
 
         <h3 class="h-sub" id="web-h">Web answers (beyond my slides)</h3>

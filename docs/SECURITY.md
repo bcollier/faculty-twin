@@ -161,6 +161,15 @@ A model can now propose one small slide per answer, and Ben can draft slides in 
 - **Admin only for drafts.** `/api/admin/drafts*` and `/api/admin/helper-slides` need the admin cookie and pass the Origin check; draft ids are checked against a strict pattern before they become a bucket path (`slides/drafts/<id>.json`, never signed for a browser). `test_draft_routes_need_the_admin_cookie`, `test_draft_writes_from_another_site_are_refused`.
 - **Spend.** On by default with a daily cap (`DAILY_HELPER_SLIDE_CAP`, 150, fails closed), counted against `DAILY_LLM_CALL_CAP`, skipped in eval runs. About half a cent to a cent per slide (live check, Sonnet 5.5 through OpenRouter).
 
+### Open access (added Oct 8, PR `feat/open-access-today`)
+
+Settings can open the student page to everyone, with no passcode, until a set time at most 48 hours ahead (the setting `open_access_until`, epoch seconds; `app/auth.py`). What changed for the threat model:
+
+- **Anyone with the link sees course content while it is open.** That is the point (graders for a day). The content is the same de-identified slides, clips and Canvas text students see; nothing private is added.
+- **Each visitor still gets their own cookie** (kind `o`), so the per-visitor minute and day limits apply. A visitor who clears cookies gets a fresh allowance, so the global caps (`DAILY_LLM_CALL_CAP`, the daily voice character caps, the web answer cap) are what bound spend.
+- **It ends on time.** The `o` cookie expires when open access ends and is signed with the open-until time, so closing early ("Close now", or a new time) signs every open visitor out at once. Students' passcode cookies are not touched. Instances cache settings for up to 30 s.
+- **Fails closed.** A missing, past or unreadable value means the passcode is required. Only the admin cookie can change it (with the Origin check). Tests: `tests/test_open_access.py`.
+
 ## 6. Frontend changes (follow-up PR after PR #5 merged)
 
 1. **Name hint** (M7). Under the main question box: "Please leave out names, yours or anyone else's. I keep questions, without names, to improve the twin." The compact dock input carries the same hint for screen readers. Both inputs already had `maxlength="300"`.
