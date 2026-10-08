@@ -177,3 +177,21 @@ def test_a_parroted_question_still_fails_the_whole_reply():
     result = narration.narrate(q, SLIDES, provider="anthropic", model="m", complete=lambda *a, **k: raw)
     assert result.source == "fallback"
     assert result.narrations["70445-s01-002"] == "Notes on apples."
+
+
+N8N = {"id": "45884-s08-069", "title": "Agents Toolkits", "text": "Agents Toolkits\n\nhttps://n8n.io/", "notes": "",
+       "transcript": "One we'll look at in this course is n8n. There's a free version, or you can host your own, but "
+                     "this is all nicely drag-and-drop. You can connect it to different tools and then have different "
+                     "prompts that all integrate really nicely together.",
+       "course_title": "Fake Course B"}
+
+
+def test_a_slide_with_a_web_address_keeps_its_model_narration():
+    # Oct 8 eval: n8n slide 45884-s08-069 fell back to notes because the model read out n8n.io from the slide.
+    said = ("This is n8n, at https://n8n.io/. There's a free version, or you can host your own, and it is "
+            "drag-and-drop: you connect it to different tools and prompts.")
+    raw = reply([{"slide_id": N8N["id"], "narration": said}])
+    result = narration.narrate("what is n8n", [N8N], provider="anthropic", model="m", complete=lambda *a, **k: raw)
+    assert result.source == "llm" and result.errors == []
+    spoken = result.narrations[N8N["id"]]
+    assert "the link on the slide" in spoken and "n8n.io" not in spoken and "https" not in spoken

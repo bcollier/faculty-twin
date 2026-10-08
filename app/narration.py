@@ -84,7 +84,7 @@ _STOP = frozenset(
     though three through thus to together too took toward two under until up upon us use used uses using
     very want wants was way ways we well were what when where whether which while who whom whose why will
     with within without would yes yet you your yours yourself
-    slide slides screen class lecture course session today talk talked talking question questions asked ask
+    slide slides screen link links class lecture course session today talk talked talking question questions asked ask
     remember recall mean means meant idea ideas example examples point points notice explain explained
     walk start end step steps line lines code here's that's it's let's we're you're i'm i've don't
     doesn't isn't aren't can't won't first second third left top bottom earlier later again key main big
@@ -93,6 +93,32 @@ _STOP = frozenset(
 )
 _WORD = re.compile(r"[a-z][a-z'\-]*|[0-9][\w.\-]*")
 _URLISH = re.compile(r"https?://|www\.|\b[a-z0-9\-]+\.(?:com|net|org|io|ai|ly|xyz|co|me|app)\b", re.I)
+
+# A whole web address as a slide shows it: a scheme or www. up to the next space, or a bare domain on a
+# known ending with any path. Trailing sentence punctuation is not part of it.
+LINK_PHRASE = "the link on the slide"
+_LINK = re.compile(
+    r"(?:https?://|www\.)[^\s<>\"'()]+"
+    r"|\b(?:[a-z0-9\-]+\.)+(?:com|net|org|io|ai|ly|xyz|co|me|app|edu|gov|dev)\b(?:/[^\s<>\"'()]*)?",
+    re.I,
+)
+_LINK_LIST = re.compile(rf"{LINK_PHRASE}(?:\s*(?:,\s*(?:and |or )?|\s+and\s+|\s+or\s+){LINK_PHRASE})+", re.I)
+
+
+def speakable_links(text: str) -> str:
+    """Every web address in `text` said as "the link on the slide" (two or more in a row: "the links on the slide").
+
+    Added Oct 8: a slide that shows a web address (the n8n slide, 45884-s08-069) made the model read it out,
+    the whole narration failed the no-web-address rule, and the slide fell back to its notes. The voice still
+    never says an address: this runs before validation, and the old check still runs after it.
+    """
+    def swap(m: re.Match) -> str:
+        url = m.group(0)
+        trail = re.search(r"[.,;:!?\]]+$", url)
+        return LINK_PHRASE + (trail.group(0) if trail else "")
+
+    out = _LINK.sub(swap, text or "")
+    return _LINK_LIST.sub("the links on the slide", out)
 
 
 # ---------------------------------------------------------------- PG, access codes, name tokens
@@ -366,7 +392,7 @@ def validate(
             raise ValidationError(f"unknown slide_id {sid!r}")
         if not isinstance(text, str) or not text.strip():
             raise ValidationError(f"empty narration for {sid}")
-        text = clean_speech(text)
+        text = clean_speech(speakable_links(text))
         trimmed = trim_to_sentences(text, config.NARRATION_MAX_WORDS, config.NARRATION_MAX_CHARS)
         if trimmed is None:
             if word_count(text) > config.NARRATION_MAX_WORDS:
@@ -415,8 +441,8 @@ def fallback_narration(rec: dict[str, Any]) -> str:
     for key in ("notes", "transcript", "text"):
         value = str(rec.get(key) or "").strip()
         if value:
-            return clean_speech(_first_words(value))
-    return clean_speech(rec.get("title") or "This slide.")
+            return clean_speech(speakable_links(_first_words(value)))
+    return clean_speech(speakable_links(rec.get("title") or "This slide."))
 
 
 def narrate(
