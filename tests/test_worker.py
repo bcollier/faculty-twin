@@ -189,3 +189,35 @@ def test_hard_stop_releases_rows(archive):
     w.session_runner = stop_now
     w.poll_once()
     assert sb.rows[0]["status"] == "uploaded" and "retry" in sb.rows[0]["message"]
+
+
+# ---------------------------------------------------------------- the stages' own packages (Oct 8)
+
+def test_every_stage_runs_with_the_indexer_requirements():
+    # align and clips import pillow, scipy and scikit-learn, which the Vercel function's requirements.txt
+    # does not (and must not) have.
+    reqs = (common.REPO / "indexer" / "requirements.txt").read_text().lower()
+    for pkg in ("pillow", "scipy", "scikit-learn", "rapidfuzz", "nicknames", "python-pptx", "pypdf", "nbformat"):
+        assert pkg in reqs
+    root = (common.REPO / "requirements.txt").read_text().lower()
+    assert "scipy" not in root and "scikit-learn" not in root and "pillow" not in root
+    for stage, (extras, _args) in worker.EXTERNAL.items():
+        assert "indexer/requirements.txt" in extras, stage
+
+
+def test_startup_says_which_stage_packages_are_missing(monkeypatch):
+    import subprocess
+
+    def fake_run(cmd, **kw):
+        assert "indexer/requirements.txt" in cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="missing: scipy sklearn\n", stderr="")
+
+    monkeypatch.setattr(worker.subprocess, "run", fake_run)
+    problem = worker.stage_env_problem()
+    assert "scipy" in problem and "sklearn" in problem and "indexer/requirements.txt" in problem
+    monkeypatch.setattr(worker.subprocess, "run",
+                        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout="ok\n", stderr=""))
+    assert worker.stage_env_problem() is None
+    monkeypatch.setattr(worker.subprocess, "run",
+                        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 2, stdout="", stderr="No solution found"))
+    assert "could not install" in worker.stage_env_problem()

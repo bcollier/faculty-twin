@@ -33,17 +33,23 @@ Turns the private lecture archive (slide decks, Zoom captions, class video, note
 
 ## Commands (in order, from the repo root)
 
+The pipeline's own packages (pillow, scipy, scikit-learn, python-pptx, pypdf, nbformat, rapidfuzz,
+nicknames) are pinned in `indexer/requirements.txt`, never in the root `requirements.txt` (Vercel
+bundles that one). `indexer/worker.py` runs every stage with both files and checks at startup that
+they install and import. `IX` below is shorthand for those two flags.
+
 ```bash
+IX="--with-requirements requirements.txt --with-requirements indexer/requirements.txt"
 # 1. Slides (all sessions, or --course 70445 --session 6)
-uv run --no-project --with python-pptx --with pillow --with pypdf --with nbformat python indexer/slides.py
+uv run --no-project $IX python indexer/slides.py
 # 2. De-identify the transcripts
-uv run --no-project --with rapidfuzz --with nicknames python indexer/deidentify.py run
+uv run --no-project $IX python indexer/deidentify.py run
 # 3. Align slides to the class video
-uv run --no-project --with numpy --with pillow --with scikit-learn python -m indexer.align --all
+uv run --no-project $IX python -m indexer.align --all
 # 4. Cut class clips
-uv run --no-project --with numpy --with pillow --with scikit-learn python -m indexer.clips --all
+uv run --no-project $IX python -m indexer.clips --all
 # Canvas course info
-uv run --no-project --with-requirements requirements.txt --with rapidfuzz --with nicknames python -m indexer.canvas_import
+uv run --no-project $IX python -m indexer.canvas_import
 uv run --no-project --with-requirements requirements.txt python -m indexer.build_info_index
 # 5. Build and embed the index, then the suggested questions
 uv run --no-project --with-requirements requirements.txt python -m indexer.build_index

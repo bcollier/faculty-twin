@@ -81,15 +81,19 @@ SESSION_STAGES = {
 GLOBAL_STAGES = ["build_index", "upload"]
 STAGE_ORDER = ["slides", "deidentify", "align", "clips"]
 
+# Every stage runs with the app's packages plus the pipeline's own (indexer/requirements.txt: pillow,
+# scipy and scikit-learn for align and clips, python-pptx and pypdf for slides, rapidfuzz and nicknames
+# for de-identification). Changed Oct 8: align and clips ran with requirements.txt alone and failed on import.
+STAGE_ENV = ["--with-requirements", "requirements.txt", "--with-requirements", "indexer/requirements.txt"]
+# Modules the stages import that requirements.txt does not provide (checked once at startup).
+STAGE_MODULES = ("pptx", "pypdf", "nbformat", "PIL", "scipy", "sklearn", "rapidfuzz", "nicknames")
+
 # External stage scripts: uv extras and arguments. One place to adjust when a stage's CLI changes.
 EXTERNAL: dict[str, tuple[list[str], list[str]]] = {
-    "slides": (
-        ["--with", "python-pptx", "--with", "pillow", "--with", "pypdf", "--with", "nbformat"],
-        ["--course", "{course}", "--session", "{session}"],
-    ),
-    "deidentify": (["--with", "rapidfuzz", "--with", "nicknames"], ["run"]),
-    "align": (["--with-requirements", "requirements.txt"], ["--course", "{course}", "--session", "{session}"]),
-    "clips": (["--with-requirements", "requirements.txt"], ["--course", "{course}", "--session", "{session}"]),
+    "slides": (STAGE_ENV, ["--course", "{course}", "--session", "{session}"]),
+    "deidentify": (STAGE_ENV, ["run"]),
+    "align": (STAGE_ENV, ["--course", "{course}", "--session", "{session}"]),
+    "clips": (STAGE_ENV, ["--course", "{course}", "--session", "{session}"]),
 }
 STAGE_TIMEOUT = 3 * 3600
 POLL_SECONDS = 30
@@ -237,6 +241,31 @@ def place(sb: common.Supabase, row: dict[str, Any], folder: Path, keep_pdf: bool
 
 
 # ---------------------------------------------------------------- stages
+
+_CHECK = (
+    "import importlib.util as u; "
+    f"m = [n for n in {STAGE_MODULES!r} if u.find_spec(n) is None]; "
+    "print('missing: ' + ' '.join(m) if m else 'ok')"
+)
+
+
+def stage_env_problem() -> str | None:
+    """Why the stages could not run here (packages uv cannot install or import), or None. Run once at startup."""
+    uv = shutil.which("uv") or "uv"
+    cmd = [uv, "run", "--no-project", *STAGE_ENV, "python", "-c", _CHECK]
+    try:
+        done = subprocess.run(cmd, cwd=common.REPO, capture_output=True, text=True, timeout=900)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"could not run uv to check the stage packages ({type(exc).__name__})"
+    if done.returncode != 0:
+        tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or [""]
+        return f"uv could not install indexer/requirements.txt: {tail[0][:200]}"
+    out = done.stdout.strip().splitlines()[-1:] or [""]
+    if out[0].startswith("missing:"):
+        return (f"the pipeline stages are missing {out[0][8:].strip()}; "
+                "check indexer/requirements.txt and run: uv run --no-project --with-requirements requirements.txt "
+                "--with-requirements indexer/requirements.txt python -c 'import PIL, scipy, sklearn'")
+    return None
 
 def run_external(stage: str, course: str, session: int, logs: Path, stopper: Stopper | None = None) -> None:
     """Run one per-session stage script under uv, logging to a file. Raises WorkerError on failure."""
@@ -456,6 +485,10 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     common.load_env()
     archive = common.archive_dir(a.archive)
+    problem = stage_env_problem()
+    if problem:
+        log.error("not starting: %s", problem)
+        return 7
     try:
         sb = common.Supabase()
     except common.SupabaseError as exc:
