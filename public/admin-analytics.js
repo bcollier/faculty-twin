@@ -392,14 +392,28 @@ function modelsPanel(d) {
 
 const A = { days: 30, tests: false, loaded: false, loading: false };
 
+/* One load at a time. A range or test-traffic change during a load is not dropped: the reply for the old
+   selection is not shown, and the newest selection loads as soon as the running load ends. */
 async function load() {
-  if (A.loading) return;
+  if (A.loading) { A.again = true; return; }
   A.loading = true;
+  A.again = false;
+  const want = `${A.days}|${A.tests}`;
+  try {
+    await loadOnce();
+  } finally {
+    A.loading = false;
+    if (A.again || want !== `${A.days}|${A.tests}`) load();
+  }
+}
+
+async function loadOnce() {
   const status = $('#an-status');
   say(status, 'Loading...');
   $('#an-export').href = `/api/admin/analytics/export.csv?days=${A.days}`;
+  const want = `${A.days}|${A.tests}`;
   const r = await get(`/api/admin/analytics?days=${A.days}&include_tests=${A.tests}`);
-  A.loading = false;
+  if (want !== `${A.days}|${A.tests}`) return; // the selection changed while this was loading
   if (r.status === 401) { say(status, 'Sign in again to see analytics.', 'err'); return; }
   if (!r.ok || !r.data) { say(status, detail(r, 'Couldn\'t load analytics.'), 'err'); return; }
   A.loaded = true;
