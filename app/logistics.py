@@ -19,10 +19,11 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any
 
-from . import config, prompts, usage
+from . import config, llm, prompts, usage
 
 COURSE_CONTENT = "course_content"
 LOGISTICS = "logistics"
@@ -90,6 +91,8 @@ SYSTEM_PROMPT = prompts.default(PROMPT_NAME)  # the built-in default; Settings c
 
 @dataclass
 class Classification:
+    """Logistics or course content, how that was decided, and why."""
+
     kind: str  # COURSE_CONTENT or LOGISTICS
     source: str  # "keyword", "llm", or "error" (fell through to course content)
     reason: str = ""
@@ -99,13 +102,13 @@ def _plain(question: str) -> str:
     return re.sub(r"\s+", " ", (question or "").replace("\u2019", "'"))
 
 
-def keyword_hit(question: str) -> Optional[str]:
+def keyword_hit(question: str) -> str | None:
     """The phrase that marks an obvious logistics question, or None."""
     m = _KEYWORDS.search(_plain(question))
     return m.group(0) if m else None
 
 
-def personal_request(question: str) -> Optional[str]:
+def personal_request(question: str) -> str | None:
     """The phrase that marks a request only Ben can act on (regrade, extension, absence, a meeting), or None.
 
     A subset of the keyword pre-check. Such a question never gets a Canvas course-info answer
@@ -116,14 +119,8 @@ def personal_request(question: str) -> Optional[str]:
 
 
 def _parse(raw: str) -> tuple[str, str]:
-    text = (raw or "").strip()
-    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, re.S)
-    if fence:
-        text = fence.group(1)
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end <= start:
-        raise ValueError("reply was not JSON")
-    data: Any = json.loads(text[start : end + 1])
+    """(kind, reason) from the classifier's reply. Raises ValueError when it is not one of KINDS."""
+    data: Any = llm.extract_json(raw, whole_first=False)
     if not isinstance(data, dict) or data.get("kind") not in KINDS:
         raise ValueError("reply had no valid kind")
     return data["kind"], str(data.get("reason") or "")[:200]
@@ -132,8 +129,8 @@ def _parse(raw: str) -> tuple[str, str]:
 def classify(
     question: str,
     complete: Callable[..., str],
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> Classification:
     """Keyword pre-check, then one small model call. Any failure means course content."""
     hit = keyword_hit(question)

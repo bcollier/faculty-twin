@@ -11,10 +11,11 @@ import asyncio
 import contextlib
 import contextvars
 import re
-from concurrent.futures import ThreadPoolExecutor
 import time
-from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import urlparse
 
 import numpy as np
@@ -128,8 +129,8 @@ class Retriever:
     """The hand-written retrieval functions. Tests swap in a TEST FAKE via dependency override."""
 
     rank: Callable[[np.ndarray, np.ndarray], list[tuple[int, float]]]
-    select_segments: Callable[[list[tuple[int, float]], list[dict[str, Any]], Optional[float]], list[dict[str, Any]]]
-    threshold: Optional[float]
+    select_segments: Callable[[list[tuple[int, float]], list[dict[str, Any]], float | None], list[dict[str, Any]]]
+    threshold: float | None
 
 
 def get_retriever() -> Retriever:
@@ -145,7 +146,7 @@ def get_completer() -> Callable[..., str]:
     return llm.complete_json
 
 
-def get_searcher() -> Callable[..., "web_answer.WebReply"]:
+def get_searcher() -> Callable[..., web_answer.WebReply]:
     """The web search call for beyond-the-slides answers. Tests swap in a TEST FAKE."""
     return web_answer.search
 
@@ -161,9 +162,11 @@ class PasscodeBody(BaseModel):
 
 
 class AskBody(BaseModel):
+    """POST /api/ask: the question, an optional course filter, and where the question came from."""
+
     question: str
-    course: Optional[str] = None
-    source: Optional[str] = Field(None, max_length=20)  # chip | typed | follow_up; anything else is ignored
+    course: str | None = None
+    source: str | None = Field(None, max_length=20)  # chip | typed | follow_up; anything else is ignored
 
 
 class EventBody(BaseModel):
@@ -174,7 +177,7 @@ class LinksBody(BaseModel):
     slide_ids: list[str] = Field(..., max_length=playlist.LINKS_MAX_SLIDES)
 
 
-def question_source(request: Request, sent: Optional[str]) -> Optional[str]:
+def question_source(request: Request, sent: str | None) -> str | None:
     """Where a question came from, for the log. The X-FT-Source header may only claim a test source
     (smoke, eval, prompt_test): it is a tag for analytics and changes nothing else."""
     header = (request.headers.get("x-ft-source") or "").strip().lower()
@@ -184,6 +187,7 @@ def question_source(request: Request, sent: Optional[str]) -> Optional[str]:
 
 
 def clean_question(raw: str) -> str:
+    """The question with whitespace collapsed; 400 when it is empty or over QUESTION_MAX_CHARS."""
     question = re.sub(r"\s+", " ", raw or "").strip()
     if not question:
         raise HTTPException(400, "Please type a question.")
@@ -192,7 +196,8 @@ def clean_question(raw: str) -> str:
     return question
 
 
-def clean_course(raw: Optional[str]) -> Optional[str]:
+def clean_course(raw: str | None) -> str | None:
+    """A course code or None for both; 400 for anything else."""
     if raw in (None, "", "all"):
         return None
     if raw not in config.COURSE_CODES:
@@ -219,15 +224,15 @@ LOG_KINDS = (logistics.COURSE_CONTENT, STORED_TOPIC, faq.KIND, course_info.KIND,
 
 def answer(
     question: str,
-    course: Optional[str],
+    course: str | None,
     content: Content,
     retriever: Retriever,
     embedder: Callable[[str], np.ndarray],
     completer: Callable[..., str],
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
-    visitor: Optional[str] = None,
-    searcher: Optional[Callable[..., Any]] = None,
+    provider: str | None = None,
+    model: str | None = None,
+    visitor: str | None = None,
+    searcher: Callable[..., Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Run retrieval + narration. Returns (playlist, info for logging).
 
@@ -236,43 +241,122 @@ def answer(
     (the logistics classifier, the web scope check, a web answer, or narration),
     so the question log is honest. `searcher` is the web search call for step 7b
     (default `web_answer.search`).
+
+    The routes run cheapest first, and the first one that answers wins (docs/ARCHITECTURE.md,
+    "How a question is routed"). The first three need no embedding; the question is embedded
+    once, then the rest share that one vector.
     """
     if provider is None or model is None:
         provider, model = settings_store.llm_choice()
-    voice = voices.for_answer()
-    info: dict[str, Any] = {"provider": None, "model": None, "top_score": None, "narration": None, "kind": None}
+    ask = _Ask(question, course, content, retriever, embedder, completer, provider, model, visitor, searcher,
+               voice=voices.for_answer())
+    for route in (_instructor_alert, _stored_topic_route, _course_faq, _search, _personal_request, _canvas_answer):
+        reply = route(ask)
+        if reply is not None:
+            return reply, ask.info
+    return _slides_answer(ask), ask.info
 
-    def used_model() -> None:
-        info["provider"], info["model"] = provider, model
 
-    # Instructor alerts (spec "Instructor alerts"): a broken quiz, submission or API key texts Ben, then stop.
-    # Only a student request (a visitor) can text; tests and evals run it as a dry run.
-    incident = alerts.check(question, course, content, completer, provider, model, visitor=visitor)
-    if incident is not None:
-        info.update(incident.info)
-        return incident.reply, info
+@dataclass
+class _Ask:
+    """One question on its way through answer(): what came in, and what the search found."""
 
-    stored = _stored_topic(content, question, course)
-    if stored is not None:
-        info["narration"] = "stored"
-        info["kind"] = STORED_TOPIC
-        return _replay_topic(content, question, stored, voice), info
+    question: str
+    course: str | None
+    content: Content
+    retriever: Retriever
+    embedder: Callable[[str], np.ndarray]
+    completer: Callable[..., str]
+    provider: str
+    model: str
+    visitor: str | None
+    searcher: Callable[..., Any] | None
+    voice: voices.Plan
+    info: dict[str, Any] = field(default_factory=lambda: {
+        "provider": None, "model": None, "top_score": None, "narration": None, "kind": None})
+    # Filled by _search: the visible slides and Canvas chunks, and how the question ranks against each.
+    records: list[dict[str, Any]] = field(default_factory=list)
+    info_records: list[dict[str, Any]] = field(default_factory=list)
+    ranked: list[tuple[int, float]] = field(default_factory=list)
+    info_ranked: list[tuple[int, float]] = field(default_factory=list)
+    best_slide: float | None = None
 
-    # Course FAQ (spec step 3a): Ben's own written answers, before any embedding or model call.
-    hit = faq.match(question, course)
-    if hit is not None:
-        info["kind"] = faq.KIND
-        info["faq_id"] = hit.entry.id
-        return faq.reply(question, course, hit, _suggested_questions(content, course)), info
+    def used_model(self) -> None:
+        """Record the model in the log row: only routes that called one do this."""
+        self.info["provider"], self.info["model"] = self.provider, self.model
 
-    records, matrix = playlist.searchable(content, course)
-    info_records, info_matrix = course_info.searchable(content, course)
-    _check_retrieval_ready(retriever, matrix.shape[1])
+    def suggested(self) -> list[str]:
+        return _suggested_questions(self.content, self.course)
+
+
+def _instructor_alert(ask: _Ask) -> dict[str, Any] | None:
+    """Wins when a student reports a broken quiz, submission or API key: it texts Ben, then stops.
+
+    Spec "Instructor alerts". Only a student request (a visitor) can text; tests and evals run it as a dry run.
+    """
+    incident = alerts.check(ask.question, ask.course, ask.content, ask.completer, ask.provider, ask.model,
+                            visitor=ask.visitor)
+    if incident is None:
+        return None
+    ask.info.update(incident.info)
+    return incident.reply
+
+
+def _stored_topic_route(ask: _Ask) -> dict[str, Any] | None:
+    """Wins when the question is a suggested question: its stored walkthrough replays (no search, no model)."""
+    stored = _stored_topic(ask.content, ask.question, ask.course)
+    if stored is None:
+        return None
+    ask.info["narration"] = "stored"
+    ask.info["kind"] = STORED_TOPIC
+    return _replay_topic(ask.content, ask.question, stored, ask.voice)
+
+
+def _course_faq(ask: _Ask) -> dict[str, Any] | None:
+    """Wins when Ben's course FAQ matches (spec step 3a): his own written answer, before any embedding."""
+    hit = faq.match(ask.question, ask.course)
+    if hit is None:
+        return None
+    ask.info["kind"] = faq.KIND
+    ask.info["faq_id"] = hit.entry.id
+    return faq.reply(ask.question, ask.course, hit, ask.suggested())
+
+
+def _search(ask: _Ask) -> dict[str, Any] | None:
+    """Embed the question once and rank the slides and the Canvas chunks with that one vector.
+
+    Answers (not covered) only when there is nothing to search at all; otherwise it fills in the
+    rankings for the routes after it and returns None.
+    """
+    records, matrix = playlist.searchable(ask.content, ask.course)
+    info_records, info_matrix = course_info.searchable(ask.content, ask.course)
+    _check_retrieval_ready(ask.retriever, matrix.shape[1])
     if not records and not info_records:
-        info["kind"] = NOT_COVERED
-        return playlist.not_covered(question), info
+        ask.info["kind"] = NOT_COVERED
+        return playlist.not_covered(ask.question)
+    qvec = _embed(ask)
+    if records and qvec.shape[-1] != matrix.shape[1]:
+        config.log.error("question vector dim %s != index dim %s", qvec.shape, matrix.shape)
+        raise HTTPException(503, "The search index does not match the embedding model. Ben needs to rebuild it.")
+    if info_matrix is not None and qvec.shape[-1] != info_matrix.shape[1]:
+        config.log.error("question vector dim %s != course-info index dim %s", qvec.shape, info_matrix.shape)
+        info_records, info_matrix = [], None  # a stale info index never blocks slide answers
     try:
-        qvec = embedder(question)  # once: the same vector scores the slides and the course-info chunks
+        ranked = ask.retriever.rank(qvec, matrix) if records else []
+        info_ranked = ask.retriever.rank(qvec, info_matrix) if info_records else []
+    except NotImplementedError as exc:
+        raise RetrievalNotReady() from exc
+    ask.records, ask.info_records, ask.ranked, ask.info_ranked = records, info_records, ranked, info_ranked
+    ask.best_slide = float(ranked[0][1]) if ranked else None
+    ask.info["top_score"] = ask.best_slide
+    ask.info["top_slide_id"] = records[ranked[0][0]].get("id") if ranked else None  # Analytics topics
+    return None
+
+
+def _embed(ask: _Ask) -> np.ndarray:
+    """The question vector. A spent daily cap or a Voyage failure is a 503 the page can explain."""
+    try:
+        return ask.embedder(ask.question)
     except embed.EmbeddingCapReached as exc:
         config.log.warning("embedding cap reached")
         raise HTTPException(
@@ -281,79 +365,87 @@ def answer(
     except embed.EmbeddingError as exc:
         config.log.warning("embedding failed: %s", exc)
         raise HTTPException(503, "The search service is not available right now. Please try again shortly.") from exc
-    if records and qvec.shape[-1] != matrix.shape[1]:
-        config.log.error("question vector dim %s != index dim %s", qvec.shape, matrix.shape)
-        raise HTTPException(503, "The search index does not match the embedding model. Ben needs to rebuild it.")
-    if info_matrix is not None and qvec.shape[-1] != info_matrix.shape[1]:
-        config.log.error("question vector dim %s != course-info index dim %s", qvec.shape, info_matrix.shape)
-        info_records, info_matrix = [], None  # a stale info index never blocks slide answers
-    try:
-        ranked = retriever.rank(qvec, matrix) if records else []
-        info_ranked = retriever.rank(qvec, info_matrix) if info_records else []
-    except NotImplementedError as exc:
-        raise RetrievalNotReady() from exc
-    best_slide = float(ranked[0][1]) if ranked else None
-    info["top_score"] = best_slide
-    info["top_slide_id"] = records[ranked[0][0]].get("id") if ranked else None  # Analytics topics
 
-    # A request only Ben can act on (a regrade, an extension, an absence) goes to him, never to Canvas or
-    # the slides (spec steps 6a and 7a). Keyword check only: no model call.
-    if logistics.personal_request(question):
-        info["kind"], info["kind_source"] = logistics.LOGISTICS, "keyword"
-        return _referral(question, course, content), info
 
-    # Course info from Canvas (spec step 6a): wins when it clears the info threshold and beats the best
-    # slide by the info margin (a question about where something is on Canvas only needs the threshold).
-    # Otherwise the slides answer, or, when no slide clears its threshold, the
-    # web path (step 7b) gets its turn even though a weaker Canvas chunk exists.
-    hits = course_info.top_hits(info_ranked, info_records, question=question)
-    best_info = float(info_ranked[0][1]) if info_ranked else None
-    if hits and course_info.wins(best_info, best_slide, canvas=course_info.canvas_request(question)):
-        used_model()
-        with usage.purpose("course_info"):
-            result = course_info.answer(
-                question, course, hits, _suggested_questions(content, course), completer, provider=provider, model=model
-            )
-        info["kind"] = course_info.KIND
-        info["top_slide_id"] = None  # answered from Canvas, not a slide
-        info["top_score"] = best_info
-        info["narration"] = result.source
-        info["errors"] = result.errors
-        info["fallback_reason"] = result.reason  # shown in Settings > Activity when it fell back
-        return result.reply, info
+def _personal_request(ask: _Ask) -> dict[str, Any] | None:
+    """Wins for a request only Ben can act on (a regrade, an extension, an absence): never Canvas or slides.
 
-    if not records:
+    Spec steps 6a and 7a. Keyword check only: no model call.
+    """
+    if not logistics.personal_request(ask.question):
+        return None
+    ask.info["kind"], ask.info["kind_source"] = logistics.LOGISTICS, "keyword"
+    return _referral(ask.question, ask.course, ask.content)
+
+
+def _canvas_answer(ask: _Ask) -> dict[str, Any] | None:
+    """Wins when the best Canvas chunk clears the info threshold and beats the best slide by the info margin.
+
+    Spec step 6a. A question about where something is on Canvas only needs the threshold
+    (course_info.canvas_request). Otherwise the slides answer, or, when no slide clears its
+    threshold, the web path (step 7b) gets its turn even though a weaker Canvas chunk exists.
+    """
+    hits = course_info.top_hits(ask.info_ranked, ask.info_records, question=ask.question)
+    best_info = float(ask.info_ranked[0][1]) if ask.info_ranked else None
+    canvas = course_info.canvas_request(ask.question)
+    if not (hits and course_info.wins(best_info, ask.best_slide, canvas=canvas)):
+        return None
+    ask.used_model()
+    with usage.purpose("course_info"):
+        result = course_info.answer(ask.question, ask.course, hits, ask.suggested(), ask.completer,
+                                    provider=ask.provider, model=ask.model)
+    info = ask.info
+    info["kind"] = course_info.KIND
+    info["top_slide_id"] = None  # answered from Canvas, not a slide
+    info["top_score"] = best_info
+    info["narration"] = result.source
+    info["errors"] = result.errors
+    info["fallback_reason"] = result.reason  # shown in Settings > Activity when it fell back
+    return result.reply
+
+
+def _slides_answer(ask: _Ask) -> dict[str, Any]:
+    """The last route: Ben's select_segments() picks the slides; else not covered, or the web path.
+
+    With slides chosen, the logistics check (spec step 7a) may still send the question to Ben;
+    otherwise one narration call explains the slides, with the helper-slide check beside it.
+    """
+    info = ask.info
+    if not ask.records:
         info["kind"] = NOT_COVERED
-        return playlist.not_covered(question), info
+        return playlist.not_covered(ask.question)
     try:
-        chosen = retriever.select_segments(ranked, records, retriever.threshold)
+        chosen = ask.retriever.select_segments(ask.ranked, ask.records, ask.retriever.threshold)
     except NotImplementedError as exc:
         raise RetrievalNotReady() from exc
     if not chosen:
         info["kind"] = NOT_COVERED
         # Beyond the slides (spec step 7b): a course-adjacent question may get a web answer.
-        return _beyond_the_slides(question, course, content, records, ranked, completer,
-                                  searcher or get_searcher(), provider, model, info, used_model)
+        reply, _ = _beyond_the_slides(ask.question, ask.course, ask.content, ask.records, ask.ranked, ask.completer,
+                                      ask.searcher or get_searcher(), ask.provider, ask.model, info, ask.used_model)
+        return reply
 
     # Logistics check (spec step 7a): meetings, absences, grades, deadlines and Canvas go to Ben.
-    kind = logistics.classify(question, completer, provider=provider, model=model)
+    kind = logistics.classify(ask.question, ask.completer, provider=ask.provider, model=ask.model)
     info["kind"] = kind.kind
     info["kind_source"] = kind.source
     if kind.source != "keyword":  # "llm", or "error" after a call was tried
-        used_model()
+        ask.used_model()
     if kind.kind == logistics.LOGISTICS:
-        return _referral(question, course, content), info
+        return _referral(ask.question, ask.course, ask.content)
 
-    codes = {r["id"]: (playlist.related_code(content, r) or {}).get("source") for r in chosen}
-    used_model()
+    codes = {r["id"]: (playlist.related_code(ask.content, r) or {}).get("source") for r in chosen}
+    ask.used_model()
     # The helper-slide self-check runs beside narration, so it adds no wait (spec "AI-drawn helper slides").
-    helper = _start_helper(question, "check", helper_slide.slide_material(chosen), completer, provider, model)
-    result = narration.narrate(question, chosen, codes, provider=provider, model=model, complete=completer)
+    helper = _start_helper(ask.question, "check", helper_slide.slide_material(chosen), ask.completer, ask.provider,
+                           ask.model)
+    result = narration.narrate(ask.question, chosen, codes, provider=ask.provider, model=ask.model,
+                               complete=ask.completer)
     info["narration"] = result.source
     info["errors"] = result.errors
-    reply = playlist.build_playlist(content, question, chosen, result.narrations, result.follow_ups, voice)
+    reply = playlist.build_playlist(ask.content, ask.question, chosen, result.narrations, result.follow_ups, ask.voice)
     _attach_helper(reply, helper, info)
-    return reply, info
+    return reply
 
 
 _helper_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ft-helper")
@@ -385,7 +477,7 @@ def _attach_helper(reply: dict[str, Any], future, info: dict[str, Any], timeout:
         info["helper_slide"] = slide.get("origin")
 
 
-def _referral(question: str, course: Optional[str], content: Content) -> dict[str, Any]:
+def _referral(question: str, course: str | None, content: Content) -> dict[str, Any]:
     """The logistics referral (spec step 7a): Ben's words, the Calendly button, the TA cards."""
     referral = logistics.referral(question, _suggested_questions(content, course))
     referral["links"] = [dict(faq.CALENDLY)]
@@ -395,7 +487,7 @@ def _referral(question: str, course: Optional[str], content: Content) -> dict[st
 
 def _beyond_the_slides(
     question: str,
-    course: Optional[str],
+    course: str | None,
     content: Content,
     records: list[dict[str, Any]],
     ranked: list[tuple[int, float]],
@@ -454,21 +546,27 @@ def _check_retrieval_ready(retriever: Retriever, dim: int) -> None:
         pass
 
 
-def _suggested_questions(content: Content, course: Optional[str]) -> list[str]:
+def _suggested_questions(content: Content, course: str | None) -> list[str]:
     """Suggested course questions to offer after a logistics referral."""
     out = []
     for topic in content.topics:
-        if isinstance(topic, dict) and topic.get("question") and (course is None or topic.get("course") in (None, course)):
+        if isinstance(topic, dict) and topic.get("question") and _for_course(topic, course):
             out.append(str(topic["question"]))
     return out[: logistics.MAX_FOLLOW_UPS]
 
 
-def _stored_topic(content: Content, question: str, course: Optional[str]) -> Optional[dict[str, Any]]:
+def _for_course(topic: dict[str, Any], course: str | None) -> bool:
+    """A suggested question shows for every course when either side has none."""
+    return course is None or topic.get("course") in (None, course)
+
+
+def _stored_topic(content: Content, question: str, course: str | None) -> dict[str, Any] | None:
+    """The suggested question with the same words (ignoring case and punctuation), if it can still replay."""
     key = _norm(question)
     for topic in content.topics:
         if not isinstance(topic, dict) or not topic.get("playlist"):
             continue
-        if _norm(str(topic.get("question", ""))) == key and (course is None or topic.get("course") in (None, course)):
+        if _norm(str(topic.get("question", ""))) == key and _for_course(topic, course):
             # Only when a stored slide can still be shown; otherwise the question is answered live.
             return topic if _replayable(content, topic) else None
     return None
@@ -513,7 +611,7 @@ def _replay_topic(content: Content, question: str, topic: dict[str, Any], voice:
     return result
 
 
-def words_path(mp3_path: str) -> Optional[str]:
+def words_path(mp3_path: str) -> str | None:
     """`audio/<tag>/<hash>.mp3` -> `audio/<tag>/<hash>.words.json` (the stored clip's word timings)."""
     return mp3_path[: -len(".mp3")] + ".words.json" if mp3_path.endswith(".mp3") else None
 
@@ -527,6 +625,7 @@ def health() -> dict[str, bool]:
 
 @app.post("/api/login", status_code=204)
 def login(body: PasscodeBody, request: Request, response: Response) -> None:
+    """Check the student passcode (rate limited per address) and set the 7-day cookie."""
     limits.check_login_rate(request, "student")
     code = (body.passcode or "").strip()
     if not code or len(code) > 200 or not auth.check_student_passcode(code):
@@ -556,6 +655,7 @@ def voice_info(_: auth.Session = Depends(auth.require_student)) -> dict[str, Any
 
 @app.get("/api/topics")
 def topics(_: auth.Session = Depends(auth.require_student), content: Content = Depends(get_content)) -> list:
+    """The suggested questions (text and course only)."""
     out = []
     for t in content.topics:
         if isinstance(t, dict) and t.get("question"):
@@ -573,6 +673,7 @@ def ask(
     completer: Callable[..., str] = Depends(get_completer),
     searcher: Callable[..., Any] = Depends(get_searcher),
 ) -> dict[str, Any]:
+    """Answer one question: rate limits, answer(), then one question-log row. 503 until retrieval exists."""
     question = clean_question(body.question)
     course = clean_course(body.course)
     limits.check_ask_rate(auth.visitor_key(session), limits.client_hash(request))
@@ -588,7 +689,7 @@ def ask(
                                   visitor=None if test_purpose else auth.visitor_key(session),
                                   searcher=searcher)
         except RetrievalNotReady:
-            raise HTTPException(503, "retrieval not implemented yet")
+            raise HTTPException(503, "retrieval not implemented yet") from None
     latency = int((time.monotonic() - started) * 1000)
     limits.log_question(
         question, info["top_score"], result["covered"], info["provider"], info["model"], latency, course,
@@ -699,7 +800,7 @@ async def audio(
     return StreamingResponse(_keep_timings(stream, collector, v, text), media_type="audio/mpeg", headers=headers)
 
 
-async def _keep_timings(stream, collector: "timings.Collector", tag: str, text: str):
+async def _keep_timings(stream, collector: timings.Collector, tag: str, text: str):
     """Pass the audio through; once all of it was sent, save its word timings for the read-along."""
     async for chunk in stream:
         yield chunk
@@ -755,7 +856,6 @@ def dev_file(
 
 
 from .admin import router as admin_router  # noqa: E402  (admin imports answer() from here)
-
 from .analytics import router as analytics_router  # noqa: E402
 
 app.include_router(admin_router)
