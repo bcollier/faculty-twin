@@ -148,6 +148,17 @@ A course-adjacent question no slide covers can get a short answer written with t
 - **Spend.** Each web answer costs about 2 to 5 cents (searches plus 6,000 to 17,000 input tokens of results). A daily cap (`DAILY_WEB_ANSWER_CAP`, default 200, Settings can lower it or set 0) fails closed, the call counts against `DAILY_LLM_CALL_CAP`, and Settings can turn the feature off. `test_daily_cap_declines_once_used_up`, `test_toggle_off_restores_the_plain_decline`.
 - **Residual risk.** A web answer can be wrong, or cite a low-quality page; the label and the source links let a student check it. Search providers see the student's question text (as every model provider already does).
 
+### AI-drawn helper slides (added Oct 8, PR `feat/helper-slides`)
+
+A model can now propose one small slide per answer, and Ben can draft slides in Settings (`app/helper_slide.py`, `public/helper-slide.js`). What changed for the threat model:
+
+- **No markup from a model, ever (XSS).** The model returns a JSON spec; the server keeps only the known fields of four kinds with size limits; the page draws it with fixed templates using `createElementNS` and `textContent`, and sets attributes only from our own keys and numbers. A label of `<script>`, `<img onerror=...>` or `javascript:` is shown as text. The renderer has no HTML sink (`tests/test_security.py` scans for them). `test_markup_in_labels_is_kept_as_plain_text_for_the_renderer`, `test_renderer_never_writes_markup_or_runs_code`; headless check in the PR (no dialogs, no `on*` attributes, no `script`/`img` nodes).
+- **Code is never run.** Code slides are text in an SVG; nothing on the server or page executes them. `test_server_never_executes_code`.
+- **Same text rules as answers.** Every field, code lines included, is checked for web addresses (sources are the only place for `https://` links), PG words, access codes, key-like tokens, name tokens, personal details and injection markers.
+- **Not passed off as course material.** Always labeled "AI-drawn slide, not from my course" (in the page and inside the drawing, so an exported SVG keeps it), dashed amber frame, never in the source cards, never narrated.
+- **Admin only for drafts.** `/api/admin/drafts*` and `/api/admin/helper-slides` need the admin cookie and pass the Origin check; draft ids are checked against a strict pattern before they become a bucket path (`slides/drafts/<id>.json`, never signed for a browser). `test_draft_routes_need_the_admin_cookie`, `test_draft_writes_from_another_site_are_refused`.
+- **Spend.** On by default with a daily cap (`DAILY_HELPER_SLIDE_CAP`, 150, fails closed), counted against `DAILY_LLM_CALL_CAP`, skipped in eval runs. About half a cent to a cent per slide (live check, Sonnet 5.5 through OpenRouter).
+
 ## 6. Frontend changes (follow-up PR after PR #5 merged)
 
 1. **Name hint** (M7). Under the main question box: "Please leave out names, yours or anyone else's. I keep questions, without names, to improve the twin." The compact dock input carries the same hint for screen readers. Both inputs already had `maxlength="300"`.

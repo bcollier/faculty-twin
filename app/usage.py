@@ -47,6 +47,7 @@ PURPOSES = (
     "course_info",
     "web_scope",
     "web_answer",
+    "helper_slide",
     "prompt_test",
     "smoke_test",
     "eval_generate",

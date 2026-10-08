@@ -159,6 +159,9 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     speech.clear_cache()
     edge_voice.clear_cache()
     alerts.reset_memory()
+    # Helper slides (app/helper_slide.py) default to on, but most tests' fake models do not know their
+    # prompt; tests/test_helper_slide.py turns them back on where it tests them.
+    settings_store.put({"helper_slides_enabled": False})
     yield
     storage.store.reset()
     settings_store.clear_cache()

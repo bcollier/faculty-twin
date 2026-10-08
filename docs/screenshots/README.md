@@ -46,3 +46,13 @@
 | [settings-evals-run-cards.webp](settings-evals-run-cards.webp) | Evals: the three run cards (October 7 twin run, the excluded first attempt, the October 5 baseline), aggregates only |
 | [settings-analytics-spend-tokens.webp](settings-analytics-spend-tokens.webp) | Analytics, last 30 days, test traffic hidden: tiles, estimated spend over time, tokens by model and purpose, voice characters, embeddings |
 | [settings-analytics-topic-tree.webp](settings-analytics-topic-tree.webp) | Analytics: questions by course, session and slide (from each answered question's top slide) |
+
+## Mock screenshots (placeholder content, `?mock=1`, taken headless)
+
+These come from the dev mock (`public/dev/mock.js`), not the live site: the words are placeholders and no course material is shown.
+
+| File | What it shows |
+| --- | --- |
+| [web-answer-card-mock.webp](web-answer-card-mock.webp) | "Beyond my slides: from the web": the amber label, the answer, a Listen button in a stock voice, source links, and "Closest material in my course" |
+| [helper-slide-diagram-mock.webp](helper-slide-diagram-mock.webp) | An AI-drawn helper slide, diagram kind (cycle layout), drawn by `public/helper-slide.js` from a JSON spec, labeled "AI-drawn slide, not from my course" |
+| [helper-slide-code-mock.webp](helper-slide-code-mock.webp) | An AI-drawn helper slide, code kind: Python shown with line numbers and two callouts. The code is only displayed |

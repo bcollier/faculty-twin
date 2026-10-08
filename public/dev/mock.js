@@ -7,6 +7,7 @@
 //   (anything else)  covered answer, 4 segments; part 2 has code, part 3 has a class clip
 //   stanley / weather  not covered
 //   n8n / webanswer  "Beyond my slides: from the web" card (add "listen" for a stock-voice Listen button)
+//   helperdiagram    covered answer plus an AI-drawn diagram slide (helpercode: a code slide; helperxss: hostile labels)
 //   faqmeet          FAQ answer with a link button (Calendly)
 //   faqta            FAQ answer for two courses with two TA contact cards
 //   logistics        logistics referral with the Calendly button and a TA card
@@ -161,6 +162,25 @@ function segment(n, course, session, slide, extra = {}) {
 }
 
 const staleServed = new Set();
+// AI-drawn helper slides: specs only (public/helper-slide.js draws them). Placeholder content.
+const HELPER_SPECS = {
+  diagram: { kind: 'diagram', title: 'Mock: how a k-means step works', layout: 'cycle',
+    nodes: [{ id: 'init', label: 'Pick k starting centers' }, { id: 'assign', label: 'Assign each point to the nearest center' },
+      { id: 'update', label: 'Move each center to the mean of its points' }, { id: 'check', label: 'Did any point change cluster?' }],
+    edges: [{ from: 'init', to: 'assign' }, { from: 'assign', to: 'update' }, { from: 'update', to: 'check' },
+      { from: 'check', to: 'assign', label: 'yes, repeat' }] },
+  code: { kind: 'code', title: 'Mock: k-means in scikit-learn', language: 'python',
+    lines: ['from sklearn.cluster import KMeans', 'import numpy as np', '', 'X = np.array([[1, 2], [1, 4], [10, 2], [10, 4]])',
+      'model = KMeans(n_clusters=2, n_init=10, random_state=0)', 'labels = model.fit_predict(X)', 'print(labels)',
+      'print(model.cluster_centers_)'],
+    callouts: [{ line: 5, text: 'k is chosen up front; n_init reruns from new starting centers' },
+      { line: 6, text: 'fit and assign every point to a cluster in one call' }] },
+  xss: { kind: 'diagram', title: '<script>alert(1)</script> title', layout: 'flow',
+    nodes: [{ id: 'a', label: '<img src=x onerror=alert(1)>' }, { id: 'b', label: 'javascript:alert(2)' }, { id: 'c', label: '" onload="alert(3)' }],
+    edges: [{ from: 'a', to: 'b', label: '<b>bold?</b>' }, { from: 'b', to: 'c' }] },
+};
+const helperSlide = (k) => ({ ...HELPER_SPECS[k], label: 'AI-drawn slide, not from my course', origin: 'generated' });
+
 async function buildAnswer(question, course) {
   const c = course || '70445';
   const clipUrl = await placeholderClip();
@@ -202,6 +222,11 @@ function sessionRow(course, session, date, title, has) {
   };
 }
 const admin = {
+  helper: { helper_slides_enabled: true, daily_helper_slide_cap: 150, helper_slides_today: 4, helper_slides_use_approved: false, label: 'AI-drawn slide, not from my course' },
+  drafts: [
+    { id: '20261008T150000000000Z', topic: 'Mock: the k-means loop', spec: HELPER_SPECS.diagram, status: 'approved', created_at: '2026-10-08T15:00:00Z', updated_at: '2026-10-08T15:00:00Z' },
+    { id: '20261008T140000000000Z', topic: 'Mock: k-means in code', spec: HELPER_SPECS.code, status: 'draft', created_at: '2026-10-08T14:00:00Z', updated_at: '2026-10-08T14:00:00Z' },
+  ],
   settings: { provider: 'anthropic', model: 'claude-sonnet-5-5', providers: ['anthropic', 'openai', 'openrouter'],
     default_models: { anthropic: 'claude-sonnet-5-5', openai: 'gpt-6.1-sol', openrouter: 'anthropic/claude-sonnet-5.5' },
     web_answers_enabled: true, daily_web_answer_cap: 200, web_answers_today: 3, web_answer_voice: 'none', web_answer_voice_label: null,
@@ -403,7 +428,11 @@ async function route(url, method, body) {
     if (q.includes('stanley') || q.includes('weather')) {
       return json(200, { question: body.question, covered: false, segments: [], sources: [], follow_ups: [] });
     }
-    return json(200, await buildAnswer(body.question, body.course));
+    const built = await buildAnswer(body.question, body.course);
+    if (q.includes('helperdiagram')) built.generated_slide = helperSlide('diagram');
+    if (q.includes('helpercode')) built.generated_slide = helperSlide('code');
+    if (q.includes('helperxss')) built.generated_slide = helperSlide('xss');
+    return json(200, built);
   }
 
   /* admin */
@@ -429,6 +458,31 @@ async function route(url, method, body) {
         voice_char_cap: admin.settings.daily_voice_char_cap, free_voice_char_cap: admin.settings.daily_free_voice_char_cap },
       limits: { per_minute: 5, per_day: 30, question_max_chars: 300, narration_max_words: 110 },
     });
+  }
+  if (path === '/api/admin/helper-slides') {
+    if (method === 'PUT') Object.assign(admin.helper, body || {});
+    return json(200, admin.helper);
+  }
+  if (path === '/api/admin/drafts/gaps') {
+    return json(200, { gaps: [{ question: 'Mock declined question about topic Z', count: 3 }, { question: 'Mock gap two', count: 1 }] });
+  }
+  if (path === '/api/admin/drafts/generate' && method === 'POST') {
+    await sleep(500);
+    return json(200, { topic: body.topic, spec: HELPER_SPECS.code, label: 'AI-drawn slide, not from my course' });
+  }
+  if (path === '/api/admin/drafts' && method === 'POST') {
+    const d = { id: `20261008T12000${admin.drafts.length}000000Z`, topic: body.topic, spec: body.spec, status: 'draft',
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    admin.drafts.unshift(d);
+    return json(200, d);
+  }
+  if (path === '/api/admin/drafts') return json(200, { drafts: admin.drafts, label: 'AI-drawn slide, not from my course' });
+  if (path.startsWith('/api/admin/drafts/')) {
+    const id = decodeURIComponent(path.split('/').pop());
+    const i = admin.drafts.findIndex(d => d.id === id);
+    if (i < 0) return json(404, { detail: 'There is no draft with that id.' });
+    if (method === 'DELETE') { admin.drafts.splice(i, 1); return json(200, { ok: true }); }
+    if (method === 'PATCH') { Object.assign(admin.drafts[i], body?.status ? { status: body.status } : {}, body?.spec ? { spec: body.spec } : {}); return json(200, admin.drafts[i]); }
   }
   if (path === '/api/admin/settings') {
     if (method === 'PUT') {

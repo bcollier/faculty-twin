@@ -50,7 +50,7 @@ const fmtWhen = (iso) => {
   return isNaN(d) ? iso : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 };
 const PURPOSE_NAMES = {
-  narration: 'Narration', logistics: 'Logistics check', course_info: 'Course-info answers', web_scope: 'Web scope check', web_answer: 'Web answers (with searches)', prompt_test: 'Model and prompt tests',
+  narration: 'Narration', logistics: 'Logistics check', course_info: 'Course-info answers', web_scope: 'Web scope check', web_answer: 'Web answers (with searches)', helper_slide: 'AI-drawn helper slides', prompt_test: 'Model and prompt tests',
   smoke_test: 'Smoke checks', eval_generate: 'Eval answers', eval_judge: 'Eval judges', topic_label: 'Topic labeling', incident_classifier: 'Student alerts check',
   embed_query: 'Question embeddings', tts: 'Voice', other: 'Other',
 };

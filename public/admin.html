@@ -12,6 +12,7 @@
   <script type="module" src="admin-analytics.js"></script>
   <script type="module" src="admin-evals.js"></script>
   <script type="module" src="admin-alerts.js"></script>
+  <script type="module" src="admin-drafts.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#admin-main">Skip to content</a>
@@ -60,6 +61,7 @@
         <li><a href="#sec-analytics">Analytics</a></li>
         <li><a href="#sec-evals">Evals</a></li>
         <li><a href="#sec-alerts">Student alerts</a></li>
+        <li><a href="#sec-drafts">Draft slides</a></li>
       </ul>
     </nav>
 
@@ -630,6 +632,52 @@
             <tbody id="al-body"></tbody>
           </table>
         </div>
+      </section>
+
+      <!-- 10. Draft slides (AI-drawn helper slides) -->
+      <section class="panel" id="sec-drafts" aria-labelledby="drafts-h">
+        <h2 id="drafts-h">Draft slides</h2>
+        <p class="panel-intro">The model fills in a small slide spec (bullets, a diagram, a Python example, or a comparison) and this page draws it with our own code, so it never writes markup. Every one is labeled "AI-drawn slide, not from my course". Use them for class prep or discussion, or, when you approve them and turn it on below, in answers.</p>
+        <form id="hs-settings" novalidate>
+          <div class="grid-2">
+            <div>
+              <div class="field"><label class="check"><input type="checkbox" id="hs-enabled"> Add an AI-drawn slide to answers when it helps</label>
+                <p class="hint">After a web answer, and beside narration when the model judges that my slides do not already show the idea. Labeled, dashed border, after the real slides.</p></div>
+              <div class="field"><label class="check"><input type="checkbox" id="hs-approved"> Use my approved drafts in answers</label>
+                <p class="hint">An approved draft whose topic matches the question is shown instead of a new one (no model call). Off by default.</p></div>
+            </div>
+            <div class="field">
+              <label for="hs-cap">Helper slides per day</label>
+              <input id="hs-cap" type="number" min="0" max="100000" step="10" aria-describedby="hs-cap-hint">
+              <p class="hint" id="hs-cap-hint"></p>
+            </div>
+          </div>
+          <button class="btn btn-primary" type="submit">Save</button>
+          <p class="status-line" id="hs-settings-status" role="status"></p>
+        </form>
+
+        <h3 class="h-sub">Generate a draft</h3>
+        <form id="hs-gen" novalidate>
+          <div class="field">
+            <label for="hs-topic">Topic or question</label>
+            <input id="hs-topic" type="text" maxlength="300" placeholder="For example: how k-means assigns points to clusters">
+          </div>
+          <div class="field">
+            <label for="hs-gap">Or pick a question the twin declined</label>
+            <select id="hs-gap"><option value="">Content gaps from the question log</option></select>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary" type="submit">Generate</button>
+            <button class="btn" type="button" id="hs-save" disabled>Save as draft</button>
+          </div>
+          <p class="status-line" id="hs-gen-status" role="status"></p>
+          <div id="hs-preview"></div>
+        </form>
+
+        <h3 class="h-sub">Drafts</h3>
+        <div class="actions"><button type="button" class="btn btn-small" id="hs-refresh">Refresh</button></div>
+        <p class="status-line" id="hs-list-status" role="status"></p>
+        <ol id="hs-list" class="hs-list"></ol>
       </section>
     </main>
   </div>

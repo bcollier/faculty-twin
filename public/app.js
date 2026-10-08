@@ -147,7 +147,7 @@ const ui = {
   idleCourse: $('#idle-course'), dockCourse: $('#dock-course'),
   stageMsg: $('#stage-message'), stageSpinner: $('#stage-spinner'), stageTitle: $('#stage-message-title'), stageLabel: $('#stage-message-label'),
   stageText: $('#stage-message-text'), stageActions: $('#stage-message-actions'), stageChips: $('#stage-message-chips'),
-  stageExtra: $('#stage-message-extra'),
+  stageExtra: $('#stage-message-extra'), helperSlot: $('#helper-slot'),
   player: $('#player'), media: $('#media'), slideImg: $('#slide-img'), slideAlt: $('#slide-alt'), clipVideo: $('#clip-video'),
   clipBtn: $('#clip-btn'), clipBack: $('#clip-back'), clipNote: $('#clip-note'),
   caption: $('#caption'), btnPrev: $('#btn-prev'), btnPlay: $('#btn-play'), btnNext: $('#btn-next'),
@@ -501,6 +501,38 @@ function showWebAnswer(answer) {
   // A web answer is never in my voice: the dock names the stock voice when there is one, else nothing.
   ui.voiceLabel.textContent = answer.voice?.label || '';
   ui.voiceLabel.hidden = !answer.voice;
+  // An AI-drawn helper slide goes last, after the sources and my closest slides.
+  if (answer.generated_slide) {
+    const myId = app.requestId;
+    helperFigure(answer.generated_slide).then((fig) => {
+      if (!fig || myId !== app.requestId) return;
+      ui.stageExtra.append(fig);
+      ui.stageExtra.hidden = false;
+    });
+  }
+}
+
+/* AI-drawn helper slides (public/helper-slide.js draws a checked spec; never markup from a model).
+   Loaded only when an answer has one. */
+let helperModule = null;
+async function helperFigure(slide) {
+  try {
+    helperModule = helperModule || await import('./helper-slide.js');
+    return helperModule.renderHelperFigure(slide);
+  } catch { return null; }
+}
+
+/* An AI-drawn helper slide under a walkthrough: labeled, dashed border, after the real slides. */
+function showHelperSlide(slide) {
+  ui.helperSlot.replaceChildren();
+  ui.helperSlot.hidden = true;
+  if (!slide) return;
+  const myId = app.requestId;
+  helperFigure(slide).then((fig) => {
+    if (!fig || myId !== app.requestId) return;
+    ui.helperSlot.replaceChildren(fig);
+    ui.helperSlot.hidden = false;
+  });
 }
 
 /* The TA's contact details in a small card. The twin never says a TA's name aloud. */
@@ -655,6 +687,7 @@ async function ask(raw, { source = null } = {}) {
   const msg = addTwinMessage(summarize(answer));
   renderSourcesList(msg, answer);
   loadAnswer(answer);
+  showHelperSlide(answer.generated_slide || null);
 }
 
 /* Signed slide and clip links expire after an hour. If the slide image fails to load, fetch fresh
