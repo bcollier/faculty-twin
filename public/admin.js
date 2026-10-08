@@ -862,6 +862,27 @@ function testBadge(x) {
     : `Test traffic (${x.source}): left out of student analytics.`;
   return el('span', { class: 'pill off', text: x.test_inferred ? 'Test?' : 'Test', title, style: 'margin-left:.3rem' });
 }
+/* Why a course-info answer fell back to the Canvas text (question_log.fallback_reason, app/course_info.py). */
+const FALLBACK_REASONS = {
+  provider_credits: 'Model account out of credits',
+  provider_auth: 'Model key rejected',
+  provider_rate_limit: 'Model rate-limited',
+  provider_unreachable: 'Model unreachable',
+  provider_refused: 'Model declined',
+  provider_error: 'Model error',
+  daily_cap: 'Daily model-call cap reached',
+  not_json: 'Reply was not JSON',
+  no_answer: 'Reply had no answer',
+  too_long: 'Answer too long',
+  not_grounded: 'Answer not grounded in Canvas',
+  unsafe_text: 'Answer failed a safety check',
+  error: 'Unexpected error',
+};
+function fallbackBadge(x) {
+  if (!x.fallback_reason) return null;
+  const text = FALLBACK_REASONS[x.fallback_reason] || x.fallback_reason;
+  return el('span', { class: 'pill warn', text: `Fell back: ${text}`, title: `The student saw the Canvas text, not a written answer (${x.fallback_reason}).`, style: 'margin-left:.3rem' });
+}
 function modelText(x) {
   return [x.provider, x.model].filter(Boolean).join(' / ') || 'none';
 }
@@ -873,7 +894,7 @@ async function loadActivity() {
     const rows = lg.ok ? asList(lg.data, 'rows', 'log', 'items').slice(0, 50) : [];
     $('#log-body').replaceChildren(...(rows.length ? rows.map(x => el('tr', {},
       el('td', { class: 'small muted', text: fmtWhen(x.created_at || x.at || x.time) }),
-      el('td', {}, kindBadge(x), testBadge(x)),
+      el('td', {}, kindBadge(x), testBadge(x), fallbackBadge(x)),
       el('td', { class: 'full', text: x.question || '' }),
       el('td', { class: 'num', 'data-label': 'Top score', title: x.top_score != null ? null : 'No search ran', text: x.top_score != null ? Number(x.top_score).toFixed(3) : '' }),
       el('td', { class: 'num', 'data-label': 'Latency', text: x.latency_ms != null ? `${fmtNum(x.latency_ms)} ms` : '' }),

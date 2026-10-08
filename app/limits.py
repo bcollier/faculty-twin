@@ -317,6 +317,8 @@ def today_counters() -> dict[str, int]:
 # Added Oct 7 (analytics). Written when the columns exist; left out (with a warning) until the
 # migration block in supabase/schema.sql has been run, so logging never stops.
 ANALYTICS_COLUMNS = ("top_slide_id", "session", "session_title", "tokens_in", "tokens_out", "voice_chars", "source")
+# Added Oct 8: why an answer fell back (app/course_info.py FALLBACK_REASONS), for Settings > Activity.
+REASON_COLUMNS = ("fallback_reason",)
 
 
 def log_question(
@@ -353,11 +355,15 @@ def log_question(
     for name in ANALYTICS_COLUMNS:
         if name in extra:
             row[name] = extra[name]
+    for name in REASON_COLUMNS:  # only on rows that fell back, so other rows never need the column
+        if extra.get(name):
+            row[name] = extra[name]
     if config.supabase_configured():
-        # Until the migration in supabase/schema.sql has run, keep logging with fewer columns:
-        # first without the analytics columns, then without `kind` as well.
-        attempts = [row, {k: v for k, v in row.items() if k not in ANALYTICS_COLUMNS}]
-        attempts.append({k: v for k, v in attempts[1].items() if k != "kind"})
+        # Until the migrations in supabase/schema.sql have run, keep logging with fewer columns:
+        # first without the fallback reason, then without the analytics columns, then without `kind`.
+        attempts = [row, {k: v for k, v in row.items() if k not in REASON_COLUMNS}]
+        attempts.append({k: v for k, v in attempts[1].items() if k not in ANALYTICS_COLUMNS})
+        attempts.append({k: v for k, v in attempts[2].items() if k != "kind"})
         for i, attempt in enumerate(attempts):
             if i and attempt == attempts[i - 1]:
                 continue
@@ -392,6 +398,11 @@ def recent_questions(limit: int = 50) -> list[dict[str, Any]]:
     """The newest question-log rows. Works before and after the `kind` column exists."""
     if config.supabase_configured():
         params = {"select": LOG_COLUMNS + ",kind", "order": "at.desc", "limit": str(limit)}
+        try:  # with the fallback reason once its migration has run
+            return supa.select("question_log", {**params, "select": LOG_COLUMNS + ",kind,source,fallback_reason"})
+        except supa.SupabaseError as exc:
+            if not missing_column(exc):
+                raise
         try:
             # With `source` (test traffic badge) once the analytics migration has run.
             return supa.select("question_log", {**params, "select": LOG_COLUMNS + ",kind,source"})

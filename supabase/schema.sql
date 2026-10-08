@@ -92,6 +92,9 @@ alter table question_log add column if not exists tokens_out    integer;
 alter table question_log add column if not exists voice_chars   integer;
 alter table question_log add column if not exists source        text;
 create index if not exists question_log_source on question_log (source);
+-- Added Oct 8: why a course-info answer fell back to the Canvas text (provider_credits, not_json, ...;
+-- app/course_info.py FALLBACK_REASONS). Null when the model answered. Logging works before this runs.
+alter table question_log add column if not exists fallback_reason text;
 notify pgrst, 'reload schema';
 
 -- ------------------------------------------------------------------ settings

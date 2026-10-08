@@ -304,6 +304,7 @@ def answer(
         info["top_score"] = hits[0].score
         info["narration"] = result.source
         info["errors"] = result.errors
+        info["fallback_reason"] = result.reason  # shown in Settings > Activity when it fell back
         return result.reply, info
 
     if not records:
@@ -549,6 +550,7 @@ def _log_extras(content: Content, result: dict[str, Any], info: dict[str, Any]) 
         # Live voice only (/api/audio links); stored answers play pre-made mp3s.
         "voice_chars": sum(len(s.get("narration") or "") for s in segments
                            if str(s.get("audio") or "").startswith("/api/audio")),
+        "fallback_reason": info.get("fallback_reason"),  # course info only, for now
     }
 
 

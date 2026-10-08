@@ -118,7 +118,8 @@ def test_recent_questions_falls_back_through_columns(db, monkeypatch):
 
     monkeypatch.setattr(supa, "select", select)
     assert limits.recent_questions(5) == [{"question": "q"}]
-    assert calls == [limits.LOG_COLUMNS + ",kind,source", limits.LOG_COLUMNS + ",kind", limits.LOG_COLUMNS]
+    assert calls == [limits.LOG_COLUMNS + ",kind,source,fallback_reason", limits.LOG_COLUMNS + ",kind,source",
+                     limits.LOG_COLUMNS + ",kind", limits.LOG_COLUMNS]
 
 
 def test_recent_questions_other_errors_raise(db, monkeypatch):
