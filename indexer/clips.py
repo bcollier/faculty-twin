@@ -398,15 +398,9 @@ def clips_for_session(s: A.Session, dry_run: bool = False, force: bool = False,
             continue
         src, local = loc
         out = b / "clips" / f"{clip.slide_id}.mp4"
-        row = {"slide_id": clip.slide_id, "course": s.course, "session": s.session,
-               "start": round(clip.start, 2), "end": round(clip.end, 2),
-               "reason_kept": reason_kept(clip), "duration": round(clip.end - clip.start, 2),
-               "source": src.name, "version": CLIPS_VERSION}
-        if not dry_run:
-            prev = _previous.get(clip.slide_id)
-            same = prev and all(prev.get(k) == row[k] for k in ("start", "end", "source", "version"))
-            if force or not (same and out.exists()):
-                jobs_todo.append((src, local, clip.end - clip.start, out))
+        row = _manifest_row(s, clip, src)
+        if not dry_run and (force or not _unchanged_on_disk(row, out)):
+            jobs_todo.append((src, local, clip.end - clip.start, out))
         kept.append(row)
     if not dry_run:
         _encode_and_prune(s, b / "clips", jobs_todo, kept, jobs)
@@ -415,6 +409,21 @@ def clips_for_session(s: A.Session, dry_run: bool = False, force: bool = False,
         print(f"{s.label}: {len(kept)} clips kept, {len(rejected)} candidates rejected "
               + ", ".join(f"{k}={v}" for k, v in c.most_common()))
     return kept, rejected
+
+
+def _manifest_row(s: A.Session, clip: Candidate, src: Path) -> dict:
+    """The manifest.json row for a kept clip (its size is added after encoding)."""
+    return {"slide_id": clip.slide_id, "course": s.course, "session": s.session,
+            "start": round(clip.start, 2), "end": round(clip.end, 2),
+            "reason_kept": reason_kept(clip), "duration": round(clip.end - clip.start, 2),
+            "source": src.name, "version": CLIPS_VERSION}
+
+
+def _unchanged_on_disk(row: dict, out: Path) -> bool:
+    """True when the last run kept this clip with the same window, source and encoding, and its file exists."""
+    prev = _previous.get(row["slide_id"])
+    same = prev and all(prev.get(k) == row[k] for k in ("start", "end", "source", "version"))
+    return bool(same and out.exists())
 
 
 def _encode_and_prune(s: A.Session, clip_dir: Path, jobs_todo: list[tuple], kept: list[dict], jobs: int) -> None:
@@ -453,6 +462,10 @@ def summarize(manifest: list[dict], rejected: list[dict]) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: cut clips for the chosen sessions and rewrite manifest.json and rejected.json.
+
+    Rows for sessions not in this run are kept, so one session can be redone on its own.
+    """
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--course", choices=sorted(A.COURSE_PREFIX))
     ap.add_argument("--session", type=int)

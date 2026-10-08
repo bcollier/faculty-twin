@@ -301,15 +301,12 @@ def _topic(q: dict[str, Any], segments: list[dict[str, Any]], result: dict[str, 
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Pre-generate suggested-question playlists and audio")
-    ap.add_argument("--archive", help="Lecture Archive folder (default ~/Lecture Archive or $LECTURE_ARCHIVE)")
-    ap.add_argument("--build", help="build folder (default <archive>/_build)")
-    ap.add_argument("--draft-only", action="store_true", help="write the draft question list and stop")
-    ap.add_argument("--voice", help="ElevenLabs voice id (default: Settings voice, else ELEVENLABS_VOICE_ID)")
-    ap.add_argument("--no-audio", action="store_true", help="playlists only, captions (no ElevenLabs calls)")
-    ap.add_argument("--timings-only", action="store_true",
-                    help="only add word timings to stored clips that have none (ElevenLabs forced alignment)")
-    a = ap.parse_args(argv)
+    """Command line: draft the suggested questions, then generate their playlists and stored mp3s.
+
+    Free checks run first (retrieval written, voice usable, keys present), so a run that cannot
+    finish stops before any paid call.
+    """
+    a = _parse_args(argv)
     common.load_env()
     build = Path(a.build).expanduser() if a.build else common.build_dir(common.archive_dir(a.archive))
     if a.timings_only:
@@ -318,8 +315,8 @@ def main(argv: list[str] | None = None) -> int:
     if a.draft_only:
         return EXIT_OK
 
-    from app import llm, settings_store
     from app import main as app_main
+    from app import settings_store
 
     try:  # free check first: Ben's retrieval functions must exist before any paid call
         app_main._check_retrieval_ready(app_main.get_retriever(), 8)
@@ -340,11 +337,7 @@ def main(argv: list[str] | None = None) -> int:
             voice = parsed[1]
         elif parsed and parsed[0] == voices.EDGE:
             print("The voice is a free edge voice: it is generated live at no cost, so no mp3s are stored.")
-    missing = [] if common.env("VOYAGE_API_KEY") else ["VOYAGE_API_KEY"]
-    if not llm.key_configured(provider):
-        missing.append(llm.KEY_VARS[provider])
-    if voice and not common.env("ELEVENLABS_API_KEY"):
-        missing.append("ELEVENLABS_API_KEY (or pass --no-audio)")
+    missing = _missing_keys(provider, voice)
     if missing:
         print("Needs keys in .env before generating: " + ", ".join(missing))
         print("Then run: uv run --no-project --with-requirements requirements.txt python -m indexer.pregenerate")
@@ -352,6 +345,31 @@ def main(argv: list[str] | None = None) -> int:
     if not a.no_audio and not voice:
         print("No voice is set (Settings voice or ELEVENLABS_VOICE_ID), so topics are captions only.")
     return generate(build, questions, voice, audio=not a.no_audio)
+
+
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    """The command-line options for main()."""
+    ap = argparse.ArgumentParser(description="Pre-generate suggested-question playlists and audio")
+    ap.add_argument("--archive", help="Lecture Archive folder (default ~/Lecture Archive or $LECTURE_ARCHIVE)")
+    ap.add_argument("--build", help="build folder (default <archive>/_build)")
+    ap.add_argument("--draft-only", action="store_true", help="write the draft question list and stop")
+    ap.add_argument("--voice", help="ElevenLabs voice id (default: Settings voice, else ELEVENLABS_VOICE_ID)")
+    ap.add_argument("--no-audio", action="store_true", help="playlists only, captions (no ElevenLabs calls)")
+    ap.add_argument("--timings-only", action="store_true",
+                    help="only add word timings to stored clips that have none (ElevenLabs forced alignment)")
+    return ap.parse_args(argv)
+
+
+def _missing_keys(provider: str, voice: str | None) -> list[str]:
+    """The .env keys a generation run needs and does not have: Voyage, the narration provider, ElevenLabs."""
+    from app import llm
+
+    missing = [] if common.env("VOYAGE_API_KEY") else ["VOYAGE_API_KEY"]
+    if not llm.key_configured(provider):
+        missing.append(llm.KEY_VARS[provider])
+    if voice and not common.env("ELEVENLABS_API_KEY"):
+        missing.append("ELEVENLABS_API_KEY (or pass --no-audio)")
+    return missing
 
 
 if __name__ == "__main__":

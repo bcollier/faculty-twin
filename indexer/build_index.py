@@ -614,6 +614,22 @@ def save_matrix(path: Path, matrix: np.ndarray | None) -> None:
         path.unlink()
 
 
+def write_index_files(out: Path, index_name: str, matrix_name: str, index: dict[str, Any],
+                      matrix: np.ndarray | None) -> dict[str, str]:
+    """Write an index and its embedding matrix under `out`; return the manifest's "outputs" (path -> sha256).
+
+    The slide index and the course-info index both write this pair, so the hashes the
+    upload compares are computed the same way for both.
+    """
+    index_bytes = common.dump_json(index)
+    common.write_bytes_atomic(out / index_name, index_bytes)
+    save_matrix(out / matrix_name, matrix)
+    outputs = {f"content/{index_name}": common.sha256_bytes(index_bytes)}
+    if matrix is not None:
+        outputs[f"content/{matrix_name}"] = common.sha256_file(out / matrix_name)
+    return outputs
+
+
 def build(
     archive: Path,
     build_root: Path | None = None,
@@ -633,68 +649,75 @@ def build(
         log(f"No slide or code records found under {build_root}. Run indexer/slides.py first.")
         return 1
     chash = content_hash(records, model)
-    cache = EmbedCache(out / "embed_cache", model)
     usage: dict[str, int] = {"tokens": 0}
     try:
-        matrix, cached, fresh = embed_records(records, cache, key, client, sleep, log, usage)
+        matrix, cached, fresh = embed_records(records, EmbedCache(out / "embed_cache", model), key, client,
+                                              sleep, log, usage)
     except EmbeddingError as exc:
         log(f"Embedding failed: {exc}. Re-run the same command; finished batches are cached.")
         return 2
     complete = matrix is not None
     previous = common.read_json(out / "manifest.json", {}) or {}
     version, now = keep_or_new_version(previous, "index_version", chash, complete)
-    index = {
-        "index_version": version,
-        "built_at": now,
-        "embedding_model": model,
-        "embedding_input_type": INPUT_TYPE,
-        "embedding_dim": int(matrix.shape[1]) if complete else None,
-        "record_count": len(records),
-        "records": records,
-    }
-    index_bytes = common.dump_json(index)
-    common.write_bytes_atomic(out / "index.json", index_bytes)
-    emb_path = out / "embeddings.npy"
-    save_matrix(emb_path, matrix)
-
-    manifest = {
-        "index_version": version,
-        "built_at": now,
-        "content_hash": chash,
-        "embedding_model": model,
-        "embedding_dim": index["embedding_dim"],
-        "embeddings": embedding_state(complete),
-        "embeddings_cached": cached + fresh if complete else cached,
-        "counts": info["counts"],
-        "sources": info["sources"],
-        "outputs": {
-            "content/index.json": common.sha256_bytes(index_bytes),
-            **({"content/embeddings.npy": common.sha256_file(emb_path)} if complete else {}),
-        },
-    }
-    common.write_json(out / "manifest.json", manifest)
-    common.write_json(out / "versions" / f"{version}.json", manifest)
-
-    c = info["counts"]
-    log(
-        f"index {version}: {c['records']} records ({c['slides']} slides, {c['code']} code cells); "
-        f"{c['excluded_student_names']} slides left out for student names; "
-        f"{c['with_transcript']} slides with class transcript; {c['with_clip']} with a clip"
-    )
+    index = _index_doc(version, now, model, records, matrix)
+    outputs = write_index_files(out, "index.json", "embeddings.npy", index, matrix)
+    _write_manifest(out, index, chash, info, cached + fresh if complete else cached, outputs)
+    _log_index_counts(version, info["counts"], log)
     if complete and fresh:
         log(f"Voyage usage this run: {usage['tokens']:,} tokens ({fresh} new texts)")
-    leak = run_leak_check(roster or common.roster_dir(archive), index, log)
-    if leak == EXIT_LEAK:
+    if run_leak_check(roster or common.roster_dir(archive), index, log) == EXIT_LEAK:
         return EXIT_LEAK
     if not complete:
-        need = len(records) - cached
         log(
-            f"Embeddings pending: {cached} of {len(records)} records are cached, {need} need Voyage.\n"
+            f"Embeddings pending: {cached} of {len(records)} records are cached, {len(records) - cached} need Voyage.\n"
             f"VOYAGE_API_KEY is not set. Put it in .env (repo root), then run:\n  {RUN_CMD}"
         )
         return EXIT_PENDING
     log(f"embeddings.npy: {matrix.shape[0]} x {matrix.shape[1]} ({fresh} newly embedded, {cached} from cache)")
     return EXIT_OK
+
+
+def _index_doc(version: str, built_at: str, model: str, records: list[dict[str, Any]],
+               matrix: np.ndarray | None) -> dict[str, Any]:
+    """The content/index.json document: the records plus what embedded them."""
+    return {
+        "index_version": version,
+        "built_at": built_at,
+        "embedding_model": model,
+        "embedding_input_type": INPUT_TYPE,
+        "embedding_dim": int(matrix.shape[1]) if matrix is not None else None,
+        "record_count": len(records),
+        "records": records,
+    }
+
+
+def _write_manifest(out: Path, index: dict[str, Any], chash: str, info: dict[str, Any], embeddings_cached: int,
+                    outputs: dict[str, str]) -> None:
+    """Write content/manifest.json and its copy under versions/, named by the index version."""
+    version = index["index_version"]
+    manifest = {
+        "index_version": version,
+        "built_at": index["built_at"],
+        "content_hash": chash,
+        "embedding_model": index["embedding_model"],
+        "embedding_dim": index["embedding_dim"],
+        "embeddings": embedding_state(index["embedding_dim"] is not None),
+        "embeddings_cached": embeddings_cached,
+        "counts": info["counts"],
+        "sources": info["sources"],
+        "outputs": outputs,
+    }
+    common.write_json(out / "manifest.json", manifest)
+    common.write_json(out / "versions" / f"{version}.json", manifest)
+
+
+def _log_index_counts(version: str, c: dict[str, Any], log: Callable[[str], None]) -> None:
+    """One line with what went into the index and what was left out for student names."""
+    log(
+        f"index {version}: {c['records']} records ({c['slides']} slides, {c['code']} code cells); "
+        f"{c['excluded_student_names']} slides left out for student names; "
+        f"{c['with_transcript']} slides with class transcript; {c['with_clip']} with a clip"
+    )
 
 
 def run_leak_check(
@@ -720,6 +743,10 @@ def run_leak_check(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: build the slide index from the archive, embedding with Voyage unless --no-embed.
+
+    Keys come from .env, so the same command works by hand and from the worker.
+    """
     ap = argparse.ArgumentParser(description="Build content/index.json and content/embeddings.npy")
     ap.add_argument("--archive", help="Lecture Archive folder (default ~/Lecture Archive or $LECTURE_ARCHIVE)")
     ap.add_argument("--build", help="build folder (default <archive>/_build)")

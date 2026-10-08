@@ -309,6 +309,10 @@ def review_markdown(rows: list[dict[str, Any]], threshold: float, stats: dict[st
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: suggest slide-to-code pairs, then write code_map.json and the private review table.
+
+    --dry-run prints the counts only, so a threshold can be tried without touching the map.
+    """
     ap = argparse.ArgumentParser(description="Suggest indexer/code_map.json from TF-IDF similarity")
     ap.add_argument("--archive", help="Lecture Archive folder (default ~/Lecture Archive)")
     ap.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)

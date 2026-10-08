@@ -48,7 +48,7 @@ from indexer.build_index import (  # noqa: E402
     embedding_state,
     keep_or_new_version,
     run_leak_check,
-    save_matrix,
+    write_index_files,
 )
 from indexer.canvas_import import redact_secrets  # noqa: E402
 from indexer.leakcheck import INFO_STRICT_FIELDS  # noqa: E402
@@ -133,35 +133,10 @@ def build(
 
     previous = common.read_json(out / "info_manifest.json", {}) or {}
     version, now = keep_or_new_version(previous, "info_version", chash, complete)
-    index = {
-        "info_version": version,
-        "built_at": now,
-        "embedding_model": model,
-        "embedding_input_type": INPUT_TYPE,
-        "embedding_dim": dim,
-        "record_count": len(records),
-        "records": records,
-    }
-    index_bytes = common.dump_json(index)
-    common.write_bytes_atomic(out / "info_index.json", index_bytes)
-    emb_path = out / "info_embeddings.npy"
-    save_matrix(emb_path, matrix)
-    common.write_json(out / "info_manifest.json", {
-        "info_version": version,
-        "built_at": now,
-        "content_hash": chash,
-        "embedding_model": model,
-        "embedding_dim": dim,
-        "embeddings": embedding_state(complete),
-        "counts": counts,
-        "outputs": {
-            "content/info_index.json": common.sha256_bytes(index_bytes),
-            **({"content/info_embeddings.npy": common.sha256_file(emb_path)} if complete else {}),
-        },
-    })
-    log(f"info index {version}: {len(records)} chunks from {counts['items']} Canvas items; "
-        + "; ".join(f"{c}: " + ", ".join(f"{k} {v}" for k, v in sorted(kinds.items()))
-                    for c, kinds in sorted(counts["by_course"].items())))
+    index = _info_index_doc(version, now, model, dim, records)
+    outputs = write_index_files(out, "info_index.json", "info_embeddings.npy", index, matrix)
+    _write_info_manifest(out, index, chash, counts, outputs)
+    _log_info_counts(version, records, counts, log)
     if complete:
         log(f"info_embeddings.npy: {matrix.shape[0]} x {matrix.shape[1]} ({fresh} newly embedded, "
             f"{cached} from cache); Voyage tokens this run: {usage['tokens']:,}")
@@ -175,7 +150,45 @@ def build(
     return EXIT_OK
 
 
+def _info_index_doc(version: str, built_at: str, model: str, dim: int | None,
+                    records: list[dict[str, Any]]) -> dict[str, Any]:
+    """The info_index.json document: the chunks plus what embedded them."""
+    return {
+        "info_version": version,
+        "built_at": built_at,
+        "embedding_model": model,
+        "embedding_input_type": INPUT_TYPE,
+        "embedding_dim": dim,
+        "record_count": len(records),
+        "records": records,
+    }
+
+
+def _write_info_manifest(out: Path, index: dict[str, Any], chash: str, counts: dict[str, Any],
+                         outputs: dict[str, str]) -> None:
+    """Write info_manifest.json, which stays local: the next build reads it to keep an unchanged version."""
+    common.write_json(out / "info_manifest.json", {
+        "info_version": index["info_version"],
+        "built_at": index["built_at"],
+        "content_hash": chash,
+        "embedding_model": index["embedding_model"],
+        "embedding_dim": index["embedding_dim"],
+        "embeddings": embedding_state(index["embedding_dim"] is not None),
+        "counts": counts,
+        "outputs": outputs,
+    })
+
+
+def _log_info_counts(version: str, records: list[dict[str, Any]], counts: dict[str, Any],
+                     log: Callable[[str], None]) -> None:
+    """One line with the chunk count and the items per course and kind."""
+    log(f"info index {version}: {len(records)} chunks from {counts['items']} Canvas items; "
+        + "; ".join(f"{c}: " + ", ".join(f"{k} {v}" for k, v in sorted(kinds.items()))
+                    for c, kinds in sorted(counts["by_course"].items())))
+
+
 def main(argv: list[str] | None = None) -> int:
+    """Command line: build the course-info index from the Canvas import, embedding unless --no-embed."""
     ap = argparse.ArgumentParser(description="Build content/info_index.json and info_embeddings.npy from Canvas items")
     ap.add_argument("--archive", help="Lecture Archive folder (default ~/Lecture Archive or $LECTURE_ARCHIVE)")
     ap.add_argument("--build", help="build folder (default <archive>/_build)")

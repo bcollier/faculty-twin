@@ -206,6 +206,7 @@ class NameScrubber:
             flags.add("student_names_possible")
 
         def sub_token(m: re.Match) -> str:
+            """Mask a roster id (Andrew ID or email); only flag a capitalised roster surname or first name."""
             tok = m.group(0)
             low = tok.lower().rstrip(".")
             if low in self.ids:
@@ -770,13 +771,12 @@ def _slide_record(deck: Deck, p: int, page: PageText, pptx_slide: PptxSlide | No
 
 def extract_deck(deck: Deck, scrubber: NameScrubber, ocr: dict[str, str] | None) -> None:
     """Write slides.json and deck.json: text, title, notes, match quality and flags per page."""
-    sess, n = deck.session, deck.pages
+    n = deck.pages
     raw = pdf_page_texts(deck.pdf, n)
     boiler = boilerplate_lines(raw)
     texts = [strip_boilerplate(t, boiler) for t in raw]
 
     pslides = read_pptx(deck.pptx) if deck.pptx else []
-    visible = [s for s in pslides if not s.hidden]
     alignment = align(texts, pslides) if pslides else [(None, None)] * n
     positional = positional_ok(alignment, pslides) if pslides else [False] * n
 
@@ -792,22 +792,36 @@ def extract_deck(deck: Deck, scrubber: NameScrubber, ocr: dict[str, str] | None)
         ocr_raw = (ocr or {}).get(str(deck.image(p)), "")
 
         page = clean_page_text(scrubber, texts[p - 1], title, notes, ocr_raw, pg_counts)
-        if len(re.sub(r"\W", "", page.text)) < 15:
-            page.flags.add("little_text")
-        if (sess.course, sess.number) in NO_CLIP_SESSIONS:
-            page.flags.add("no_clips_private_case")
-        if deck.source.startswith("converted"):
-            page.flags.add("converted_from_pptx")
-        if pslides and conf in ("low", "unmatched"):
-            page.flags.add("notes_unmatched")
-
+        _flag_page(page, deck, bool(pslides), conf)
         qual[conf] = qual.get(conf, 0) + 1
         for f in page.flags:
             flag_counts[f] = flag_counts.get(f, 0) + 1
         records.append(_slide_record(deck, p, page, ps, sim, conf))
 
     write_json(deck.out / "slides.json", records)
-    write_json(deck.out / "deck.json", {
+    write_json(deck.out / "deck.json", _deck_summary(deck, pslides, qual, flag_counts, pg_counts, ocr, boiler))
+    deck.quality, deck.flags, deck.ocr_used = qual, flag_counts, ocr is not None
+
+
+def _flag_page(page: PageText, deck: Deck, has_pptx: bool, conf: str) -> None:
+    """Add the page-level flags: little text, a private no-clip session, a converted deck, unmatched notes."""
+    sess = deck.session
+    if len(re.sub(r"\W", "", page.text)) < 15:
+        page.flags.add("little_text")
+    if (sess.course, sess.number) in NO_CLIP_SESSIONS:
+        page.flags.add("no_clips_private_case")
+    if deck.source.startswith("converted"):
+        page.flags.add("converted_from_pptx")
+    if has_pptx and conf in ("low", "unmatched"):
+        page.flags.add("notes_unmatched")
+
+
+def _deck_summary(deck: Deck, pslides: list[PptxSlide], qual: dict[str, int], flag_counts: dict[str, int],
+                  pg_counts: Counter, ocr: dict[str, str] | None, boiler: set[str]) -> dict:
+    """The deck.json document: sources, fingerprints, page counts, match quality and flag counts."""
+    sess, n = deck.session, deck.pages
+    visible = [s for s in pslides if not s.hidden]
+    return {
         "pipeline_version": PIPELINE_VERSION,
         "course": sess.course,
         "session": sess.number,
@@ -827,8 +841,7 @@ def extract_deck(deck: Deck, scrubber: NameScrubber, ocr: dict[str, str] | None)
         "pg_changes": dict(pg_counts),  # labels such as "hell -> heck", counts only
         "ocr": ocr is not None,
         "boilerplate_lines_removed": len(boiler),
-    })
-    deck.quality, deck.flags, deck.ocr_used = qual, flag_counts, ocr is not None
+    }
 
 
 # --------------------------------------------------------------------------- OCR
@@ -1025,6 +1038,10 @@ def _print_summary(results: list[Deck], sessions: list[Session], missing: dict, 
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: render each session's deck, extract its text and notebooks, and write word boxes.
+
+    Unchanged decks are skipped unless --force, so a re-run after one upload only redoes that session.
+    """
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--course", choices=list(COURSES) + ["70-445", "45-884"])
     ap.add_argument("--session", type=int)

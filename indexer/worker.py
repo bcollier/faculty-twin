@@ -477,6 +477,10 @@ class Worker:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: run the upload worker (or one poll with --once), one worker per archive.
+
+    Exit codes: 1 another worker holds the lock, 6 Supabase not configured, 7 the stage packages cannot be installed.
+    """
     ap = argparse.ArgumentParser(description="Process Settings uploads on the local build machine")
     ap.add_argument("--archive", help="Lecture Archive folder (default ~/Lecture Archive or $LECTURE_ARCHIVE)")
     ap.add_argument("--once", action="store_true", help="poll once and exit")
