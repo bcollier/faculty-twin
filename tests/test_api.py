@@ -266,8 +266,15 @@ def test_links_never_signs_hidden_sessions_and_needs_the_cookie(client, monkeypa
     assert client.post("/api/links", json={"slide_ids": ["70445-s01-002"]}).json()["links"] == {}
 
 
-def test_links_is_capped_and_rate_limited(student):
+def test_links_is_capped_and_rate_limited(student, monkeypatch):
+    import time as _time
+
     from app import limits
+
+    # Pin the clock inside one minute: on a slow CI runner the 12 requests can cross a minute
+    # boundary, which starts a fresh per-minute window and makes the 429 never arrive.
+    fixed = _time.gmtime(1_800_000_000)
+    monkeypatch.setattr(_time, "gmtime", lambda *args: fixed)
 
     assert student.post("/api/links", json={"slide_ids": ["70445-s01-002"] * 11}).status_code == 400
     codes = [student.post("/api/links", json={"slide_ids": ["70445-s01-002"]}).status_code for _ in range(12)]
