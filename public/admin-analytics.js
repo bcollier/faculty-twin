@@ -4,6 +4,7 @@
 // when it has two or more series, and a table view. Colors come from analytics.css (validated palette).
 
 const $ = (s, r = document) => r.querySelector(s);
+/** Build an element: `class`, `text`, `on<event>` listeners, other keys as attributes. Never takes HTML. */
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -17,6 +18,7 @@ const el = (tag, attrs = {}, ...kids) => {
   return n;
 };
 const SVG = 'http://www.w3.org/2000/svg';
+/** Build an SVG element with attributes. */
 const svg = (tag, attrs = {}) => {
   const n = document.createElementNS(SVG, tag);
   for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v);
@@ -24,6 +26,7 @@ const svg = (tag, attrs = {}) => {
 };
 
 const fmtInt = (n) => (n == null ? '' : Math.round(n).toLocaleString('en-US'));
+/** 1.2K, 34K, 5.6M. */
 const fmtCompact = (n) => {
   if (n == null) return '';
   const a = Math.abs(n);
@@ -32,6 +35,7 @@ const fmtCompact = (n) => {
   if (a >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
   return fmtInt(n);
 };
+/** Dollars: four decimals under a cent, else two. */
 const fmtUsd = (n) => {
   if (n == null) return '';
   if (n === 0) return '$0';
@@ -40,6 +44,7 @@ const fmtUsd = (n) => {
 };
 const fmtPct = (n) => (n == null ? '' : `${Math.round(n * 10) / 10}%`);
 const courseCode = (c) => (/^\d{5}$/.test(String(c)) ? `${String(c).slice(0, 2)}-${String(c).slice(2)}` : String(c ?? ''));
+/** "Oct 8" for a UTC day. */
 const shortDay = (iso) => {
   const d = new Date(`${iso}T12:00:00Z`);
   return isNaN(d) ? iso : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -56,8 +61,10 @@ const PURPOSE_NAMES = {
 };
 const TIER_NAMES = { clone: 'My voice clone (ElevenLabs)', stock: 'ElevenLabs stock voice', unverified: 'ElevenLabs (unverified)', free: 'Free Microsoft voices' };
 const SERIES_VARS = ['--series-1', '--series-2', '--series-3', '--series-4', '--series-5', '--series-6', '--series-7'];
+/** A series' color token; Other is always the neutral one. */
 const seriesColor = (i, name) => (name === 'Other' ? 'var(--series-other)' : `var(${SERIES_VARS[i % SERIES_VARS.length]})`);
 
+/** fetch wrapper that never throws: no connection comes back as status 0 with a message. */
 async function get(path, { method = 'GET', body } = {}) {
   let res;
   try {
@@ -71,7 +78,9 @@ async function get(path, { method = 'GET', body } = {}) {
   try { data = await res.json(); } catch { /* none */ }
   return { ok: res.ok, status: res.status, data };
 }
+/** The server's error message, else `fallback`. */
 const detail = (r, fallback) => (typeof r?.data?.detail === 'string' ? r.data.detail : fallback || `Request failed (HTTP ${r?.status}).`);
+/** Write a status line; `kind` is '', 'ok' or 'err'. */
 function say(node, text, kind = '') { node.textContent = text || ''; node.className = `status-line ${kind}`.trim(); }
 
 /* ---------------- chart pieces ---------------- */
@@ -87,6 +96,7 @@ function niceTicks(v) {
 /* Chart widths in CSS pixels, measured when the section renders, so text stays at its real size. */
 const CW = { full: 640, half: 480 };
 
+/** A tooltip inside a chart's box: show(event, title, [name, value, color] rows) and hide(). */
 function tooltip(wrap) {
   const tip = el('div', { class: 'an-tip', hidden: true, role: 'presentation' });
   wrap.append(tip);
@@ -106,12 +116,14 @@ function tooltip(wrap) {
   };
 }
 
+/** A legend, only for two or more series. */
 function legend(names, colors) {
   if (names.length < 2) return null;
   return el('ul', { class: 'an-legend' }, ...names.map((n, i) => el('li', {},
     el('span', { class: 'an-swatch', style: `background:${colors[i]}` }), n)));
 }
 
+/** The chart's numbers in a collapsed table (for screen readers and exact values). */
 function tableView(headers, rows, caption) {
   return el('details', { class: 'an-table' },
     el('summary', { text: 'Show as a table' }),
@@ -227,13 +239,16 @@ function barsH(rows, series, { fmt = fmtInt, title = '', labelWidth = 170, width
   return el('div', {}, wrap, legend(series, colors));
 }
 
+/** A titled panel with an optional note. */
 function card(title, note, ...body) {
   return el('div', { class: 'an-card' }, el('h3', { text: title }), note ? el('p', { class: 'an-note', text: note }) : null, ...body);
 }
+/** The message a panel shows when it has no data. */
 const empty = (text) => el('p', { class: 'an-empty', text });
 
 /* ---------------- panels ---------------- */
 
+/** The headline numbers across the top. */
 function tiles(d) {
   const k = d.kpis, by = k.by_kind || {};
   const tile = (label, value, sub) => el('div', { class: 'an-tile' }, el('dt', { text: label }), el('dd', {}, value, sub ? el('span', { class: 'an-sub', text: sub }) : null));
@@ -254,6 +269,7 @@ function tiles(d) {
   );
 }
 
+/** Estimated spend per day by provider and model. */
 function spendPanel(d) {
   const s = d.spend || { series: [], days: [] };
   const note = 'Estimated USD per day, by provider and model (top seven; the rest fold into Other). Includes test traffic: it costs the same.';
@@ -268,6 +284,7 @@ function spendPanel(d) {
       fmtUsd(s.series.reduce((a, n) => a + (p.values[n] || 0), 0))]), 'Spend per day'));
 }
 
+/** Tokens by model and by purpose. */
 function tokensPanels(d) {
   const llm = d.llm || [];
   const byModel = llm.length
@@ -285,6 +302,7 @@ function tokensPanels(d) {
     card('Tokens by purpose', 'What the tokens were for. Tests and evals are their own purposes.', ...byPurpose)];
 }
 
+/** Voice characters by tier, and Voyage embedding tokens. */
 function voicePanels(d) {
   const tts = d.tts || [];
   const voice = tts.length
@@ -302,6 +320,7 @@ function voicePanels(d) {
     card('Embeddings', 'Voyage tokens for question embeddings (one per new question).', ...embeds)];
 }
 
+/** Questions per day and by hour of day. */
 function questionsPanels(d) {
   const days = d.questions_by_day || [];
   const every = days.length > 45 ? 21 : days.length > 10 ? (CW.half < 420 ? 10 : 7) : 1;
@@ -317,6 +336,7 @@ function questionsPanels(d) {
     tableView(['Hour', 'Questions'], hours.map((v, h) => [hourLabel(h), fmtInt(v)]), 'Questions by hour'))];
 }
 
+/** What students asked about: by slide, top topics, content gaps, FAQ hits, how questions were asked. */
 function topicsPanels(d) {
   const t = d.topics || {};
   const courses = t.courses || [];
@@ -359,6 +379,7 @@ function topicsPanels(d) {
   ];
 }
 
+/** The walkthrough funnel and the student page's event counts. */
 function engagementPanel(d) {
   const f = d.funnel || {}, ev = d.events || {};
   const steps = [['Questions asked', f.questions], ['Walkthroughs returned', f.walkthroughs], ['First segment played', f.first_segment_played], ['Walkthrough completed', f.walkthrough_completed]];
@@ -372,6 +393,7 @@ function engagementPanel(d) {
   ];
 }
 
+/** Average eval scores per answering model. */
 function modelsPanel(d) {
   const m = d.models || {};
   const note = 'Average judge scores (1 to 5) per generator model across every eval run, with the share of answers judged pass.';
@@ -407,6 +429,7 @@ async function load() {
   }
 }
 
+/** Fetch the selected range and draw every panel at the section's current width. */
 async function loadOnce() {
   const status = $('#an-status');
   say(status, 'Loading...');
@@ -454,6 +477,7 @@ $('#an-refresh').addEventListener('click', () => { load(); loadLabels(); loadPri
 
 /* ---------------- label topics ---------------- */
 
+/** One topic-labeling run: its themes with example questions. */
 function renderRun(run, open) {
   const head = `${fmtWhen(run.at)}: ${fmtInt(run.questions)} questions, ${run.provider} / ${run.model}`;
   return el('details', { class: 'an-tree', open: open || null },
@@ -464,6 +488,7 @@ function renderRun(run, open) {
       t.examples?.length ? el('ul', { class: 'ex' }, ...t.examples.map(q => el('li', { text: q }))) : null))));
 }
 
+/** Past topic-labeling runs, with `latest` (just made) first. */
 async function loadLabels(latest) {
   const r = await get('/api/admin/analytics/topics');
   const runs = r.ok ? (r.data?.runs || []) : [];
@@ -489,6 +514,7 @@ $('#an-label-run').addEventListener('click', async () => {
 
 const P = { table: null, plans: [] };
 
+/** The price table the spend estimates use. */
 async function loadPricing() {
   const r = await get('/api/admin/analytics/pricing');
   if (!r.ok) { $('#an-pricing').replaceChildren(empty(detail(r, 'Couldn\'t load prices.'))); return; }
@@ -496,61 +522,27 @@ async function loadPricing() {
   renderPricing();
 }
 
+/** A number field that writes straight into the price table as it is typed (saved only by Save prices). */
 function num(value, onInput, label) {
   return el('input', { type: 'number', min: '0', step: 'any', value: String(value ?? 0), 'aria-label': label, oninput: (e) => onInput(Number(e.target.value)) });
 }
+/** A link to where a price came from, or `otherwise` (text) when it has none. */
+const sourceLink = (url, otherwise = '') => (url ? el('a', { href: url, target: '_blank', rel: 'noopener', text: 'source' }) : otherwise);
+/** A "verify" pill on a price the research could not confirm. */
+const verifyPill = (r) => (r.verify ? el('span', { class: 'pill warn', text: 'verify', style: 'margin-left:.3rem' }) : null);
 
+/** The editable price table: models, an Add row, embeddings, voice, texts and web searches, then Save and Reset. */
 function renderPricing(message) {
   const t = P.table;
-  const llmRows = t.llm.map((r, i) => el('tr', {},
-    el('td', { text: r.provider }), el('td', { class: 'small', text: r.model }),
-    el('td', {}, num(r.in, v => { t.llm[i].in = v; }, `${r.model} input price`)),
-    el('td', {}, num(r.out, v => { t.llm[i].out = v; }, `${r.model} output price`)),
-    el('td', { class: 'small muted' }, r.source ? el('a', { href: r.source, target: '_blank', rel: 'noopener', text: 'source' }) : 'edited',
-      r.checked ? ` ${r.checked}` : '', r.verify ? el('span', { class: 'pill warn', text: 'verify', style: 'margin-left:.3rem' }) : null)));
-  const add = el('tr', {},
-    el('td', {}, el('select', { id: 'an-new-provider', 'aria-label': 'Provider' }, ...['anthropic', 'openai', 'openrouter'].map(p => el('option', { value: p, text: p })))),
-    el('td', {}, el('input', { id: 'an-new-model', type: 'text', placeholder: 'model id', 'aria-label': 'New model id' })),
-    el('td', {}, el('input', { id: 'an-new-in', type: 'number', min: '0', step: 'any', 'aria-label': 'New model input price' })),
-    el('td', {}, el('input', { id: 'an-new-out', type: 'number', min: '0', step: 'any', 'aria-label': 'New model output price' })),
-    el('td', {}, el('button', { type: 'button', class: 'btn btn-small', text: 'Add', onclick: () => {
-      const model = $('#an-new-model').value.trim();
-      if (!model) return;
-      t.llm.push({ provider: $('#an-new-provider').value, model, in: Number($('#an-new-in').value) || 0, out: Number($('#an-new-out').value) || 0, source: null, checked: null, verify: false });
-      renderPricing('Added. Not saved yet.');
-    } })));
-  const embRows = t.embed.map((r, i) => el('tr', {}, el('td', { text: 'voyage' }), el('td', { class: 'small', text: r.model }),
-    el('td', {}, num(r.per_mtok, v => { t.embed[i].per_mtok = v; }, `${r.model} price`)), el('td', {}),
-    el('td', { class: 'small muted' }, r.source ? el('a', { href: r.source, target: '_blank', rel: 'noopener', text: 'source' }) : 'edited', r.checked ? ` ${r.checked}` : '', r.note ? ` ${r.note}` : '')));
-  const tts = t.tts;
-  const plan = el('select', { 'aria-label': 'ElevenLabs plan', onchange: (e) => { tts.elevenlabs_plan = e.target.value; renderPricing('Not saved yet.'); } },
-    ...P.plans.map(p => el('option', { value: p, text: p, selected: p === tts.elevenlabs_plan || null })));
-  const ttsRows = [
-    el('tr', {}, el('td', { text: 'ElevenLabs' }), el('td', {}, plan),
-      el('td', {}, num(tts.elevenlabs_per_1k_chars[tts.elevenlabs_plan], v => { tts.elevenlabs_per_1k_chars[tts.elevenlabs_plan] = v; }, 'ElevenLabs price per 1K characters')), el('td', {}),
-      el('td', { class: 'small muted' }, tts.source ? el('a', { href: tts.source, target: '_blank', rel: 'noopener', text: 'source' }) : '', tts.checked ? ` ${tts.checked}` : '', tts.note ? ` ${tts.note}` : '')),
-    el('tr', {}, el('td', { text: 'edge-tts' }), el('td', { class: 'small', text: 'free Microsoft voices' }),
-      el('td', {}, num(tts.edge_per_1k_chars, v => { tts.edge_per_1k_chars = v; }, 'edge-tts price per 1K characters')), el('td', {}),
-      el('td', { class: 'small muted' }, tts.edge_source ? el('a', { href: tts.edge_source, target: '_blank', rel: 'noopener', text: 'source' }) : '', ' no key, no price')),
-  ];
-  const sms = t.sms || (t.sms = { per_segment: 0, carrier_fee_per_segment: 0 });
-  const smsRows = [
-    el('tr', {}, el('td', { text: 'Twilio' }), el('td', { class: 'small', text: 'SMS, per segment (student alerts)' }),
-      el('td', {}, num(sms.per_segment, v => { sms.per_segment = v; }, 'Twilio price per SMS segment')),
-      el('td', {}, num(sms.carrier_fee_per_segment, v => { sms.carrier_fee_per_segment = v; }, 'Carrier fee per SMS segment')),
-      el('td', { class: 'small muted' }, sms.source ? el('a', { href: sms.source, target: '_blank', rel: 'noopener', text: 'source' }) : '', sms.checked ? ` ${sms.checked}` : '', ' base price, then carrier fee', sms.note ? `. ${sms.note}` : '')),
-  ];
-  const searchRows = (t.web_search || []).map((r, i) => el('tr', {}, el('td', { text: r.provider }), el('td', { class: 'small', text: 'web search' }),
-    el('td', {}, num(r.per_1k, v => { t.web_search[i].per_1k = v; }, `${r.provider} web search price per 1,000 searches`)), el('td', {}),
-    el('td', { class: 'small muted' }, r.source ? el('a', { href: r.source, target: '_blank', rel: 'noopener', text: 'source' }) : 'edited',
-      r.checked ? ` ${r.checked}` : '', r.note ? ` ${r.note}` : '', r.verify ? el('span', { class: 'pill warn', text: 'verify', style: 'margin-left:.3rem' }) : null)));
   const head = (cols) => el('thead', {}, el('tr', {}, ...cols.map(h => el('th', { scope: 'col', text: h }))));
   const st = el('p', { class: 'status-line', role: 'status', text: message || (t.saved ? 'Saved table (defaults fill any model it lacks).' : 'Showing the researched defaults (not saved).') });
+  const searchRows = webSearchPriceRows(t);
   $('#an-pricing').replaceChildren(
     el('h4', { class: 'h-sub', text: 'Models (USD per 1M tokens)' }),
-    el('div', { class: 'table-wrap an-price' }, el('table', { class: 'data' }, head(['Provider', 'Model', 'Input', 'Output', 'Source']), el('tbody', {}, ...llmRows, add))),
+    el('div', { class: 'table-wrap an-price' }, el('table', { class: 'data' }, head(['Provider', 'Model', 'Input', 'Output', 'Source']), el('tbody', {}, ...modelPriceRows(t), addModelRow(t)))),
     el('h4', { class: 'h-sub', text: 'Embeddings (USD per 1M tokens), voice (USD per 1K characters), texts (USD per SMS segment)' }),
-    el('div', { class: 'table-wrap an-price' }, el('table', { class: 'data' }, head(['Provider', 'Model or plan', 'Price', 'Carrier fee (texts)', 'Source']), el('tbody', {}, ...embRows, ...ttsRows, ...smsRows))),
+    el('div', { class: 'table-wrap an-price' }, el('table', { class: 'data' }, head(['Provider', 'Model or plan', 'Price', 'Carrier fee (texts)', 'Source']),
+      el('tbody', {}, ...embeddingPriceRows(t), ...voicePriceRows(t), ...textPriceRows(t)))),
     ...(searchRows.length ? [
       el('h4', { class: 'h-sub', text: 'Web searches for answers beyond my slides (USD per 1,000 searches, on top of tokens)' }),
       el('div', { class: 'table-wrap an-price' }, el('table', { class: 'data' }, head(['Provider', 'Tool', 'Price', '', 'Source']), el('tbody', {}, ...searchRows))),
@@ -561,6 +553,72 @@ function renderPricing(message) {
     st);
 }
 
+/** Model prices per 1M input and output tokens, editable. */
+function modelPriceRows(t) {
+  return t.llm.map((r, i) => el('tr', {},
+    el('td', { text: r.provider }), el('td', { class: 'small', text: r.model }),
+    el('td', {}, num(r.in, v => { t.llm[i].in = v; }, `${r.model} input price`)),
+    el('td', {}, num(r.out, v => { t.llm[i].out = v; }, `${r.model} output price`)),
+    el('td', { class: 'small muted' }, sourceLink(r.source, 'edited'), r.checked ? ` ${r.checked}` : '', verifyPill(r))));
+}
+
+/** A blank row for a model the table does not have yet. */
+function addModelRow(t) {
+  return el('tr', {},
+    el('td', {}, el('select', { id: 'an-new-provider', 'aria-label': 'Provider' }, ...['anthropic', 'openai', 'openrouter'].map(p => el('option', { value: p, text: p })))),
+    el('td', {}, el('input', { id: 'an-new-model', type: 'text', placeholder: 'model id', 'aria-label': 'New model id' })),
+    el('td', {}, el('input', { id: 'an-new-in', type: 'number', min: '0', step: 'any', 'aria-label': 'New model input price' })),
+    el('td', {}, el('input', { id: 'an-new-out', type: 'number', min: '0', step: 'any', 'aria-label': 'New model output price' })),
+    el('td', {}, el('button', { type: 'button', class: 'btn btn-small', text: 'Add', onclick: () => {
+      const model = $('#an-new-model').value.trim();
+      if (!model) return;
+      t.llm.push({ provider: $('#an-new-provider').value, model, in: Number($('#an-new-in').value) || 0, out: Number($('#an-new-out').value) || 0, source: null, checked: null, verify: false });
+      renderPricing('Added. Not saved yet.');
+    } })));
+}
+
+/** Voyage embedding prices. */
+function embeddingPriceRows(t) {
+  return t.embed.map((r, i) => el('tr', {}, el('td', { text: 'voyage' }), el('td', { class: 'small', text: r.model }),
+    el('td', {}, num(r.per_mtok, v => { t.embed[i].per_mtok = v; }, `${r.model} price`)), el('td', {}),
+    el('td', { class: 'small muted' }, sourceLink(r.source, 'edited'), r.checked ? ` ${r.checked}` : '', r.note ? ` ${r.note}` : '')));
+}
+
+/** ElevenLabs (priced by plan: picking a plan shows that plan's price) and the free Microsoft voices. */
+function voicePriceRows(t) {
+  const tts = t.tts;
+  const plan = el('select', { 'aria-label': 'ElevenLabs plan', onchange: (e) => { tts.elevenlabs_plan = e.target.value; renderPricing('Not saved yet.'); } },
+    ...P.plans.map(p => el('option', { value: p, text: p, selected: p === tts.elevenlabs_plan || null })));
+  return [
+    el('tr', {}, el('td', { text: 'ElevenLabs' }), el('td', {}, plan),
+      el('td', {}, num(tts.elevenlabs_per_1k_chars[tts.elevenlabs_plan], v => { tts.elevenlabs_per_1k_chars[tts.elevenlabs_plan] = v; }, 'ElevenLabs price per 1K characters')), el('td', {}),
+      el('td', { class: 'small muted' }, sourceLink(tts.source), tts.checked ? ` ${tts.checked}` : '', tts.note ? ` ${tts.note}` : '')),
+    el('tr', {}, el('td', { text: 'edge-tts' }), el('td', { class: 'small', text: 'free Microsoft voices' }),
+      el('td', {}, num(tts.edge_per_1k_chars, v => { tts.edge_per_1k_chars = v; }, 'edge-tts price per 1K characters')), el('td', {}),
+      el('td', { class: 'small muted' }, sourceLink(tts.edge_source), ' no key, no price')),
+  ];
+}
+
+/** Twilio texts for student alerts: a base price and a carrier fee per segment (a table saved before texts gets zeros). */
+function textPriceRows(t) {
+  const sms = t.sms || (t.sms = { per_segment: 0, carrier_fee_per_segment: 0 });
+  return [
+    el('tr', {}, el('td', { text: 'Twilio' }), el('td', { class: 'small', text: 'SMS, per segment (student alerts)' }),
+      el('td', {}, num(sms.per_segment, v => { sms.per_segment = v; }, 'Twilio price per SMS segment')),
+      el('td', {}, num(sms.carrier_fee_per_segment, v => { sms.carrier_fee_per_segment = v; }, 'Carrier fee per SMS segment')),
+      el('td', { class: 'small muted' }, sourceLink(sms.source), sms.checked ? ` ${sms.checked}` : '', ' base price, then carrier fee', sms.note ? `. ${sms.note}` : '')),
+  ];
+}
+
+/** Web search prices per 1,000 searches (charged on top of tokens). */
+function webSearchPriceRows(t) {
+  return (t.web_search || []).map((r, i) => el('tr', {}, el('td', { text: r.provider }), el('td', { class: 'small', text: 'web search' }),
+    el('td', {}, num(r.per_1k, v => { t.web_search[i].per_1k = v; }, `${r.provider} web search price per 1,000 searches`)), el('td', {}),
+    el('td', { class: 'small muted' }, sourceLink(r.source, 'edited'),
+      r.checked ? ` ${r.checked}` : '', r.note ? ` ${r.note}` : '', verifyPill(r))));
+}
+
+/** Save the table (or reset it to the researched defaults), then reload the panels with the new prices. */
 async function savePricing(reset, st) {
   say(st, 'Saving...');
   const r = await get('/api/admin/analytics/pricing', { method: 'PUT', body: reset ? { reset: true } : { pricing: P.table } });

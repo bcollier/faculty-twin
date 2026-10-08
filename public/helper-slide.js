@@ -22,6 +22,7 @@ const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 
 let uid = 0;
 
+/** An SVG element; `text` goes in as textContent, never as markup. */
 function node(tag, attrs = {}, text = null) {
   const n = document.createElementNS(NS, tag);
   for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
@@ -29,6 +30,7 @@ function node(tag, attrs = {}, text = null) {
   return n;
 }
 
+/** Inline style from our own fixed palette (never from spec text). */
 function paint(n, styles) {
   n.setAttribute('style', Object.entries(styles).map(([k, v]) => `${k}:${v}`).join(';'));
   return n;
@@ -66,6 +68,7 @@ function textBlock(parent, lines, { x, y, size, lh, fill, weight = 400, anchor =
 
 /* ---------------- kinds ---------------- */
 
+/** Three to five bullets under the title, each wrapped to at most 3 lines. */
 function drawBullets(g, spec, c) {
   let y = 150;
   for (const b of spec.bullets || []) {
@@ -76,6 +79,7 @@ function drawBullets(g, spec, c) {
   }
 }
 
+/** Where a line from a box's center toward (tx, ty) leaves the box, so arrows start at the edge. */
 function boxEdgePoint(from, to, w, h) {
   const dx = to.x - from.x, dy = to.y - from.y;
   if (!dx && !dy) return { x: from.x, y: from.y };
@@ -130,6 +134,7 @@ export function layoutDiagram(spec) {
   return pos;
 }
 
+/** Boxes in a flow, cycle or layers layout, with labeled arrows between them. */
 function drawDiagram(g, spec, c, svg) {
   const pos = layoutDiagram(spec);
   const bw = 176, bh = 72;
@@ -162,10 +167,12 @@ function drawDiagram(g, spec, c, svg) {
   }
 }
 
+/** How tall the code block is for this many lines. */
 function codeHeight(spec) {
   return Math.max(H, 130 + (spec.lines || []).length * 21 + 50);
 }
 
+/** Python lines with numbered callouts beside the lines they point at. */
 function drawCode(g, spec, c) {
   const lines = spec.lines || [];
   const lh = 21, x0 = 40, y0 = 120, panelW = 600;
@@ -192,6 +199,7 @@ function drawCode(g, spec, c) {
   }
 }
 
+/** Two titled columns, row by row. */
 function drawCompare(g, spec, c) {
   const x0 = 40, colW = (W - 100) / 2, x1 = x0 + colW + 20;
   [[x0, spec.left_title], [x1, spec.right_title]].forEach(([x, title]) => {

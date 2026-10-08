@@ -3,6 +3,7 @@
 // so it can be paused, and a reload picks up where the server says it is.
 
 const $ = (s, r = document) => r.querySelector(s);
+/** Build an element: `class`, `text`, `on<event>` listeners, other keys as attributes. Never takes HTML. */
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -16,6 +17,7 @@ const el = (tag, attrs = {}, ...kids) => {
   return n;
 };
 const SVG = 'http://www.w3.org/2000/svg';
+/** Build an SVG element with attributes and children. */
 const svg = (tag, attrs = {}, ...kids) => {
   const n = document.createElementNS(SVG, tag);
   for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v);
@@ -35,7 +37,9 @@ const fmtDay = (iso) => {
   const d = new Date(iso);
   return isNaN(d) ? String(iso || '') : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
+/** "off_topic" as "Off topic". */
 const humanCat = (c) => String(c || '').toLowerCase().replace(/_/g, ' ').replace(/^./, s => s.toUpperCase());
+/** A model id without its provider prefix, dots as dashes ("anthropic/claude-sonnet-5.5" as "claude-sonnet-5-5"). */
 const baseModel = (m) => String(m || '').split('/').pop().toLowerCase().replace(/\./g, '-');
 
 const DIMS = {
@@ -49,6 +53,7 @@ const DIM_SHORT = {
   grounded: 'Grounded', answers_question: 'Answers', correct_scope: 'Scope', matches_reference: 'Real reply', speech_quality: 'Speech', safety_tone: 'Safety',
   good_teaching: 'Teaching', explains_concept_effectively: 'Explains', accurate: 'Accurate', engaging_voice: 'Voice', appropriate_depth: 'Depth',
 };
+/** A score dimension's column title, with its scale. */
 const dimHeader = (d) => `${DIMS[d]} (1–5, 5 best)`;
 const METRICS = {
   pass_rate: { label: 'Pass rate (% of answers judged pass)', short: 'Pass rate', rate: true, n: 'judgements' },
@@ -71,10 +76,14 @@ const LEGEND_FALLBACK = {
   na: 'n/a means the dimension did not apply: grounded has nothing to check when the twin declined or when an answer had no slides (the generic-chatbot baseline).',
   verdict: 'Pass or fail is each judge\'s overall verdict, given separately from the six scores: it is not computed from them.',
 };
+/** A mean score with its n, or "n/a" (grounded says why: no slides to check). */
 const scoreCell = (dim, mean, n) => (mean == null ? (dim === 'grounded' ? 'n/a (no slides)' : 'n/a')
   : `${Number(mean).toFixed(2)}${n != null ? ` (n=${n})` : ''}`);
+/** A rate as a percentage with its n, or n/a. */
 const rateCell = (rate, n) => (rate == null ? 'n/a' : `${pct(rate)}${n != null ? ` (n=${n})` : ''}`);
+/** A cost in dollars or a time in seconds (from milliseconds), or n/a. */
 const unitText = (unit, v) => (v == null ? 'n/a' : unit === 'usd' ? `$${Number(v).toFixed(4)}` : `${(Number(v) / 1000).toFixed(1)} s`);
+/** One measure for one answering model, in its own form (score, rate, cost or time) with its n. */
 function metricCell(m, key) {
   const meta = METRICS[key];
   if (meta.dim) return scoreCell(key, m.scores?.[key], m.score_n ? m.score_n[key] : null);
@@ -82,11 +91,13 @@ function metricCell(m, key) {
   return rateCell(m[key], meta.n ? m[meta.n] : null);
 }
 const legendCalls = new Map();
+/** The server's legend text arrived: redraw every legend already on the page with it. */
 function setLegend(data) {
   if (!data) return;
   E.legend = data;
   for (const [target, args] of legendCalls) legend(target, ...args);
 }
+/** The notes under a table: `extra` lines first, then (with `scores`) what each score means. */
 function legend(target, extra = [], { scores = true } = {}) {
   legendCalls.set(target, [extra, { scores }]);
   const L = E.legend || LEGEND_FALLBACK;
@@ -117,7 +128,9 @@ const E = {
 
 /* ---------------- api ---------------- */
 
+/** A 401: the admin session ran out (this section asks for a reload; admin.js shows the sign-in). */
 class EvalAuthError extends Error {}
+/** fetch wrapper: {status, ok, data}. Throws EvalAuthError on a 401 and lets network errors through. */
 async function api(path, { method = 'GET', body, timeout = 30000 } = {}) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeout);
@@ -134,11 +147,14 @@ async function api(path, { method = 'GET', body, timeout = 30000 } = {}) {
   if (res.status === 401) throw new EvalAuthError('Your admin session ran out. Reload the page and sign in again.');
   return { status: res.status, ok: res.ok, data };
 }
+/** The server's error message, else `fallback`. */
 const detail = (r, fallback) => (typeof r?.data?.detail === 'string' ? r.data.detail : (fallback || `Request failed (HTTP ${r?.status}).`));
+/** What to say about a request that threw: signed out, timed out, or no connection. */
 const errText = (e) => (e instanceof EvalAuthError ? e.message : e?.name === 'AbortError' ? 'The request timed out.' : 'Can\'t reach the server.');
 
 /* ---------------- start ---------------- */
 
+/** Set up the section once, on sign-in (or right away when the page is already signed in). */
 function start() {
   if (E.started) return;
   E.started = true;
@@ -162,11 +178,13 @@ document.addEventListener('ft:run-eval', (e) => {
 });
 if ($('#a-app') && !$('#a-app').hidden) start();
 
+/** Everything the section shows: limits, the question set, runs and the report card. */
 async function loadAll() {
   loadModelLists();
   await Promise.all([loadLimits(), loadQuestions(), loadRuns(), loadCard()]);
 }
 
+/** Today's eval limits; the live model becomes the first model that answers. */
 async function loadLimits() {
   try {
     const r = await api('/api/admin/evals/limits');
@@ -178,6 +196,7 @@ async function loadLimits() {
   } catch { /* shown elsewhere */ }
 }
 
+/** Each provider's model ids as <datalist> suggestions (typing any id still works). */
 async function loadModelLists() {
   for (const p of Object.keys(PROVIDERS)) {
     try {
@@ -190,6 +209,7 @@ async function loadModelLists() {
 
 /* ---------------- question set ---------------- */
 
+/** The private question set's summary (served only behind the admin cookie). */
 async function loadQuestions() {
   const st = $('#ev-q-status');
   try {
@@ -201,6 +221,7 @@ async function loadQuestions() {
   renderQuestions();
 }
 
+/** The question counts, the question table, the category menu and the run's category picker. */
 function renderQuestions() {
   const q = E.questions || { count: 0, categories: [], questions: [], all_categories: [] };
   $('#ev-q-kv').replaceChildren(
@@ -233,6 +254,7 @@ function renderQuestions() {
   if (q.count && Number(top.value) > q.count) top.value = Math.min(q.count, 30);
 }
 
+/** Load a question into the form to edit it. */
 function editQuestion(x) {
   E.editing = x.qid;
   $('#ev-q-text').value = x.question;
@@ -244,6 +266,7 @@ function editQuestion(x) {
   $('#ev-q-cancel').hidden = false;
   $('#ev-q-text').focus();
 }
+/** Back to "Add a question". */
 function resetQuestionForm() {
   E.editing = null;
   $('#ev-q-form').reset();
@@ -272,6 +295,7 @@ $('#ev-q-form').addEventListener('submit', async (e) => {
 
 /* ---------------- model chips ---------------- */
 
+/** The chosen answering models and judges, each with a remove button. */
 function renderChips() {
   const draw = (list, key) => $(`#ev-${key}-list`).replaceChildren(...list.map((m, i) => el('li', {},
     el('span', { class: 'pill info' }, `${PROVIDERS[m.provider] || m.provider}: ${m.model}`,
@@ -279,6 +303,7 @@ function renderChips() {
   draw(E.gens, 'gen');
   draw(E.judges, 'judge');
 }
+/** Add an answering model (`key` 'gen') or a judge ('judge') after checking the caps and duplicates. */
 function addModel(key, list) {
   const provider = $(`#ev-${key}-provider`).value;
   const model = $(`#ev-${key}-model`).value.trim();
@@ -302,6 +327,7 @@ for (const key of ['gen', 'judge']) {
 
 /* ---------------- estimate and start ---------------- */
 
+/** The run request from the form; `categories` is null when every category is picked. */
 function runBody(confirm = false) {
   const cats = [...document.querySelectorAll('#ev-cat-pick input:checked')].map(i => i.value);
   const all = document.querySelectorAll('#ev-cat-pick input').length;
@@ -313,6 +339,7 @@ function runBody(confirm = false) {
     confirm,
   };
 }
+/** The form changed: the estimate is stale, so Start hides until it is checked again. */
 function invalidateEstimate() {
   E.estimateOk = false;
   $('#ev-start-row').hidden = true;
@@ -336,6 +363,7 @@ $('#ev-run-form').addEventListener('submit', async (e) => {
   } catch (ex) { say(st, errText(ex), 'err'); }
 });
 
+/** What the run will cost in calls, embeddings and dollars, and whether it fits the caps. */
 function renderEstimate(d) {
   const est = d.estimate;
   const cost = est.cost_usd != null ? `about $${est.cost_usd.toFixed(2)}`
@@ -378,6 +406,7 @@ $('#ev-start').addEventListener('click', async () => {
 
 /* ---------------- driving a run ---------------- */
 
+/** The progress bar of the run in progress, with Pause or Resume. */
 function renderActive() {
   const box = $('#ev-active');
   if (!E.active) { box.hidden = true; return; }
@@ -408,6 +437,7 @@ async function drive() {
   }
 }
 
+/** Ask the server for one answer at a time until the run finishes, is paused or cancelled; network errors retry with a growing wait. */
 async function driveRun(run) {
   const st = $('#ev-active-status');
   let failures = 0;
@@ -469,6 +499,7 @@ window.addEventListener('beforeunload', (e) => { if (E.driving) { e.preventDefau
 
 /* ---------------- runs list ---------------- */
 
+/** Every run, newest first; picks up a run still in progress (paused until Resume). */
 async function loadRuns() {
   const st = $('#ev-runs-status');
   try {
@@ -490,8 +521,10 @@ async function loadRuns() {
 }
 $('#ev-refresh').addEventListener('click', () => { loadRuns(); loadCard(); });
 
+/** An answering model's display name in a run. */
 function labelFor(run, key) { return (run.generator_labels || {})[key] || key; }
 
+/** One card per run: status, judges, and each answering model's measures. */
 function renderRuns() {
   legend('#ev-runs-legend', ['Pass rate and the six scores pool every judge of that run; the judges are named on each card. n is how many judgements (or questions) a number covers.',
     'Right call: did the twin answer what the course covers and decline the rest (no judge involved).']);
@@ -521,6 +554,7 @@ function renderRuns() {
 
 /* ---------------- run detail ---------------- */
 
+/** One run's results: its details and a row per answer, with filters. */
 async function openRun(id) {
   const box = $('#ev-detail');
   box.hidden = false;
@@ -552,6 +586,7 @@ async function openRun(id) {
 }
 ['#ev-f-cat', '#ev-f-gen', '#ev-f-verdict'].forEach(s => $(s).addEventListener('change', renderDetail));
 
+/** The judges' verdict on one answer: pass, fail, split, error, or '' when not judged. */
 function verdictKind(row) {
   const js = row.judgements || [];
   if (js.some(j => j.error)) return 'error';
@@ -559,12 +594,14 @@ function verdictKind(row) {
   if (v.size > 1) return 'split';
   return v.has('fail') ? 'fail' : v.has('pass') ? 'pass' : '';
 }
+/** What answered the question, in words. */
 function outcomeText(row) {
   const o = row.outcome || row.response?.outcome;
   if (OUTCOMES[o]) return OUTCOMES[o][0];
   const s = row.response?.status;
   return s === 'ok' ? 'Answered' : s === 'not_covered' ? 'Declined' : s === 'error' ? 'Error' : s || 'n/a';
 }
+/** The outcome as a pill, with what the question set expected. */
 function outcomeBadge(row) {
   const o = row.outcome || row.response?.outcome;
   const [text, cls] = OUTCOMES[o] || [outcomeText(row), row.response?.status === 'error' ? 'err' : ''];
@@ -572,6 +609,7 @@ function outcomeBadge(row) {
   return el('span', {}, el('span', { class: `pill ${cls}`, text }), el('span', { class: 'small muted', text: ` (${expected})` }));
 }
 
+/** The run's answers that match the filters: the question, the twin's reply and each judge's scores and reasons. */
 function renderDetail() {
   if (!E.detail) return;
   const cat = $('#ev-f-cat').value, gen = $('#ev-f-gen').value, verdict = $('#ev-f-verdict').value;
@@ -612,7 +650,9 @@ function renderDetail() {
 
 /* ---------------- compare two runs ---------------- */
 
+/** Runs that can be compared: not excluded, with results. */
 function comparable() { return E.runs.filter(r => !r.excluded && Object.keys(r.by_generator || {}).length); }
+/** The two run menus (the newest two by default), then the comparison. */
 function renderCompareOptions() {
   const runs = comparable();
   for (const [sel, idx] of [['#ev-cmp-a', 1], ['#ev-cmp-b', 0]]) {
@@ -623,6 +663,7 @@ function renderCompareOptions() {
   renderCompare();
 }
 ['#ev-cmp-a', '#ev-cmp-b'].forEach(s => $(s).addEventListener('change', renderCompare));
+/** Run A against run B, measure by measure, one column per answering model. */
 function renderCompare() {
   const a = E.runs.find(r => r.id === $('#ev-cmp-a').value), b = E.runs.find(r => r.id === $('#ev-cmp-b').value);
   const table = $('#ev-cmp-table');
@@ -644,6 +685,7 @@ function renderCompare() {
 
 /* ---------------- report card ---------------- */
 
+/** The report card data, then the chart and the calibration table. */
 async function loadCard() {
   try {
     const r = await api('/api/admin/evals/report-card');
@@ -653,8 +695,10 @@ async function loadCard() {
   renderCalibration();
 }
 
+/** A point's value for the measure (scores live under `scores`), or null. */
 function valueOf(p, metric) { return METRICS[metric]?.dim ? p.scores?.[metric] ?? null : p[metric] ?? null; }
 
+/** The report card chart: one line per answering model, run by run, for the measure picked above it. */
 function renderCard() {
   const metric = $('#ev-metric').value || 'pass_rate';
   const meta = METRICS[metric];
@@ -662,32 +706,68 @@ function renderCard() {
   const plot = $('#ev-plot');
   const tip = $('#ev-tip');
   tip.hidden = true;
+  renderCardCaption(series, meta, metric);
+  const runs = runsOnAxis(series);
+  const f = chartFrame(plot, runs.length, cardScale(series, meta, metric));
+  const root = svg('svg', { viewBox: `0 0 ${f.W} ${f.H}`, role: 'img', 'aria-label': `${meta.label} over time. Values are in the table below.` });
+  drawCardAxes(root, f, meta, runs);
+  const ends = [];
+  for (const s of series) {
+    const end = drawCardSeries(root, f, s, runs, meta, metric, { plot, tip });
+    if (end) ends.push(end);
+  }
+  drawEndLabels(root, f, ends, meta);
+  plot.replaceChildren(root);
+  renderCardTable(series, runs);
+}
+
+/** The caption under the chart (who judged, what is n/a) and the legend when there are two or more lines. */
+function renderCardCaption(series, meta, metric) {
   const judgeNames = [...new Set(series.flatMap(x => x.points.flatMap(p => p.judges || [])))];
   const missing = series.filter(x => x.points.some(p => valueOf(p, metric) == null)).map(x => x.label.split(' (')[0]);
   $('#ev-chart-cap').textContent = `${meta.label}, per answering model, run by run. Judged by ${judgeNames.join(', ') || 'no judge yet'} (each point's judges are in its tooltip and the table). Excluded runs are left out. The axis starts at zero.`
     + (missing.length ? ` No point where this measure is n/a (did not apply): ${missing.join(', ')}.` : '');
   $('#ev-legend').replaceChildren(...(series.length > 1 ? series : []).map(s => el('span', {},
     el('i', { class: 'ev-key', style: `background:${s.color}` }), s.label)));
-  // x positions: every run that has a point, oldest first
+}
+
+/** The x positions: every run that has a point, oldest first. */
+function runsOnAxis(series) {
   const runs = [];
   for (const s of series) for (const p of s.points) if (!runs.some(r => r.run_id === p.run_id)) runs.push(p);
   runs.sort((a, b) => String(a.at).localeCompare(String(b.at)) || String(a.run_id).localeCompare(String(b.run_id)));
-  // Drawn at the container's own width so text stays 11 px on a phone.
+  return runs;
+}
+
+/** The value axis, always from zero: rates to 100%, scores to 5, units (cost, seconds) to just above the largest value. */
+function cardScale(series, meta, metric) {
+  if (meta.rate) return { yMax: 1, ticks: [0, 0.25, 0.5, 0.75, 1] };
+  if (!meta.unit) return { yMax: 5, ticks: [0, 1, 2, 3, 4, 5] };
+  const vals = series.flatMap(x => x.points.map(p => valueOf(p, metric))).filter(v => v != null);
+  const top = Math.max(...vals, 0) * (meta.unit === 's' ? 1 / 1000 : 1) || 1;
+  const step = 10 ** Math.floor(Math.log10(top));
+  const unitMax = Math.ceil(top / step) * step * (meta.unit === 's' ? 1000 : 1);
+  return { yMax: unitMax, ticks: [0, 0.25, 0.5, 0.75, 1].map(t => t * unitMax) };
+}
+
+/** The chart's size, margins and value-to-pixel maps. Drawn at the container's own width so text stays 11 px on a phone. */
+function chartFrame(plot, runCount, scale) {
   const W = Math.max(320, Math.round(plot.clientWidth || 760)), H = W < 560 ? 280 : 320;
   const L = 60, R = W < 560 ? 96 : 190, T = 14, B = 62;
-  // Units (cost, seconds) get a clean axis from zero to just above the largest value.
-  const unitMax = (() => {
-    const vals = series.flatMap(x => x.points.map(p => valueOf(p, metric))).filter(v => v != null);
-    const top = Math.max(...vals, 0) * (meta.unit === 's' ? 1 / 1000 : 1) || 1;
-    const step = 10 ** Math.floor(Math.log10(top));
-    return Math.ceil(top / step) * step * (meta.unit === 's' ? 1000 : 1);
-  })();
-  const yMax = meta.rate ? 1 : meta.unit ? unitMax : 5;
-  const ticks = meta.rate ? [0, 0.25, 0.5, 0.75, 1] : meta.unit ? [0, 0.25, 0.5, 0.75, 1].map(f => f * unitMax) : [0, 1, 2, 3, 4, 5];
-  const xOf = (i) => (runs.length < 2 ? L + (W - L - R) / 2 : L + (i * (W - L - R)) / (runs.length - 1));
-  const yOf = (v) => T + (H - T - B) * (1 - v / yMax);
-  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${meta.label} over time. Values are in the table below.` });
-  for (const t of ticks) {
+  const xOf = (i) => (runCount < 2 ? L + (W - L - R) / 2 : L + (i * (W - L - R)) / (runCount - 1));
+  const yOf = (v) => T + (H - T - B) * (1 - v / scale.yMax);
+  return { W, H, L, R, T, B, xOf, yOf, ...scale };
+}
+
+/** Value text in the measure's own form: 75%, $0.0123, 2.4 s, or 4.20. */
+function cardValueText(meta, v) {
+  return meta.rate ? pct(v) : meta.unit ? unitText(meta.unit, v) : num(v);
+}
+
+/** Grid lines and their labels, both axis titles, a date (and run number when needed) under each run. */
+function drawCardAxes(root, f, meta, runs) {
+  const { W, H, L, R, T, B, xOf, yOf } = f;
+  for (const t of f.ticks) {
     root.append(svg('line', { class: t === 0 ? 'axis' : 'grid', x1: L, x2: W - R + 12, y1: yOf(t), y2: yOf(t) }));
     root.append(svg('text', { x: L - 8, y: yOf(t) + 4, 'text-anchor': 'end' }, meta.rate ? `${Math.round(t * 100)}%` : meta.unit ? unitText(meta.unit, t) : String(t)));
   }
@@ -702,68 +782,79 @@ function renderCard() {
     }
   });
   if (!runs.length) root.append(svg('text', { class: 'empty', x: (W - R + L) / 2, y: H / 2, 'text-anchor': 'middle' }, 'No finished runs yet.'));
-  const ends = [];
-  for (const s of series) {
-    const pts = s.points.map(p => ({ p, i: runs.findIndex(r => r.run_id === p.run_id), v: valueOf(p, metric) }))
-      .filter(x => x.i >= 0).sort((a, b) => a.i - b.i);
-    let seg = [];
-    const flush = () => {
-      if (seg.length > 1) root.append(svg('polyline', { points: seg.map(x => `${xOf(x.i)},${yOf(x.v)}`).join(' '), fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
-      seg = [];
-    };
-    for (const x of pts) { if (x.v == null) flush(); else seg.push(x); }
-    flush();
-    for (const x of pts) {
-      if (x.v == null) {  // say so where the point would be, rather than leave a silent gap
-        const na = metric === 'grounded' ? 'n/a (no slides)' : 'n/a';
-        const left = xOf(x.i) < W / 2;
-        root.append(svg('text', { x: xOf(x.i) + (left ? -4 : 4), y: yOf(0) - 8, 'text-anchor': left ? 'start' : 'end' },
-          `${s.label.split(' (')[0].slice(0, W < 560 ? 10 : 22)}: ${na}`));
-        continue;
-      }
-      const value = meta.rate ? pct(x.v) : meta.unit ? unitText(meta.unit, x.v) : num(x.v);
-      const label = `${s.label}: ${meta.short} ${value}, ${x.p.run_name || x.p.run_id}, ${fmtDay(x.p.at)}`;
-      const g = svg('g', {});
-      const hit = svg('circle', { class: 'hit', cx: xOf(x.i), cy: yOf(x.v), r: 12, tabindex: 0, 'aria-label': label });
-      const dot = svg('circle', { class: 'dot', cx: xOf(x.i), cy: yOf(x.v), r: 4.5, fill: s.color, stroke: 'var(--surface)', 'stroke-width': 2 });
-      const show = () => {
-        const nText = meta.dim
-          ? (x.p.score_n ? `n = ${x.p.score_n[metric]} judgements` : `n = ${x.p.questions} questions × ${(x.p.judges || []).length} judges (per-dimension counts not recorded)`)
-          : meta.n ? `n = ${x.p[meta.n]} ${meta.n}` : `n = ${x.p.questions} questions`;
-        const lines = [`${x.p.run_name || x.p.run_id} · ${fmtDay(x.p.at)}`, s.label, nText, `Judges: ${(x.p.judges || []).join(', ')}`];
-        if ((x.p.self_grading || []).length) lines.push('Self-grading: a judge is the same model.');
-        for (const n of x.p.notes || []) lines.push(n.length > 110 ? `${n.slice(0, n.indexOf('.', 40) + 1 || 109)}` : n);
-        tip.replaceChildren(el('strong', { text: value }), ...lines.map(t => el('span', { text: t })));
-        tip.hidden = false;
-        const box = plot.getBoundingClientRect(), fig = $('#ev-chart').getBoundingClientRect();
-        const px = box.left - fig.left + (xOf(x.i) / W) * box.width, py = box.top - fig.top + (yOf(x.v) / H) * box.height;
-        tip.style.left = `${Math.max(0, Math.min(px + 14, fig.width - 270))}px`;
-        tip.style.top = `${Math.max(0, py - 10)}px`;
-      };
-      const hide = () => { tip.hidden = true; };
-      hit.addEventListener('pointerenter', show); hit.addEventListener('focus', show);
-      hit.addEventListener('pointerleave', hide); hit.addEventListener('blur', hide);
-      g.append(hit, dot);
-      root.append(g);
-    }
-    const last = [...pts].reverse().find(x => x.v != null);
-    if (last) ends.push({ s, x: xOf(last.i), y: yOf(last.v), v: last.v });
-  }
-  // Direct end labels for up to 4 series, unless two would collide (then the legend and tooltip carry it).
-  ends.sort((a, b) => a.y - b.y);
-  const collide = ends.some((e, i) => i && e.y - ends[i - 1].y < 13);
-  if (ends.length && ends.length <= 4 && !collide) {
-    for (const e of ends) {
-      const base = e.s.label.split(' (')[0];
-      const room = W < 560 ? 9 : 24;
-      const short = base.length > room ? `${base.slice(0, room - 1)}…` : base;
-      root.append(svg('text', { class: 'lbl', x: e.x + 10, y: e.y + 4 }, `${short} ${meta.rate ? pct(e.v) : num(e.v)}`));
-    }
-  }
-  plot.replaceChildren(root);
-  renderCardTable(series, runs);
 }
 
+/**
+ * One answering model's line (broken where the measure is n/a, with an "n/a" note there instead of a
+ * silent gap) and a focusable point per run with a tooltip. Returns where its last point is, for the end label.
+ */
+function drawCardSeries(root, f, s, runs, meta, metric, { plot, tip }) {
+  const { W, xOf, yOf } = f;
+  const pts = s.points.map(p => ({ p, i: runs.findIndex(r => r.run_id === p.run_id), v: valueOf(p, metric) }))
+    .filter(x => x.i >= 0).sort((a, b) => a.i - b.i);
+  let seg = [];
+  const flush = () => {
+    if (seg.length > 1) root.append(svg('polyline', { points: seg.map(x => `${xOf(x.i)},${yOf(x.v)}`).join(' '), fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    seg = [];
+  };
+  for (const x of pts) { if (x.v == null) flush(); else seg.push(x); }
+  flush();
+  for (const x of pts) {
+    if (x.v == null) {
+      const na = metric === 'grounded' ? 'n/a (no slides)' : 'n/a';
+      const left = xOf(x.i) < W / 2;
+      root.append(svg('text', { x: xOf(x.i) + (left ? -4 : 4), y: yOf(0) - 8, 'text-anchor': left ? 'start' : 'end' },
+        `${s.label.split(' (')[0].slice(0, W < 560 ? 10 : 22)}: ${na}`));
+      continue;
+    }
+    const value = cardValueText(meta, x.v);
+    const label = `${s.label}: ${meta.short} ${value}, ${x.p.run_name || x.p.run_id}, ${fmtDay(x.p.at)}`;
+    const g = svg('g', {});
+    const hit = svg('circle', { class: 'hit', cx: xOf(x.i), cy: yOf(x.v), r: 12, tabindex: 0, 'aria-label': label });
+    const dot = svg('circle', { class: 'dot', cx: xOf(x.i), cy: yOf(x.v), r: 4.5, fill: s.color, stroke: 'var(--surface)', 'stroke-width': 2 });
+    const show = () => {
+      tip.replaceChildren(el('strong', { text: value }), ...pointTipLines(x.p, s, meta, metric).map(t => el('span', { text: t })));
+      tip.hidden = false;
+      const box = plot.getBoundingClientRect(), fig = $('#ev-chart').getBoundingClientRect();
+      const px = box.left - fig.left + (xOf(x.i) / f.W) * box.width, py = box.top - fig.top + (yOf(x.v) / f.H) * box.height;
+      tip.style.left = `${Math.max(0, Math.min(px + 14, fig.width - 270))}px`;
+      tip.style.top = `${Math.max(0, py - 10)}px`;
+    };
+    const hide = () => { tip.hidden = true; };
+    hit.addEventListener('pointerenter', show); hit.addEventListener('focus', show);
+    hit.addEventListener('pointerleave', hide); hit.addEventListener('blur', hide);
+    g.append(hit, dot);
+    root.append(g);
+  }
+  const last = [...pts].reverse().find(x => x.v != null);
+  return last ? { s, x: xOf(last.i), y: yOf(last.v), v: last.v } : null;
+}
+
+/** A point's tooltip under its value: the run, the model, n, the judges, and the run's notes (shortened). */
+function pointTipLines(p, s, meta, metric) {
+  const nText = meta.dim
+    ? (p.score_n ? `n = ${p.score_n[metric]} judgements` : `n = ${p.questions} questions × ${(p.judges || []).length} judges (per-dimension counts not recorded)`)
+    : meta.n ? `n = ${p[meta.n]} ${meta.n}` : `n = ${p.questions} questions`;
+  const lines = [`${p.run_name || p.run_id} · ${fmtDay(p.at)}`, s.label, nText, `Judges: ${(p.judges || []).join(', ')}`];
+  if ((p.self_grading || []).length) lines.push('Self-grading: a judge is the same model.');
+  for (const n of p.notes || []) lines.push(n.length > 110 ? `${n.slice(0, n.indexOf('.', 40) + 1 || 109)}` : n);
+  return lines;
+}
+
+/** Direct end labels for up to 4 lines, unless two would collide (then the legend and tooltip carry it). */
+function drawEndLabels(root, f, ends, meta) {
+  ends.sort((a, b) => a.y - b.y);
+  const collide = ends.some((e, i) => i && e.y - ends[i - 1].y < 13);
+  if (!ends.length || ends.length > 4 || collide) return;
+  for (const e of ends) {
+    const base = e.s.label.split(' (')[0];
+    const room = f.W < 560 ? 9 : 24;
+    const short = base.length > room ? `${base.slice(0, room - 1)}…` : base;
+    root.append(svg('text', { class: 'lbl', x: e.x + 10, y: e.y + 4 }, `${short} ${meta.rate ? pct(e.v) : num(e.v)}`));
+  }
+}
+
+/** The chart's numbers as a table. */
 function renderCardTable(series, runs) {
   const head = ['Answering model', 'Run', 'Date', 'Judges', 'Questions (n)', ...Object.keys(METRICS).map(k => METRICS[k].label)];
   const body = [];
@@ -777,6 +868,7 @@ function renderCardTable(series, runs) {
     el('tbody', {}, ...(body.length ? body : [el('tr', {}, el('td', { colspan: String(head.length), class: 'muted', text: 'No finished runs yet.' }))])));
 }
 
+/** How each judge did on the 8 invented calibration answers. */
 function renderCalibration() {
   const rows = E.card?.calibration || [];
   legend('#ev-cal-legend', ['Cases met: how many of the 8 invented answers the judge scored as expected (the right pass or fail, and the scores each case bounds). Meet all 8 before trusting a judge on real answers.',

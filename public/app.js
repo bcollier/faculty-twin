@@ -2,6 +2,14 @@
 // Plain ES module, no framework. Talks only to our own backend (/api/...).
 // Screens: boot -> (offline | login | app). The app has two views: idle and presenting.
 // The player is a small state machine; see the "Player" section below.
+//
+// Sections, in order: constants and copy, small helpers, elements and state, screens, boot and login,
+// voice label, course filter and chips, stage messages (FAQ, web and error cards), chat log, asking,
+// player, read-along, onClipEnded (Ben's), controls, clips, keyboard.
+//
+// Why one file: the page has no bundler, and the node tests (tests/js/fakedom.mjs) run this file's
+// source as one function body, where a static `import` is not allowed. Code that can stand alone
+// moves to its own file and is loaded with `await import()`, as readalong.js and helper-slide.js are.
 
 const DEV_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 if (DEV_HOSTS.includes(location.hostname) && new URLSearchParams(location.search).get('mock') === '1') {
@@ -20,7 +28,8 @@ const COURSES = {
   '45884': { code: '45-884', title: 'AI Methods for Social and Visual Data' },
 };
 const ASK_TIMEOUT_MS = 45000;
-const MAX_CHIPS = 8;
+const MAX_CHIPS = 8;        // suggested questions on the idle screen
+const STAGE_CHIPS = 6;      // suggestions under a stage message (fewer: they share the stage with a card)
 const CAPTION_WORDS_PER_SEC = 2.6; // pace for captions-only mode
 const CAPTION_MIN_SEC = 4;
 
@@ -52,7 +61,12 @@ const COPY = {
    Small helpers
    ===================================================================== */
 
+/** The first element matching `sel`. */
 const $ = (sel, root = document) => root.querySelector(sel);
+/**
+ * Build an element. `attrs`: `class`, `text` (textContent), `on<event>` (a listener), anything else an
+ * attribute (`true` is an empty attribute; `null`/`false` is left out). Never takes HTML.
+ */
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -66,6 +80,14 @@ const el = (tag, attrs = {}, ...kids) => {
   return n;
 };
 
+/** Stop a media element and drop its source, so the browser stops downloading it. */
+function releaseMedia(media) {
+  media.pause();
+  media.removeAttribute('src');
+  media.load();
+}
+
+/** The server could not be reached (or a proxy answered for it): the page shows "unreachable". */
 class NetworkError extends Error {}
 
 /** fetch wrapper: returns {status, ok, data}; throws NetworkError when the server can't be reached. */
@@ -97,6 +119,7 @@ async function api(path, { method = 'GET', body, timeout = 15000 } = {}) {
     Fire and forget: it never waits, never retries, and never shows an error. */
 const EVENTS = new Set(['chip_tap', 'question_typed', 'segment_played', 'walkthrough_completed', 'clip_played',
   'audio_failed', 'follow_up_tapped', 'course_filter_changed']);
+/** One usage event (name only), fire and forget. */
 function track(name) {
   if (!EVENTS.has(name)) return;
   try {
@@ -107,15 +130,18 @@ function track(name) {
   } catch { /* analytics must never break the page */ }
 }
 
+/** "70-445 AI for Business Leaders": the course number and its title (the answer's title wins). */
 function courseLabel(code, title) {
   const c = COURSES[String(code)];
   if (c) return `${c.code} ${title || c.title}`;
   return title || String(code || '');
 }
+/** "70-445" for "70445"; an unknown course is shown as given. */
 function courseCode(code) {
   return COURSES[String(code)]?.code || String(code || '');
 }
 function pad2(n) { return String(n).padStart(2, '0'); }
+/** "Sep 1, 2026" for "2026-09-01" (read as a local date, so it never shifts a day). */
 function fmtDate(iso) {
   if (!iso) return '';
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
@@ -123,6 +149,11 @@ function fmtDate(iso) {
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
+/** "70-445 · Session 3 · Slide 12": the first line of a slide card. */
+function slideLine(src) {
+  return `${courseCode(src.course)} · Session ${src.session} · Slide ${src.slide_number}`;
+}
+/** Words in a narration (for the captions-only pace). */
 function wordCount(text) { return (String(text || '').match(/\S+/g) || []).length; }
 
 /** /api/topics may return strings or objects; normalize to [{question, course}]. */
@@ -184,10 +215,12 @@ function saveCourseChoice(v) {
    Screens
    ===================================================================== */
 
+/** Show one of boot, offline, login, app. */
 function showScreen(name) {
   for (const [k, node] of Object.entries(ui.screens)) node.hidden = k !== name;
 }
 
+/** Switch the app between "idle" (ask a question) and "presenting" (the stage and the dock). */
 function setView(view) {
   const node = ui.screens.app;
   if (node.dataset.view === view) return;
@@ -211,6 +244,7 @@ function setView(view) {
    Boot and login
    ===================================================================== */
 
+/** First load: a 401 from /api/topics means "log in"; no reply at all means the offline screen. */
 async function boot() {
   showScreen('boot');
   try {
@@ -227,6 +261,7 @@ async function boot() {
   }
 }
 
+/** The passcode screen, with an optional note (for example "your session ran out"). */
 function showLogin(note) {
   stopPlayback();
   ui.loginNote.hidden = !note;
@@ -274,10 +309,12 @@ document.addEventListener('click', (e) => {
 const IDLE_VOICE_TEXT = {
   clone: 'The voice is AI-generated from recordings of me, Ben Collier. It only explains what is on my slides and what I said in class.',
   stock: 'The voice is AI-generated (a stock voice, not mine). It only explains what is on my slides and what I said in class.',
+  // A free voice reads the same as a stock one: neither is mine.
   free: 'The voice is AI-generated (a stock voice, not mine). It only explains what is on my slides and what I said in class.',
   unverified: 'The voice is AI-generated. It only explains what is on my slides and what I said in class.',
 };
 
+/** Ask the server which voice will speak, then label it. A failure keeps the neutral label. */
 async function loadVoice() {
   try {
     const res = await api('/api/voice');
@@ -287,6 +324,7 @@ async function loadVoice() {
   updateVoiceLabel();
 }
 
+/** The voice note on the idle screen; hidden when answers are captions only. */
 function renderIdleVoice() {
   const kind = app.voice?.kind;
   if (kind === 'none') { ui.idleVoiceLabel.hidden = true; return; }
@@ -308,6 +346,7 @@ function updateVoiceLabel() {
   if (player.answer) ui.narrationVoice.textContent = player.captionsOnly ? COPY.captionsOnly : (label || '');
 }
 
+/** Into the app: restore the course filter, and ask the question that was waiting on the passcode. */
 function enterApp() {
   showScreen('app');
   setCourse(loadCourseChoice());
@@ -324,6 +363,7 @@ function enterApp() {
    Course filter, chips, question forms
    ===================================================================== */
 
+/** Filter by course ('' or null is both). Remembered on this device and reflected in both pickers. */
 function setCourse(value) {
   app.course = value || null;
   saveCourseChoice(value || '');
@@ -332,9 +372,14 @@ function setCourse(value) {
   if (radio) radio.checked = true;
   renderIdleChips();
 }
-ui.idleCourse.addEventListener('change', (e) => { setCourse(e.target.value); track('course_filter_changed'); });
-ui.dockCourse.addEventListener('change', (e) => { setCourse(e.target.value); track('course_filter_changed'); });
+function onCourseFilter(e) {
+  setCourse(e.target.value);
+  track('course_filter_changed');
+}
+ui.idleCourse.addEventListener('change', onCourseFilter);
+ui.dockCourse.addEventListener('change', onCourseFilter);
 
+/** Suggested questions for the chosen course (and those for both courses). */
 function topicsForCourse() {
   const list = app.topics.filter(t => !app.course || !t.course || t.course === app.course);
   return list.slice(0, MAX_CHIPS);
@@ -348,10 +393,17 @@ function chip(text, courseCodeStr, source = 'chip') {
   return el('li', {}, b);
 }
 
+/** The fewer suggestions shown under a stage message. */
+function stageChips() {
+  return topicsForCourse().slice(0, STAGE_CHIPS);
+}
+
+/** Fill a chip list with question chips. */
 function renderChips(listNode, topics) {
   listNode.replaceChildren(...topics.map(t => chip(t.question, t.course)));
 }
 
+/** The idle screen's suggestions for the chosen course (the block hides when there are none). */
 function renderIdleChips() {
   const topics = topicsForCourse();
   renderChips(ui.idleChips, topics);
@@ -362,6 +414,7 @@ ui.idleQ.addEventListener('input', () => { ui.idleCount.textContent = `${ui.idle
 ui.idleQ.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ui.idleForm.requestSubmit(); }
 });
+/** Ask what was typed; only a non-empty question counts as "typed" for Analytics. */
 function askTyped(value) {
   if (String(value || '').trim()) track('question_typed');
   ask(value, { source: 'typed' });
@@ -380,6 +433,10 @@ ui.dockToggle.addEventListener('click', () => {
    Stage messages (loading, not covered, errors)
    ===================================================================== */
 
+/**
+ * Replace the player with a message card: the spinner while asking, an error, or an FAQ, Canvas or web answer.
+ * `actions` are buttons ({label, onClick, primary}), `chips` suggested questions, `extra` nodes under the text.
+ */
 function showStageMessage({ title, text, spinner = false, actions = [], chips = [], label = '', labelClass = '', extra = [] }) {
   ui.player.hidden = true;
   stopWebAudio();
@@ -398,6 +455,13 @@ function showStageMessage({ title, text, spinner = false, actions = [], chips = 
   ui.stageMsg.setAttribute('role', spinner ? 'status' : 'alert');
 }
 
+/** Move focus to the card's first button, unless the student is typing the next question. */
+function focusFirstStageButton() {
+  const firstBtn = ui.stageActions.querySelector('button') || ui.stageChips.querySelector('button');
+  if (firstBtn && !ui.dockQ.matches(':focus')) firstBtn.focus({ preventScroll: true });
+}
+
+/** An error or referral card from COPY[kind], with "Try again" where trying again can help. */
 function showStageError(kind, question, answer = null) {
   const [title, text] = COPY[kind] || COPY.generic;
   const actions = [];
@@ -406,15 +470,14 @@ function showStageError(kind, question, answer = null) {
   }
   if (kind === 'logistics' && answer) actions.push(...answerActions(answer));
   const withChips = kind === 'notCovered' || kind === 'notReady' || kind === 'badQuestion' || kind === 'logistics';
-  const chips = withChips ? topicsForCourse().slice(0, 6) : [];
+  const chips = withChips ? stageChips() : [];
   // Only invite the visitor to pick a chip when there are chips to pick.
   const invite = kind === 'logistics' ? 'Or ask me about the course:' : 'Try one of these instead:';
   if (kind === 'notCovered' || kind === 'logistics') clearSourcesToggle();
   showStageMessage({ title, text: chips.length ? `${text} ${invite}` : text, actions, chips });
   addTwinMessage(title, kind === 'logistics' ? '' : 'msg-error');
   ui.followups.hidden = true;
-  const firstBtn = ui.stageActions.querySelector('button') || ui.stageChips.querySelector('button');
-  if (firstBtn && !ui.dockQ.matches(':focus')) firstBtn.focus({ preventScroll: true });
+  focusFirstStageButton();
 }
 
 /* Link buttons (e.g. my Calendly) and TA contact cards that come with an FAQ or logistics answer. */
@@ -435,22 +498,28 @@ function answerActions(answer) {
 /* FAQ answers and course-info answers from Canvas share this card: my words, link buttons, chips. */
 function showFaqAnswer(answer, label = '') {
   clearSourcesToggle();
-  const chips = topicsForCourse().slice(0, 6);
+  const chips = stageChips();
   showStageMessage({ title: answer.title || 'From my course FAQ', text: answer.message || '', actions: answerActions(answer), chips, label });
   addTwinMessage(answer.message || '');
   ui.followups.hidden = true;
-  const firstBtn = ui.stageActions.querySelector('button') || ui.stageChips.querySelector('button');
-  if (firstBtn && !ui.dockQ.matches(':focus')) firstBtn.focus({ preventScroll: true });
+  focusFirstStageButton();
 }
 
 /* Beyond my slides: an answer from a web search when no slide covers a course-adjacent question.
    Always labeled, with its sources and the closest slides in my course. It is text; when Settings
    turns it on, a Listen button reads it in a stock voice (never my clone), labeled as such. */
 let webAudio = null;
+/** Stop a web answer's Listen audio (a new question or card replaces it). */
 function stopWebAudio() {
-  if (webAudio) { webAudio.pause(); webAudio.removeAttribute('src'); webAudio.load(); webAudio = null; }
+  if (webAudio) { releaseMedia(webAudio); webAudio = null; }
 }
 
+/** A titled list under a stage card (web sources, related slides), or null when it would be empty. */
+function listSection(title, listClass, items) {
+  return items.length ? el('section', { 'aria-label': title }, el('h3', { text: title }), el('ul', { class: listClass }, ...items)) : null;
+}
+
+/** The web answer's sources: https links only, each with its host, opening in a new tab. */
 function webSourceList(links) {
   const items = [];
   for (const link of links || []) {
@@ -461,21 +530,23 @@ function webSourceList(links) {
     items.push(el('li', {}, el('a', { href: url, target: '_blank', rel: 'noopener noreferrer' },
       String(link.label || host), el('span', { class: 'host', text: host }))));
   }
-  return items.length ? el('section', { 'aria-label': COPY.webSources }, el('h3', { text: COPY.webSources }), el('ul', { class: 'web-sources' }, ...items)) : null;
+  return listSection(COPY.webSources, 'web-sources', items);
 }
 
+/** The closest slides in my course under a web answer; each opens in the slide dialog. */
 function relatedSlides(related) {
   const items = (related || []).filter(r => r && r.image).map(r => {
-    const l1 = `${courseCode(r.course)} · Session ${r.session} · Slide ${r.slide_number}`;
+    const l1 = slideLine(r);
     return el('li', {}, el('button', {
       type: 'button', class: 'source-btn', 'aria-label': `${l1}${r.title ? `. ${r.title}` : ''}. Open the slide`,
       onclick: () => openSlideDialog(r),
     }, el('img', { src: r.image, alt: '', loading: 'lazy' }),
     el('span', {}, el('span', { class: 'src-l1', text: l1 }), el('span', { class: 'src-l2', text: r.title || fmtDate(r.date) || '' }))));
   });
-  return items.length ? el('section', { 'aria-label': COPY.webRelated }, el('h3', { text: COPY.webRelated }), el('ul', { class: 'related-slides' }, ...items)) : null;
+  return listSection(COPY.webRelated, 'related-slides', items);
 }
 
+/** A Listen button for a web answer, only for a signed /api/audio link in a voice that is not my clone. */
 function webListen(answer) {
   const url = String(answer.audio || '');
   if (!url.startsWith('/api/audio?') || !answer.voice || answer.voice.kind === 'clone') return null;
@@ -492,9 +563,10 @@ function webListen(answer) {
   return el('div', { class: 'web-listen' }, btn, el('span', { class: 'small', text: answer.voice.label || 'AI voice (a stock voice, not mine).' }));
 }
 
+/** The labeled "Beyond my slides" card: the answer, Listen, sources, closest slides, then any helper slide. */
 function showWebAnswer(answer) {
   clearSourcesToggle();
-  const chips = topicsForCourse().slice(0, 6);
+  const chips = stageChips();
   const extra = [webListen(answer), webSourceList(answer.links), relatedSlides(answer.related)].filter(Boolean);
   showStageMessage({ title: answer.title || 'Beyond my slides', text: answer.message || '', chips,
     label: COPY.webLabel, labelClass: 'web-label', extra });
@@ -517,6 +589,7 @@ function showWebAnswer(answer) {
 /* AI-drawn helper slides (public/helper-slide.js draws a checked spec; never markup from a model).
    Loaded only when an answer has one. */
 let helperModule = null;
+/** The drawn helper slide, or null when it cannot be drawn (the answer shows without it). */
 async function helperFigure(slide) {
   try {
     helperModule = helperModule || await import('./helper-slide.js');
@@ -553,10 +626,12 @@ function showContact(c) {
    Chat log
    ===================================================================== */
 
+/** The student's question in the dock's log. */
 function addUserMessage(q) {
   ui.log.append(el('li', { class: 'msg msg-user' }, q));
   scrollLog();
 }
+/** The twin's reply in the dock's log; returns the item so a sources list can go under it. */
 function addTwinMessage(text, extra = '') {
   const li = el('li', { class: `msg msg-twin ${extra}` }, el('p', {}, text));
   ui.log.append(li);
@@ -565,6 +640,7 @@ function addTwinMessage(text, extra = '') {
 }
 function scrollLog() { ui.dockLog.scrollTop = ui.dockLog.scrollHeight; }
 
+/** One sentence for the log: how many slides, and from which session, course, or both courses. */
 function summarize(answer) {
   const segs = answer.segments;
   const sessions = new Set(segs.map(s => `${s.course}-${s.session}`));
@@ -579,13 +655,14 @@ function summarize(answer) {
   return `Here are ${slides} from both courses. I'll walk you through them in order.`;
 }
 
+/** "Slides used in this answer" under the log message; the newest list also feeds the phone's Sources toggle. */
 function renderSourcesList(container, answer) {
   // Only the newest answer's list jumps within the walkthrough; older lists open the slide in a dialog.
   const sources = (answer.sources && answer.sources.length) ? answer.sources : answer.segments;
   const list = el('ol', { class: 'sources' });
   for (const src of sources) {
     const segIndex = answer.segments.findIndex(s => s.slide_id === src.slide_id);
-    const l1 = `${courseCode(src.course)} · Session ${src.session} · Slide ${src.slide_number}`;
+    const l1 = slideLine(src);
     const l2 = [fmtDate(src.date), segIndex >= 0 ? `Part ${segIndex + 1} of this answer` : 'Also relevant'].filter(Boolean).join(' · ');
     const btn = el('button', {
       type: 'button', class: 'source-btn', 'data-slide': src.slide_id,
@@ -611,6 +688,7 @@ function clearSourcesToggle() {
   if (!ui.dock.classList.contains('expanded')) ui.dockToggle.textContent = 'Sources';
 }
 
+/** A slide full size in a dialog (older answers' sources, and related slides). */
 function openSlideDialog(src) {
   ui.dialogTitle.textContent = `${courseCode(src.course)}, session ${src.session}, slide ${src.slide_number}`;
   ui.dialogImg.src = src.image;
@@ -629,6 +707,7 @@ function unlockAudio() {
   const a = new Audio(silentUnlockUrl);
   a.play().catch(() => {});
 }
+/** A tiny silent 8-bit WAV, built in memory: playing it inside the tap unlocks audio on phones. */
 function makeSilentWav(seconds) {
   const rate = 8000, n = Math.max(1, Math.floor(rate * seconds));
   const buf = new ArrayBuffer(44 + n), v = new DataView(buf);
@@ -641,6 +720,11 @@ function makeSilentWav(seconds) {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
+/**
+ * Ask a question: clear the stage, show the spinner, POST /api/ask, then show what came back.
+ * `source` ("chip", "follow_up", "typed") is logged with the question for Analytics.
+ * Only the newest question's reply is shown (app.requestId).
+ */
 async function ask(raw, { source = null } = {}) {
   const question = String(raw || '').trim().slice(0, 300);
   if (!question) {
@@ -666,13 +750,23 @@ async function ask(raw, { source = null } = {}) {
   if (myId !== app.requestId) return; // a newer question took over
 
   if (res.status === 401) { app.pendingQuestion = question; return showLogin(COPY.sessionExpired); }
-  if (res.status === 429) return showStageError('rateLimited', question);
-  if (res.status === 400 || res.status === 422) return showStageError('badQuestion', question);
-  if (res.status === 503 && /not loaded/i.test(String(res.data?.detail || ''))) return showStageError('contentLoading', question);
-  if (res.status === 501 || res.status === 503) return showStageError('notReady', question);
-  if (!res.ok || !res.data) return showStageError('generic', question);
+  const errorKind = askErrorKind(res);
+  if (errorKind) return showStageError(errorKind, question);
+  showAnswer(res.data, question);
+}
 
-  const answer = res.data;
+/** The COPY key for an /api/ask reply that is not an answer, or null when it is one. */
+function askErrorKind(res) {
+  if (res.status === 429) return 'rateLimited';
+  if (res.status === 400 || res.status === 422) return 'badQuestion';
+  if (res.status === 503 && /not loaded/i.test(String(res.data?.detail || ''))) return 'contentLoading';
+  if (res.status === 501 || res.status === 503) return 'notReady';
+  if (!res.ok || !res.data) return 'generic';
+  return null;
+}
+
+/** Show an answer by its kind: one card for each kind that is not a walkthrough, else the slides. */
+function showAnswer(answer, question) {
   // My own FAQ answers (meetings, missed class, late work...): my written words, never narrated slides.
   if (answer.kind === 'faq') return showFaqAnswer(answer);
   // Syllabus, policies, assignments and due dates, answered from my Canvas pages, with links to them.
@@ -792,18 +886,12 @@ function showSegment(i) {
 
   renderCode(seg.code);
 
-  ui.clipBtn.hidden = !(seg.clip && seg.clip.url) || player.clipFailed.has(i);
+  ui.clipBtn.hidden = clipButtonHidden(seg, i);
   ui.clipBack.hidden = true;
   ui.clipNote.hidden = true;
 
   renderNarration(seg);
-
-  ui.srcThumb.src = seg.image;
-  ui.srcThumb.alt = '';
-  ui.srcCourse.textContent = courseLabel(seg.course, seg.course_title);
-  ui.srcSession.textContent = `Session ${pad2(seg.session)}: ${seg.session_title || ''}`.replace(/: $/, '');
-  ui.srcDate.textContent = fmtDate(seg.date);
-  ui.srcSlide.textContent = `Slide ${seg.slide_number}`;
+  renderSourceCard(seg);
 
   updateDots();
   updateControls();
@@ -811,6 +899,22 @@ function showSegment(i) {
   app.sourcesBlock?.querySelectorAll('.source-btn').forEach(b => b.setAttribute('aria-current', String(b.dataset.slide === seg.slide_id)));
 }
 
+/** The "where this is from" card next to the slide. */
+function renderSourceCard(seg) {
+  ui.srcThumb.src = seg.image;
+  ui.srcThumb.alt = '';
+  ui.srcCourse.textContent = courseLabel(seg.course, seg.course_title);
+  ui.srcSession.textContent = `Session ${pad2(seg.session)}: ${seg.session_title || ''}`.replace(/: $/, '');
+  ui.srcDate.textContent = fmtDate(seg.date);
+  ui.srcSlide.textContent = `Slide ${seg.slide_number}`;
+}
+
+/** No class clip for this segment, or its clip already failed to load (the button then stays hidden). */
+function clipButtonHidden(seg, i) {
+  return !seg?.clip?.url || player.clipFailed.has(i);
+}
+
+/** The code panel: the notebook source with the marked lines, scrolled to the first marked line. */
 function renderCode(code) {
   const hasCode = !!(code && code.source);
   ui.codePanel.hidden = !hasCode;
@@ -888,15 +992,21 @@ function stopNarration() {
   clearCaptionTimer();
 }
 
+/** Drop every segment's audio element (current and preloaded). */
+function releaseSegmentAudio() {
+  for (const a of player.audio.values()) releaseMedia(a);
+  player.audio.clear();
+}
+
 /** Stop everything (new question, logout). */
 function stopPlayback() {
   stopNarration();
   exitClip(false);
-  for (const a of player.audio.values()) { a.pause(); a.removeAttribute('src'); a.load(); }
-  player.audio.clear();
+  releaseSegmentAudio();
   player.playing = false;
 }
 
+/** Pause the narration (audio or caption timer) where it is. */
 function pausePlayback() {
   player.playing = false;
   if (player.current) player.current.pause();
@@ -904,6 +1014,7 @@ function pausePlayback() {
   updateControls();
 }
 
+/** Play again from where it paused; after the last segment, from the top. */
 function resumePlayback() {
   if (player.inClip) exitClip(false);
   if (player.finished) {           // replay from the top
@@ -923,6 +1034,7 @@ function resumePlayback() {
   updateControls();
 }
 
+/** The play/pause button and the space bar. */
 function togglePlay() {
   if (!player.segments.length) return;
   if (player.playing) pausePlayback(); else resumePlayback();
@@ -938,6 +1050,7 @@ function jumpTo(i) {
   else { player.playing = false; updateControls(); }
 }
 function goPrev() { jumpTo(player.index - 1); }
+/** Next segment; after the last one, finish the answer. */
 function goNext() {
   if (player.index >= player.segments.length - 1) finishAnswer();
   else jumpTo(player.index + 1);
@@ -969,8 +1082,7 @@ function voiceFailed() {
 /** Play the rest of this answer with the fallback voice, and change the label to match it. */
 function switchToFallbackVoice() {
   player.useFallback = true;
-  for (const a of player.audio.values()) { a.pause(); a.removeAttribute('src'); a.load(); }
-  player.audio.clear();
+  releaseSegmentAudio();
   player.current = null;
   updateVoiceLabel();
   loadTimings(player.segments[player.index]);
@@ -994,15 +1106,18 @@ function fallBackToCaptions() {
 
 /* ---- captions-only timer: paces a segment by word count, then calls onClipEnded() ---- */
 
+/** How long a segment shows in captions only: its words at reading pace, at least CAPTION_MIN_SEC. */
 function captionDurationMs(seg) {
   return Math.max(CAPTION_MIN_SEC, wordCount(seg.narration) / CAPTION_WORDS_PER_SEC) * 1000;
 }
+/** Start pacing the current segment from its beginning. */
 function startCaptionTimer() {
   clearCaptionTimer();
   const total = captionDurationMs(player.segments[player.index]);
   player.timer = { id: null, raf: null, startedAt: 0, remainingMs: total, totalMs: total };
   resumeCaptionTimer();
 }
+/** Run the timer for what is left of the segment, and follow the narration on every frame meanwhile. */
 function resumeCaptionTimer() {
   const t = player.timer;
   if (!t) return;
@@ -1019,6 +1134,7 @@ function resumeCaptionTimer() {
   };
   t.raf = requestAnimationFrame(tick);
 }
+/** Stop the clock and remember how much of the segment is left. */
 function pauseCaptionTimer() {
   const t = player.timer;
   if (!t || t.id == null) return;
@@ -1026,6 +1142,7 @@ function pauseCaptionTimer() {
   t.id = null;
   t.remainingMs = Math.max(0, t.remainingMs - (performance.now() - t.startedAt));
 }
+/** Drop the timer entirely (a new segment, or audio took over). */
 function clearCaptionTimer() {
   const t = player.timer;
   if (t) { clearTimeout(t.id); cancelAnimationFrame(t.raf); }
@@ -1165,6 +1282,7 @@ function followLoop() {
   reading.raf = requestAnimationFrame(step);
 }
 
+/** Mark word i as being said (the ones before it as said), and light up the slide words it passed. */
 function setCurrentWord(i) {
   const { spans } = reading;
   const prev = reading.current;
@@ -1210,11 +1328,13 @@ function keepInView(span) {
   }
 }
 
+/** A short note in the narration box ("Tap play...", "That's the end..."), also read to screen readers. */
 function showNarrationNote(text) {
   ui.narrationNote.textContent = text;
   ui.narrationNote.hidden = false;
   ui.narrationLive.textContent = text;
 }
+/** Clear the narration box's note. */
 function hideNarrationNote() {
   if (!ui.narrationNote.hidden) { ui.narrationNote.hidden = true; ui.narrationNote.textContent = ''; }
 }
@@ -1245,6 +1365,10 @@ function layoutMarks() {
   return true;
 }
 
+/**
+ * Highlight one planned slide region, unless a clip is showing, the slide is still loading, or the same
+ * region was lit in the last MARK_AGAIN_MS. At most MAX_MARKS are lit; the oldest fades first.
+ */
 function lightUp(match) {
   if (player.inClip || ui.slideImg.hidden || ui.slideImg.classList.contains('is-loading')) return;
   const now = performance.now();
@@ -1270,6 +1394,7 @@ function lightUp(match) {
   reading.marks.push(mark);
 }
 
+/** Fade one highlight out and remove it once the fade is done. */
 function fadeMark(mark) {
   clearTimeout(mark.timer);
   reading.marks = reading.marks.filter(m => m !== mark);
@@ -1277,6 +1402,7 @@ function fadeMark(mark) {
   setTimeout(() => mark.node.remove(), reducedMotion() ? 0 : 450);
 }
 
+/** Remove every highlight now (a new segment, or a clip). */
 function clearSlideMarks() {
   for (const m of reading.marks) clearTimeout(m.timer);
   reading.marks = [];
@@ -1312,16 +1438,19 @@ function onClipEnded() { /* Ben writes this by hand: move to next segment, start
 }
 /* ---- controls ---- */
 
+/** One progress dot per segment; each jumps to its segment. */
 function buildDots() {
   ui.dots.replaceChildren(...player.segments.map((s, i) => el('li', {},
     el('button', { type: 'button', 'aria-label': `Slide ${i + 1} of ${player.segments.length}`, onclick: () => jumpTo(i) }))));
 }
+/** Mark the current dot and the ones already played. */
 function updateDots() {
   [...ui.dots.querySelectorAll('button')].forEach((b, i) => {
     if (i === player.index && !player.finished) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
     b.classList.toggle('done', i < player.index || player.finished);
   });
 }
+/** Bring the buttons, their labels and the speaking spotlight in line with the player state. */
 function updateControls() {
   ui.player.classList.toggle('is-paused', !player.playing);
   // The slide being talked about gets a soft spotlight while the narration runs.
@@ -1336,6 +1465,7 @@ function updateControls() {
   ui.btnMute.disabled = player.captionsOnly;
 }
 
+/** Mute or unmute the narration and the class clip; the walkthrough keeps its timing. */
 function toggleMute() {
   player.muted = !player.muted;
   for (const a of player.audio.values()) a.muted = player.muted;
@@ -1350,6 +1480,7 @@ ui.btnMute.addEventListener('click', toggleMute);
 
 /* ---- "Watch me explain this in class" ---- */
 
+/** Show the class recording for this slide in place of the slide; the narration pauses. */
 function enterClip() {
   const seg = player.segments[player.index];
   if (!seg?.clip?.url) return;
@@ -1373,13 +1504,10 @@ function enterClip() {
 function exitClip(returnFocus = true) {
   if (!player.inClip) return;
   player.inClip = false;
-  ui.clipVideo.pause();
-  ui.clipVideo.removeAttribute('src');
-  ui.clipVideo.load();
+  releaseMedia(ui.clipVideo);
   ui.clipVideo.hidden = true;
   ui.slideImg.hidden = false;
-  const seg = player.segments[player.index];
-  ui.clipBtn.hidden = !(seg?.clip?.url) || player.clipFailed.has(player.index);
+  ui.clipBtn.hidden = clipButtonHidden(player.segments[player.index], player.index);
   ui.clipBack.hidden = true;
   ui.clipNote.hidden = true;
   updateControls();
