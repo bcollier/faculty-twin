@@ -18,6 +18,8 @@ Contents:
 
 The data diagrams (every Postgres table and column, the Storage bucket's folders with who writes and reads each, the settings and counter keys, and what stays on the local build machine) are in **[DATABASE.md](DATABASE.md)**.
 
+Every external API the project calls (provider, endpoint, the file and function that calls it, auth variable, cost, and what data it receives), all of the app's own routes, and the local tools the pipeline uses are listed, with diagrams, in **[APIS.md](APIS.md)**.
+
 ## 1. System context
 
 ```mermaid
