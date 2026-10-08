@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import numpy as np
 import pytest
+from page_source import page_source  # tests/fixtures is on sys.path (tests/conftest.py)
 
 from app import auth, config, embed, limits, llm, narration, privacy, speech, supa
 from app.main import Retriever, app, get_completer, get_embedder, get_retriever
@@ -486,7 +487,7 @@ def test_mock_api_loads_only_on_local_hosts():
 
 
 def test_upload_is_confirmed_with_complete():
-    text = (ROOT / "public" / "admin.js").read_text()
+    text = page_source("admin.js")
     assert "/complete`" in text
 
 

@@ -305,7 +305,7 @@ def test_fallback_reason_shows_in_activity(admin):
     limits.log_question("q", 0.4, True, "anthropic", "m", kind="web", fallback_reason="provider_credits")
     rows = admin.get("/api/admin/log").json()["rows"]
     assert rows[0]["fallback_reason"] == "provider_credits"
-    js = (Path(__file__).resolve().parents[1] / "public" / "admin.js").read_text(encoding="utf-8")
+    js = page_source("admin.js")
     assert "no_links:" in js and "x.kind === 'web'" in js
 
 
@@ -701,15 +701,12 @@ def test_provider_error_raises(monkeypatch):
 
 
 def test_frontend_card_is_labeled_and_links_open_safely():
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[1]
     js = page_source("app.js")
     assert "answer.kind === 'web'" in js and "Beyond my slides: from the web" in js
     assert "Closest material in my course" in js
     assert "rel: 'noopener noreferrer'" in js and "target: '_blank'" in js
     assert "answer.voice.kind === 'clone'" in js  # a clone label would never get a Listen button
-    admin_js = (root / "public" / "admin.js").read_text(encoding="utf-8")
+    admin_js = page_source("admin.js")
     assert "From the web" in admin_js and "#web-form" in admin_js
     assert "—" not in js.split("Beyond my slides")[1][:4000]
 
