@@ -29,6 +29,7 @@ The path is saved with the question as its **kind**.
 
 | Order | Path | Kind | Search? | Model call? | What the student gets |
 | --- | --- | --- | --- | --- | --- |
+| 0 | Added Oct 8. A student reports a broken quiz, a broken submission, or an API key out of credits: a keyword pre-check, then one small classifier call (`app/alerts.py`, docs/SPEC.md "Instructor alerts") | `alert` | no | yes (the classifier) | "Thanks, I've flagged this for Prof. Collier." when a text went out or the alert was stored for Settings, otherwise "Please email Prof. Collier or the TA." with the TA card |
 | 1 | The question matches a suggested question (same words, ignoring case and punctuation, course fits the filter) | `stored_topic` | no | no | The stored, pre-generated walkthrough, with fresh signed links |
 | 2 | The question matches an entry in my course FAQ (`app/faq.py`, `app/faq_entries.json`) | `faq` | no | no | My written FAQ answer, word for word, with link buttons and TA contact cards |
 | 3 | Embed the question with Voyage once, rank every visible slide and every course-info chunk from Canvas with the same vector (`rank()` in `app/retrieval.py`). The best info chunk scores at least the course-info threshold (0.55 unless changed in Settings) and beats the best slide (`app/course_info.py`) | `course_info` | yes | yes (one grounded answer call) | A short answer in my voice written only from the top 3 Canvas chunks, with buttons that open those Canvas pages |
@@ -66,6 +67,7 @@ A badge for the kind of answer (see the table above):
 | From Canvas | `course_info` | true |
 | Referred to Ben | `logistics` | false |
 | Not covered | `not_covered` | false |
+| Student alert | `alert` | false |
 
 How `covered` is computed: it is true when the answer has at least one slide
 segment. For a new question that means both of these held:

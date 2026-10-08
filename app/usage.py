@@ -10,6 +10,7 @@ RPC, so no new table is needed. Keys (docs/SPEC.md, "Usage counters"):
     tts:<YYYY-MM-DD>:<voice tier>:chars|calls                      clone | stock | unverified | free
     event:<YYYY-MM-DD>:<name>                                      allowlisted client events
     faq:<YYYY-MM-DD>:<entry id>                                    FAQ hits per entry
+    sms:<YYYY-MM-DD>:twilio:messages|segments                       instructor alert texts (app/alerts.py)
 
 Model ids may contain colons (OpenRouter "...:free"), so `parse_key` reads the
 day, purpose and provider from the left and the metric from the right.
@@ -48,6 +49,7 @@ PURPOSES = (
     "eval_generate",
     "eval_judge",
     "topic_label",
+    "incident_classifier",
     "embed_query",
     "tts",
     "other",
@@ -204,7 +206,11 @@ def faq_key(day: str, entry_id: str) -> str:
     return f"faq:{day}:{_part(entry_id)}"
 
 
-PREFIXES = ("usage:", "embed:", "tts:", "event:", "faq:")
+def sms_key(day: str, metric: str) -> str:
+    return f"sms:{day}:twilio:{metric}"
+
+
+PREFIXES = ("usage:", "embed:", "tts:", "event:", "faq:", "sms:")
 
 
 def parse_key(key: str) -> Optional[dict[str, Any]]:
@@ -220,6 +226,8 @@ def parse_key(key: str) -> Optional[dict[str, Any]]:
                     "metric": parts[-1]}
         if kind == "tts" and len(parts) == 4:
             return {"kind": kind, "day": parts[1], "tier": parts[2], "metric": parts[3]}
+        if kind == "sms" and len(parts) == 4:
+            return {"kind": kind, "day": parts[1], "provider": parts[2], "metric": parts[3]}
         if kind in ("event", "faq") and len(parts) >= 3:
             return {"kind": kind, "day": parts[1], "name": ":".join(parts[2:])}
     except IndexError:
@@ -341,3 +349,10 @@ def record_event(name: str) -> None:
 def record_faq(entry_id: Optional[str]) -> None:
     if entry_id:
         _submit([(faq_key(_day(), entry_id), 1)])
+
+
+@_safely
+def record_sms(segments: int) -> None:
+    """One instructor alert text that Twilio accepted, and its SMS segments (the billed unit)."""
+    day = _day()
+    _submit([(sms_key(day, "messages"), 1), (sms_key(day, "segments"), max(_int(segments), 1))])

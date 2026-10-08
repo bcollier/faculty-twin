@@ -812,6 +812,7 @@ const KIND_BADGES = {
   course_info: { text: 'From Canvas', cls: 'info', title: 'Answered from my Canvas pages (syllabus, policies, assignments), written by the model from those pages only.' },
   logistics: { text: 'Referred to Ben', cls: 'info', title: 'A logistics question: the student was sent to me.' },
   not_covered: { text: 'Not covered', cls: 'warn', title: 'No slide scored at or above the threshold.' },
+  alert: { text: 'Student alert', cls: 'warn', title: 'A student reported a broken quiz, submission or API key. See Student alerts for whether a text went out.' },
 };
 function kindBadge(x) {
   const fallback = x.covered ? KIND_BADGES.course_content : KIND_BADGES.not_covered;
