@@ -23,14 +23,15 @@ A visitor types "explain clustering methods." The chat docks to a side panel, fo
 
 ## Architecture
 
-One repo, one Vercel project. A FastAPI backend runs as a single Vercel Function; the frontend, slide images, and pre-generated audio are static files in `public/`.
+One repo, one Vercel project. The FastAPI backend runs as a single Vercel Function and the frontend is static files in `public/`, both hosted on Vercel. Course content (slide images, class clips, the search index, pre-generated audio) lives in a private Supabase Storage bucket and reaches the browser only through short-lived signed links after the passcode check.
 
-| Part | What it does | Built with |
-| --- | --- | --- |
-| Indexer (`indexer/`) | Turns a deck and notebook into slide images plus `content/index.json`. Runs locally. | Python, python-pptx, nbformat, LibreOffice, pdftoppm, an embeddings API |
-| Backend (`app/`) | Retrieval, narration script, speech. Holds every key and enforces limits. | FastAPI, numpy, an LLM API, ElevenLabs |
-| Frontend (`public/`) | Idle and presenting screens, the playlist player | Plain HTML, CSS, JavaScript |
-| Counters and log | Rate limits, daily voice cap, question log | Supabase |
+| Part | What it does | Built with | Hosted on |
+| --- | --- | --- | --- |
+| Indexer (`indexer/`) | Turns each deck, transcript, and notebook into slide images, de-identified text, class clips, and the search index, then uploads them | Python, python-pptx, nbformat, LibreOffice, pdftoppm, ffmpeg, Voyage AI embeddings | The local build machine that holds the private lecture archive |
+| Backend (`app/`) | Passcode, retrieval, narration, speech, FAQ and Canvas answers, Settings API. Holds every key and enforces limits. | FastAPI, numpy, Claude (or OpenAI or OpenRouter), Voyage AI, ElevenLabs and Microsoft edge-tts | Vercel (Python Function) |
+| Frontend (`public/`) | Passcode, idle and presenting screens, the playlist player, the Settings page | Plain HTML, CSS, JavaScript | Vercel (static, CDN) |
+| Content | Slide images, class clips, search index, pre-generated audio | Private bucket, signed links | Supabase Storage |
+| Counters and log | Rate limits, daily caps, settings, question log | Postgres | Supabase |
 
 ### API
 
