@@ -6,6 +6,9 @@
 // Student page scenarios (type these words in a question):
 //   (anything else)  covered answer, 4 segments; part 2 has code, part 3 has a class clip
 //   stanley / weather  not covered
+//   faqmeet          FAQ answer with a link button (Calendly)
+//   faqta            FAQ answer for two courses with two TA contact cards
+//   logistics        logistics referral with the Calendly button and a TA card
 //   offline          network failure (backend unreachable)
 //   busy             429 rate limit
 //   unfinished       503 retrieval not implemented yet
@@ -308,6 +311,24 @@ async function route(url, method, body) {
     if (q.includes('busy')) return json(429, { detail: 'Rate limit: 5 per minute' });
     if (q.includes('unfinished')) return json(503, { detail: 'Retrieval is not implemented yet' });
     if (q.includes('expire')) { store.removeItem('mock.student'); return unauthorized(); }
+    if (q.includes('faqmeet')) {
+      return json(200, { question: body.question, covered: false, kind: 'faq', faq_id: 'meeting', title: 'Meeting with me',
+        segments: [], sources: [], follow_ups: [],
+        message: 'Placeholder FAQ answer (mock). Book a time through the link below.',
+        links: [{ label: 'Book a 30-minute meeting', url: 'https://calendly.com/bencollierphd' }], contacts: [] });
+    }
+    if (q.includes('faqta')) {
+      return json(200, { question: body.question, covered: false, kind: 'faq', faq_id: 'reschedule_presentation',
+        title: 'Rescheduling a presentation', segments: [], sources: [], follow_ups: [], links: [],
+        message: 'For 70-445: placeholder answer one.\n\nFor 45-884: placeholder answer two.',
+        contacts: [{ course: '70445', course_label: '70-445', name: '', email: 'ta-one@example.edu' },
+                   { course: '45884', course_label: '45-884', name: 'Placeholder TA', email: 'ta-two@example.edu' }] });
+    }
+    if (q.includes('logistics')) {
+      return json(200, { question: body.question, covered: false, kind: 'logistics', segments: [], sources: [], follow_ups: [],
+        message: 'mock', links: [{ label: 'Book a 30-minute meeting', url: 'https://calendly.com/bencollierphd' }],
+        contacts: [{ course: '70445', course_label: '70-445', name: '', email: 'ta-one@example.edu' }] });
+    }
     if (q.includes('stanley') || q.includes('weather')) {
       return json(200, { question: body.question, covered: false, segments: [], sources: [], follow_ups: [] });
     }

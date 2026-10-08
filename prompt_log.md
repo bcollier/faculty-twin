@@ -650,3 +650,52 @@ Any value between 0.448 and 0.543 separates the two groups. I chose to lean towa
 **Who chose what.** I chose the direction. Claude Code proposed the exact number, 0.52, which sits 0.072 above the highest off-topic score and 0.023 below the lowest on-topic one. The reasoning is also recorded as a comment above `NOT_COVERED_THRESHOLD` in `app/retrieval.py`.
 
 **Response summary.** Set `NOT_COVERED_THRESHOLD = 0.52` with that comment, through a pull request. The Mac mini session deploys it and then runs the real evaluation of the twin on the de-identified email questions.
+
+### Prompt 22 (6:50 PM)
+
+> always give me links to the full readme etc that will open in chrome no inside claude
+
+**Response summary.** Gave full GitHub links to the evals README sections, the docs, and recent pull requests, and saved this as a standing preference.
+
+### Prompt 23 (6:50 PM)
+
+> explain more abotu this The next step is a rerun after the PR #35 fix. If you want to improve the answered questions, item 3 is in your own code, and item 2 could be handled by screening logistics before retrieval (an idea in docs/EXPLORATION_JEV.md).
+
+**Response summary.** Explained three next steps:
+- Rerun the evaluation after the quiz-code fix.
+- Screen logistics questions before retrieval. Options: a Jev yes/no question, a small LLM classifier, or keywords. A higher threshold would also turn away real course questions.
+- Answers that mix two courses come from my `select_segments`. Options: keep the top slide's course, keep its session, or keep the course with the most hits.
+
+### Prompt 24 (7:03 PM)
+
+> I think I want my faculty twin to know things from my FAQ page, such as I have a calendly link for them to setup a 30 minute minute meeting anytime 9am-5:30pm Monday to Friday. My calendar is usually up to date so if calendly offers you a slot go ahead and book and assume its on my calendar and I look forward to seeing you.
+
+### Prompt 25 (7:05 PM)
+
+> if they need to rescheudle a presentation, they should be told that the TA handles the presentation schedule changes, give who the TA is for each of my courses along with their email addresses. STRETCH GOAL allow students to reschedule with the agent. meaning I publish a schedule, and if a team wants to move their presentation to an open slot they are welcome to do that. maybe havea road map where people just talk to my bot instead of editing a publicly editable google sheet
+
+### Prompt 26 (9:26 PM)
+
+> find the FAQ docs attached https://docs.google.com/document/d/1hl_eLbzUTP53KOaWcKaN-p7lP3ddgDnXXcB-JwJGEaE/edit?tab=t.0
+>
+> https://docs.google.com/document/d/1a8rN0uS7XTKjLnTYY9_UtIDvDOYLWnn7L2IpmhMZWkM/edit?tab=t.0
+
+### Prompt 27 (9:33 PM)
+
+> deploy asap before the deadline, still tweaking features and testing for a bit longer
+>
+> ta names and emails are fine, for how to pronounce names I don't know try to avoid saying thier names just put it in an easy to link to card that pops out the contact information for the TA  for the course .
+>
+> what the meeting asnwers working? explain
+
+**Response summary (Prompts 24 to 27).** Read my two course FAQ docs and added two roadmap entries (PR #39): course FAQ answers, and the stretch goal of rescheduling a presentation by talking to the twin.
+
+Then built the FAQ answers:
+- `app/faq_entries.json` holds my FAQ answers word for word, plus my meeting and rescheduling answers. It contains no TA emails.
+- `app/faq.py` matches questions with keyword patterns and is course-aware. It is checked before slide retrieval, with no embedding or model call.
+- TA names and emails come only from the `TA_CONTACTS` environment variable and appear on a contact card the student opens. The twin never says a TA's name.
+- The logistics referral also gets the Calendly button and the TA card.
+
+Tests: 19 new FAQ tests. Two logistics tests changed, because office hours now gets my Calendly answer. The full suite passed (598). Checked in WebKit and Chromium at phone width.
+
+The only wording change to my FAQ text is a typo fix ("The final presentation on during" became "The final presentation during"). The Mac mini session deploys.

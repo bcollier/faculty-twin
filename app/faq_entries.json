@@ -1,0 +1,124 @@
+{
+  "_about": "Ben's course FAQ answers, word for word, from his FAQ docs for 70-445 and 45-884 (Sep 2026) plus two answers he gave on Oct 7, 2026 (meetings, presentation rescheduling). Only typo fix: 'The final presentation on during' became 'The final presentation during'. No TA names or emails here: those come from the TA_CONTACTS environment variable. Visitor copy: no em dashes.",
+  "entries": [
+    {
+      "id": "reschedule_presentation",
+      "title": "Rescheduling a presentation",
+      "patterns": [
+        "\\breschedul\\w* (our |my |the |a )?(team'?s? )?(final )?presentation",
+        "\\bpresentation\\b.{0,40}\\breschedul",
+        "\\b(move|change|swap|switch) (our |my |the )?(team'?s? )?(final )?presentation",
+        "\\bpresentation (slot|date|time|day)s?\\b",
+        "\\bswap (our |my |the )?(slot|time)\\b"
+      ],
+      "answers": {
+        "all": "The TA handles presentation schedule changes for my courses. Their contact details are on the card below, so please email them directly to move your team's presentation."
+      },
+      "contact_ta": true
+    },
+    {
+      "id": "meeting",
+      "title": "Meeting with me",
+      "patterns": [
+        "\\boffice hours?\\b",
+        "\\b(zoom|phone|video) (call|meeting)\\b",
+        "\\b(meet|meeting|chat|talk|call) with you\\b",
+        "\\b(set up|schedule|book|arrange|request|reschedule|move) (a |an |our |my |the )?(time|meeting|call|appointment|chat)\\b",
+        "\\bcan (we|i) meet\\b",
+        "\\bcalendly\\b",
+        "\\b(our|my) meeting\\b"
+      ],
+      "answers": {
+        "all": "You can book a 30-minute meeting with me through my Calendly link, any weekday between 9 AM and 5:30 PM. My calendar is usually up to date, so if Calendly offers you a slot, go ahead and book it. Assume it's on my calendar, and I look forward to seeing you."
+      },
+      "links": [
+        {
+          "label": "Book a 30-minute meeting",
+          "url": "https://calendly.com/bencollierphd"
+        }
+      ]
+    },
+    {
+      "id": "canvas_participation",
+      "title": "A participation point Canvas did not record",
+      "patterns": [
+        "\\bparticipation (point|points|credit)\\b.{0,80}\\b(canvas|technical|glitch|did ?n'?t|not|never|missing)\\b",
+        "\\b(canvas|technical|glitch)\\b.{0,80}\\bparticipation (point|points|credit)\\b",
+        "\\bin-?class (exercise|activity|quiz)\\b.{0,60}\\b(did ?n'?t|not|never) (count|record|register|submit|go through)",
+        "\\b(canvas|technical|glitch)\\b.{0,60}\\bin-?class (exercise|activity|quiz)\\b"
+      ],
+      "answers": {
+        "all": "Sometimes you are present in class and do the activity but somehow your submission is not counted. You can email the TA and explain your situation, if you missed a point due to a technical/logistics problem with Canvas we can make accommodations."
+      },
+      "contact_ta": true
+    },
+    {
+      "id": "missed_class",
+      "title": "Missing a class",
+      "patterns": [
+        "\\bmiss(ed|ing)? (the |this |today'?s |tomorrow'?s |next |last |our |a |your )?(class|lecture|session)\\b",
+        "\\b(be|was|am|been|i'?m|will be) (absent|out sick)\\b",
+        "\\bexcused (absence|reason)\\b|\\babsence\\b",
+        "\\b(i am|i'?m|i was|i have been|i'?ve been|i got|feeling) sick\\b",
+        "\\bjob interview\\b|\\bdoctor'?s note\\b",
+        "\\bmake up (the |an |my )?(in-?class )?(exercise|activity|participation)\\b",
+        "\\bcatch up\\b.{0,40}\\b(class|lecture)\\b"
+      ],
+      "answers": {
+        "70445": "You do not need to do 100% of the in-class exercises to score a perfect participation grade. I assume you may have absences for various professional and personal reasons. This is already accounted for in the grading. In the business program generally we do not differentiate between \"excused\" and \"unexcused\" absences. I will never ask for a doctor's note (nor should you ever send me one). If something comes up and you anticipate missing a significant portion of class please talk to me about what we can do to set you up for success while you are away.\n\nIn terms of \"what should I do to catch up on the class\", I record every class so go ahead and watch the recording, read the class summary, and let me know if you have any questions after you have reviewed the recording.",
+        "45884": "You do not need to do 100% of the in-class exercises to score a perfect participation grade. I assume you may have absences for various professional and personal reasons. This is already accounted for in the grading. In the master's program generally we do not differentiate between \"excused\" and \"unexcused\" absences. If something comes up and you anticipate missing a significant portion of class please talk to me about what we can do to set you up for success while you are away."
+      }
+    },
+    {
+      "id": "late_work",
+      "title": "Turning in an assignment late",
+      "patterns": [
+        "\\b(turn|hand|submit)\\w*\\b.{0,40}\\blate\\b",
+        "\\blate (submission|penalty|days?|work|assignment)\\b",
+        "\\bgrace days?\\b",
+        "\\b(an|another|a short|any|short) extension\\b|\\bextension (on|for|request)\\b|\\bdeadline extension\\b",
+        "\\bextend (the |my |our )?(deadline|due date)\\b",
+        "\\b(more|extra) time (on|for) (the |my |our |this )?(assignment|lab|homework|project|quiz)\\b"
+      ],
+      "answers": {
+        "all": "Yes. Everyone gets two grace days for the course. You can turn in one assignment up to two days late, or two assignments one day late each. Grace days apply automatically when you submit, so you do not need to ask permission or email me or the TA first. Once your grace days are used up, the late penalty in the syllabus applies (20% for each day late). If something serious comes up and you need more time than your grace days allow, email me as soon as you can and we will work out a plan together."
+      }
+    },
+    {
+      "id": "r_instead_of_python",
+      "title": "Using R instead of Python",
+      "patterns": [
+        "\\bR (?i:instead of python)\\b|(?i:\\bpython or )R\\b(?![\\w-])|\\bR (?i:or python)\\b",
+        "(?i:\\b(?:use|using|in|with|code in|write in|program in|switch to) )R\\b(?![\\w'-])"
+      ],
+      "case_sensitive_patterns": true,
+      "answers": {
+        "45884": "If you choose to use R it will not affect your grade but I cannot guarantee support from the TA's or myself."
+      }
+    },
+    {
+      "id": "generative_ai_policy",
+      "title": "Using generative AI in this course",
+      "patterns": [
+        "\\b(can|may|could|am i allowed to|is it ok to|are we allowed to) (i |we )?(use|using)\\b.{0,30}\\b(chatgpt|claude|gemini|copilot|generative ai|gen ?ai|an llm|llms?|ai tools?)\\b",
+        "\\b(generative ai|gen ?ai|chatgpt|ai) (policy|rules|use policy)\\b",
+        "\\bwhat can i use (generative ai|gen ?ai|chatgpt|ai) for\\b"
+      ],
+      "answers": {
+        "45884": "Please do not use Generative AI to generate any written text for this course. I do not want to read reports generated by AI. You may use Generative AI to help with the technical and coding portions of the course, but ultimately you are responsible for knowing what the code is doing. You can use it for brainstorming, etc. but not for generating report text."
+      }
+    },
+    {
+      "id": "final_presentation_vs_paper",
+      "title": "The final presentation and the final paper",
+      "patterns": [
+        "\\bfinal presentation\\b.{0,80}\\b(paper|due|deadline|deliverable)",
+        "\\bfinal paper\\b.{0,80}\\b(presentation|due|deadline)",
+        "\\bwhen is the final (paper|project|presentation) due\\b"
+      ],
+      "answers": {
+        "45884": "The final paper, code, and all project parts are due to Canvas on the last day of final exams. The final presentation during the last week of class does not have to contain the final perfect version of your project, but enough should be completed so that you can tell us the background on your project, tell us a bit about the journey so far in building the product, and show off what you have in terms of working version of a tool or early ideas (if you are writing a paper on AI ethics for example). There are no deliverables due during the last week of class other than being able to discuss and demo your project.\n\nIn general, I would suggest the audience for this presentation is your peers, do not be overly concerned with the grading etc of the presentation for polish or perfect delivery. The goal for this milestone is for you to have made significant progress on your final project by Monday so that the time between Monday and the last day of exams you can work on deeper evaluation and improvements rather than creating the working \"version 1\" and submitting your project immediately."
+      }
+    }
+  ]
+}

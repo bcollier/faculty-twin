@@ -139,6 +139,7 @@ const ui = {
   dock: $('#dock'), dockToggle: $('#dock-toggle'), log: $('#log'), dockLog: $('#dock-log'),
   followups: $('#followups'), followupChips: $('#followup-chips'), dockForm: $('#dock-form'), dockQ: $('#dock-q'),
   dialog: $('#slide-dialog'), dialogTitle: $('#slide-dialog-h'), dialogImg: $('#slide-dialog-img'),
+  contactDialog: $('#contact-dialog'), contactTitle: $('#contact-dialog-h'), contactBody: $('#contact-dialog-body'),
   idleVoiceLabel: $('#idle-voice-label'), idleVoiceText: $('#idle-voice-text'), voiceLabel: $('#voice-label'),
 };
 
@@ -367,12 +368,13 @@ function showStageMessage({ title, text, spinner = false, actions = [], chips = 
   ui.stageMsg.setAttribute('role', spinner ? 'status' : 'alert');
 }
 
-function showStageError(kind, question) {
+function showStageError(kind, question, answer = null) {
   const [title, text] = COPY[kind] || COPY.generic;
   const actions = [];
   if (kind === 'unreachable' || kind === 'generic' || kind === 'rateLimited' || kind === 'contentLoading') {
     actions.push({ label: 'Try again', primary: true, onClick: () => ask(question) });
   }
+  if (kind === 'logistics' && answer) actions.push(...answerActions(answer));
   const withChips = kind === 'notCovered' || kind === 'notReady' || kind === 'badQuestion' || kind === 'logistics';
   const chips = withChips ? topicsForCourse().slice(0, 6) : [];
   // Only invite the visitor to pick a chip when there are chips to pick.
@@ -383,6 +385,43 @@ function showStageError(kind, question) {
   ui.followups.hidden = true;
   const firstBtn = ui.stageActions.querySelector('button') || ui.stageChips.querySelector('button');
   if (firstBtn && !ui.dockQ.matches(':focus')) firstBtn.focus({ preventScroll: true });
+}
+
+/* Link buttons (e.g. my Calendly) and TA contact cards that come with an FAQ or logistics answer. */
+function answerActions(answer) {
+  const actions = [];
+  for (const link of answer.links || []) {
+    if (!/^https:\/\//.test(String(link.url || ''))) continue;
+    actions.push({ label: link.label, primary: true, onClick: () => window.open(link.url, '_blank', 'noopener') });
+  }
+  const contacts = answer.contacts || [];
+  for (const c of contacts) {
+    const label = contacts.length > 1 ? `Contact the ${c.course_label} TA` : 'Contact the TA';
+    actions.push({ label, onClick: () => showContact(c) });
+  }
+  return actions;
+}
+
+function showFaqAnswer(answer) {
+  clearSourcesToggle();
+  const chips = topicsForCourse().slice(0, 6);
+  showStageMessage({ title: answer.title || 'From my course FAQ', text: answer.message || '', actions: answerActions(answer), chips });
+  addTwinMessage(answer.message || '');
+  ui.followups.hidden = true;
+  const firstBtn = ui.stageActions.querySelector('button') || ui.stageChips.querySelector('button');
+  if (firstBtn && !ui.dockQ.matches(':focus')) firstBtn.focus({ preventScroll: true });
+}
+
+/* The TA's contact details in a small card. The twin never says a TA's name aloud. */
+function showContact(c) {
+  ui.contactTitle.textContent = `TA for ${c.course_label}`;
+  const email = el('a', { href: `mailto:${c.email}` }, c.email);
+  ui.contactBody.replaceChildren(
+    ...(c.name ? [el('p', { class: 'contact-name' }, c.name)] : []),
+    el('p', {}, email),
+    el('p', { class: 'contact-note' }, 'Presentation schedule changes and Canvas problems with participation points go to the TA.'),
+  );
+  ui.contactDialog.showModal();
 }
 
 /* =====================================================================
@@ -510,8 +549,10 @@ async function ask(raw, { resumeAt = 0, quiet = false } = {}) {
   if (!res.ok || !res.data) return showStageError('generic', question);
 
   const answer = res.data;
+  // My own FAQ answers (meetings, missed class, late work...): my written words, never narrated slides.
+  if (answer.kind === 'faq') return showFaqAnswer(answer);
   // Meetings, absences, grades, deadlines: a referral to me, never narrated slides.
-  if (answer.kind === 'logistics') return showStageError('logistics', question);
+  if (answer.kind === 'logistics') return showStageError('logistics', question, answer);
   if (!answer.covered || !Array.isArray(answer.segments) || answer.segments.length === 0) {
     return showStageError('notCovered', question);
   }
