@@ -703,3 +703,235 @@ The only wording change to my FAQ text is a typo fix ("The final presentation on
 ---
 
 **Edit note (October 7, 2026, requested by me):** session headings and AI-written summaries in this log were reworded to describe the real stack (Vercel, Supabase, the model and voice providers, and the local build machine that holds the private archive) instead of naming which computer I was typing on. My prompts above are unchanged and still verbatim.
+
+---
+
+## Build session, continued, Wednesday October 7, 2026 (evening)
+
+**Tool:** Claude Code, Claude Opus 5.5, with a team of sub-agents. Same rules as the build session above: my four hand-written pieces were written by me (PR #32, logged in the coaching and repo setup sections); agents built everything around them.
+
+Prompts below are verbatim, except where noted. Screenshot-only prompts are described. Times are not recorded for this part.
+
+### Prompt 35
+
+> ok, so is there a free or open source alternative to voyage .ai or explain what the benefits of voyage is
+
+**Response summary.** Explained what Voyage gives (retrieval quality, separate query and document modes, low cost) and alternatives (OpenAI embeddings, Gemini, Cloudflare Workers AI, open-source models in the browser). Recommended adding a card to Voyage tonight because switching models means re-tuning the threshold.
+
+### Prompt 36 (screenshot of the Voyage billing page with a card added, no text)
+
+**Response summary.** Confirmed; suggested a budget limit.
+
+### Prompt 37
+
+> what are you waiting for me on anything, spin up as many agents as you need to get htis work done asap, I only have 30 minutse in this sitting
+>
+> Still needs you, whenever you’re up:
+>
+> * Your retrieval PR. Once it merges, I’ll run the threshold table, generate the suggested-question playlists, and run the evaluations.
+> * A Voyage payment method. Otherwise live questions are limited to 3 a minute.
+> * The Vercel GitHub connection, optional. With it, merges to `main` deploy on their own.
+> * A new OpenRouter key, optional.
+> * A Zoom login. That unlocks the 180 missing recordings for the archive.
+
+**Response summary.** Most items were already done. Launched agents for logistics routing, suggested-question playlists in my cloned voice, the portfolio card, and a live end-to-end QA run.
+
+### Prompt 38
+
+> “go” for your clone, <_ use my clone please
+
+**Response summary.** Confirmed the playlists use my clone (capped at 25,000 ElevenLabs characters; 16,314 used).
+
+### Prompts 39 to 44 (setting up a working OpenRouter key)
+
+> how do. i give you this OpenRouter key
+
+> this said alreayd set
+
+> I probably have it set from other projects on this machine
+
+> all of my keys should work try them again the openrouter key
+
+> go again
+> OPENROUTER_API_KEY  (optional: openrouter.ai > Keys, starts sk-or-) [already set]
+>   Paste, then press Return (nothing will appear):
+>   saved.
+
+(One more prompt in this group was pasted terminal output of the key script, with no secrets shown.)
+
+**Response summary.** The stored key was rejected by OpenRouter ("User not found"); one paste saved only 6 characters; the last paste worked (73 characters), passed a test call, and went into Vercel.
+
+### Prompt 45
+
+> give me links to all those things, give me the app to test and testing results
+
+**Response summary.** Listed every link and the test results at that point (580 automated tests passing, live end-to-end QA, threshold table, eval, security, privacy checks).
+
+### Prompts 46 and 47
+
+> give me the link to try faculty twin live
+
+> did we ever set the admin passcode for this app?
+
+**Response summary.** Gave the URL; the admin passcode was set on Oct 5 through the key script, and how to see or change it without printing it in chat.
+
+### Prompt 48
+
+> I found the password no worries.
+>
+> How is the concepts behind each slide stored? like many slide are just fully images, are you storing them as images and getting keywords or descriptions for each slide or how?
+
+**Response summary.** Explained that search uses each slide's text, speaker notes, text recognized in images, and what I said in class while it was up; images are display only. 52 of 974 slides have almost nothing to search on. Suggested vision-model slide descriptions as a next step.
+
+### Prompt 49 (with a screenshot of the Activity table)
+
+> how do I setup another run of testing? how is this scoring done? put details link on this page https://faculty-twin.vercel.app/admin.html#sec-activity.
+
+**Response summary.** Explained each column and how to run tests. An agent added `docs/TESTING_AND_SCORES.md`, a "How these numbers work" link, honest kind labels, and two scripts (PR #42).
+
+### Prompt 50 (screenshot of the Settings model picker with Claude Fable 5.1 saved, no text)
+
+**Response summary.** Tested Fable 5.1 live (good narration, about 21 s per typed answer) and added it to the curated list (PR #41).
+
+### Prompt 51
+
+> how where can I use the evals harness and the evals results?
+
+**Response summary.** Where the harness, shareable results and private results live, and how to run it.
+
+### Prompt 52
+
+> in readme for evals 	No Anthropic key on the laptop. It is on the Mac mini.   .  <- remove all references to the "mac mini" this is all running on Vercel, supabase, etc. give the real stack, but the mac mini is just where I am typing this code from 	No Anthropic key on the laptop. It is on the Mac mini.
+
+**Response summary.** An agent rewrote about 90 references in 25 files to name the real stack (PR #43). My verbatim prompts here were left unchanged.
+
+### Prompt 53 (with screenshots of the Canvas Course Overview module)
+
+> this question is missing simple answers to things that are posted on Canvas, control the browser or write code to import all relevant student faceing questions linked on cavnas https://canvas.cmu.edu/courses/54496/modules.  https://canvas.cmu.edu/courses/55124
+
+**Response summary.** Two agents built a read-only Canvas import (202 items, 650 passages, schedules with student names kept as links only) and a course-info answer path (PRs #44, #49).
+
+### Prompt 54
+
+> in the Admin only section there needs to be evals and reports of what phrases were tested in which models and what the ratings and evaluations were. maybe per run summaires or a report card over time for evals. should be able to start a round of evals with different models generating responses, and different models judging.  in the admin section i should be able to change any of the prompts for facultytwin
+
+**Response summary.** Agents built Settings > Evals (PR #52) and a Prompts editor with history and diff (PR #45).
+
+### Prompt 55
+
+> i want an analytics section as well in admin settings. track tokens spent in / out etc. to estimate spend, displays number of tokens to which models etc. average scores across lots of evals for models . i don't know think about all the things I would want to know about how students are using it like what topics are they asking about. all questions should be logged to supabase then a topic analytics in admin section
+
+**Response summary.** An agent built Settings > Analytics (PR #50) with spend, tokens, topics, engagement, and test traffic kept out of student numbers; I ran the one SQL migration it needed.
+
+### Prompt 56
+
+> explain how slide images are being handled, how is language searching the images correctly?
+
+**Response summary.** The search never looks at images; it searches text about each slide, and images are used only to match class video to slides.
+
+### Prompt 57
+
+> this should be a setting on the admin page Slides scoring 0.52 or higher are used.
+
+**Response summary.** An agent added an "Answer thresholds" panel (PR #46). My 0.52 in `app/retrieval.py` stays the default.
+
+### Prompts 58 to 60 (with screenshots of the Activity table)
+
+> how did i get not covered
+
+> why is model showing as none
+
+> why do these all have empty model
+
+**Response summary.** Explained declines (score below 0.52), FAQ and stored answers (no model called), and that those rows were automated smoke checks, now tagged as test traffic.
+
+### Prompts 61 and 62
+
+> ok, are eval analytics coming soon, is an agent working on those? we are getting close to the due date and I want to go to sleep soon
+
+> give me full url links docs/DEMO_SCRIPT.md
+
+**Response summary.** Status of the five running agents and the links needed tonight.
+
+### Prompt 63 (with a screenshot of the README Architecture table)
+
+> this should say what platform it is hosted on
+
+**Response summary.** Added a "Hosted on" column to my README's Architecture table at my request (PR #47).
+
+### Prompt 64
+
+> looks like this is still in the works, how do we run them faculty-twin/docs
+> /EXPLORATION_JEV.md
+
+(Followed by a paste of `docs/EXPLORATION_JEV.md`, which is in the repo and omitted here.)
+
+**Response summary.** Jev runs need a TypeSafe API key; added a prompt for it to the key script and gave the three commands.
+
+### Prompt 65 (with a screenshot of the baseline results table)
+
+> what is this scale out of 5? be clear on visuals
+
+**Response summary.** Explained pass rate (0 to 1) versus the six 1 to 5 dimensions; the evals agent labeled every scale in tables and charts.
+
+### Prompt 66
+
+> switch to claude opus 5.5 rather than fable
+
+**Response summary.** Switched the live narration model to Claude Opus 5.5 (about 9 s per typed answer).
+
+### Prompt 67
+
+> is there a male voice with openai live 1
+
+**Response summary.** `gpt-live-1` is a speech-to-speech model that writes its own replies, so it would bypass signed narration; `gpt-4o-mini-tts` fits, with male-sounding voices onyx, ash and echo. Not added yet.
+
+### Prompt 68
+
+> whats still running that  I need for the demo, are we ready for demo? I want to do show off one question, show a slide about what data goes into the twin , then data on evals and about the eval harness
+
+**Response summary.** Built a demo page with the data pipeline, privacy checks, eval harness and labeled charts (artifact, plus `docs/demo/data-and-evals.html`, PR #48).
+
+### Prompt 69 (with a screenshot of the demo page)
+
+> the rosters are not in VOyage ai. checked against the rosters,
+
+**Response summary.** Fixed the wording: the name check runs on the build machine and rosters never go to any AI service (PR #51).
+
+### Prompt 70 (screenshot of the SQL migration succeeding, no text)
+
+**Response summary.** Verified all 8 new question-log columns were readable.
+
+### Prompt 71
+
+> why are we waiting until after midnight just go.
+>
+> give me a script and stage directions for the video.
+>
+> what I want to do is create a "Effective Coding with AI Project 2" or similar repo. in that folder I want to show off my experiments in using code based tools with gen ai.
+>
+> The sections of project two are goign to be: data visualization with AI -> Evaluations teaching
+> strenghts page -> visualizations and synthesis.
+>
+> Apple vision integration-> the travel page
+> Apple vision -> reels
+>
+> Connections -> using LLMs for game engine
+>
+> Vector database, audio narration, adding slides visuals to generated audio -> faculty twin
+>
+>
+>
+>
+> the majority of the project is Faculty Twin, if they only judge one thing as "the project" that is it, but in terms of hours spent on "project 2" I spent a lot of time learning about different project ideas from coding apple vision integrations to semantic photo search to speech synthesis.
+
+**Response summary.** Deployed everything merged (807 tests, live smoke check passed), then Settings > Evals (881 tests). Created the public repo `bcollier/effective-coding-with-ai-project-2` with an overview of the five parts and `VIDEO_SCRIPT.md` (scenes, stage directions, draft lines; my hand-written code scenes have prompts only).
+
+### Places the AI got something wrong in this part (facts only)
+
+- The first real eval run failed on 20 of 22 questions because Voyage's free tier allows 3 requests a minute; it was rerun with spacing, and I added a card.
+- The eval found the twin reading an in-class quiz access code from a transcript. Codes were removed from the index (PR #35).
+- When passing my answers to the archive agent, the AI added "anything else you flagged as uncertain authorship", which I had not said. It deleted local copies of 11 videos and 81 Canvas files; originals in Drive and Canvas were untouched and the list is kept for restore.
+- The code map review table (slide titles and code) was committed to the public repo in PR #30 and moved out in PR #31; it stays in git history.
+- Uploading the Canvas index switched on Canvas answers on the live site while deploys were being held for my recording.
+- The demo page first read as if the rosters went to Voyage AI. They never leave the build machine (PR #51).
