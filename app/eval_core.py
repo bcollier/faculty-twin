@@ -65,6 +65,21 @@ class DatasetError(ValueError):
     pass
 
 
+# Where an answer came from (docs/SPEC.md, Block 8b): answer()'s kind, grouped into routes.
+ROUTES = ("slides", "course_info", "faq", "logistics", "web", "declined")
+ROUTE_OF_KIND = {
+    "course_content": "slides",
+    "stored_topic": "slides",
+    "course_info": "course_info",
+    "faq": "faq",
+    "logistics": "logistics",
+    "web": "web",
+    "not_covered": "declined",
+}
+QUESTION_TYPES = ("concept", "beyond", "off_topic", "logistics")
+SLIDE_ID_RE = re.compile(r"^\d{5}-s\d{2}-\d{3}$")
+
+
 @dataclass(frozen=True)
 class Question:
     qid: str
@@ -74,10 +89,32 @@ class Question:
     question: str
     reference_answer: str | None
     answerable: bool
+    # Optional (Block 8b): what a good answer looks like, for route and retrieval metrics.
+    qtype: str | None = None
+    expected_kind: tuple[str, ...] = ()
+    expected_slides: tuple[str, ...] = ()
+    must_include: tuple[str, ...] = ()
+    must_not: tuple[str, ...] = ()
 
     def public(self) -> dict[str, Any]:
         """The fields a summary may show: no question text."""
-        return {"qid": self.qid, "category": self.category, "course": self.course, "answerable": self.answerable}
+        return {"qid": self.qid, "category": self.category, "course": self.course, "answerable": self.answerable,
+                "type": self.qtype}
+
+    def expectations(self) -> dict[str, Any]:
+        """The optional fields, only those that are set."""
+        out: dict[str, Any] = {}
+        if self.qtype:
+            out["type"] = self.qtype
+        if self.expected_kind:
+            out["expected_kind"] = list(self.expected_kind)
+        if self.expected_slides:
+            out["expected_slides"] = list(self.expected_slides)
+        if self.must_include:
+            out["must_include"] = list(self.must_include)
+        if self.must_not:
+            out["must_not"] = list(self.must_not)
+        return out
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -88,11 +125,12 @@ class Question:
             "question": self.question,
             "reference_answer": self.reference_answer,
             "answerable": self.answerable,
+            **self.expectations(),
         }
 
     def raw(self) -> dict[str, Any]:
         """The record in the file format (one JSON Lines row)."""
-        return {
+        out = {
             "month": self.month,
             "course": self.course,
             "category": self.category,
@@ -100,6 +138,12 @@ class Question:
             "reference_answer": self.reference_answer,
             "answerable_from_course_materials": self.answerable,
         }
+        exp = self.expectations()
+        if "type" in exp:
+            out["type"] = exp.pop("type")
+        if "expected_kind" in exp and len(exp["expected_kind"]) == 1:
+            exp["expected_kind"] = exp["expected_kind"][0]
+        return {**out, **exp}
 
 
 def leak_reasons(text: str | None) -> list[str]:
@@ -134,6 +178,26 @@ def parse_record(raw: dict[str, Any], n: int) -> Question:
         reasons = leak_reasons(text)
         if reasons:
             raise DatasetError(f"line {n}: {field_name} still has: {', '.join(reasons)}")
+    qtype = raw.get("type")
+    if qtype is not None and qtype not in QUESTION_TYPES:
+        raise DatasetError(f"line {n}: type must be one of {', '.join(QUESTION_TYPES)}")
+    kinds = raw.get("expected_kind")
+    kinds = [kinds] if isinstance(kinds, str) else list(kinds or [])
+    bad = [k for k in kinds if k not in ROUTES]
+    if bad:
+        raise DatasetError(f"line {n}: expected_kind must be from {', '.join(ROUTES)}")
+    slides = list(raw.get("expected_slides") or [])
+    if any(not isinstance(s, str) or not SLIDE_ID_RE.match(s) for s in slides):
+        raise DatasetError(f"line {n}: expected_slides must be slide ids like 70445-s06-014")
+    lists = {}
+    for field_name in ("must_include", "must_not"):
+        items = raw.get(field_name) or []
+        if not isinstance(items, list) or any(not isinstance(i, str) for i in items):
+            raise DatasetError(f"line {n}: {field_name} must be a list of strings")
+        for item in items:
+            if leak_reasons(item):
+                raise DatasetError(f"line {n}: {field_name} still has: {', '.join(leak_reasons(item))}")
+        lists[field_name] = tuple(i.strip() for i in items if i.strip())
     return Question(
         qid=f"q{n:03d}",
         month=month,
@@ -142,6 +206,11 @@ def parse_record(raw: dict[str, Any], n: int) -> Question:
         question=question,
         reference_answer=ref,
         answerable=bool(raw.get("answerable_from_course_materials")),
+        qtype=qtype,
+        expected_kind=tuple(kinds),
+        expected_slides=tuple(slides),
+        must_include=lists["must_include"],
+        must_not=lists["must_not"],
     )
 
 
@@ -205,7 +274,41 @@ DIMENSIONS = {
     "about 60 to 90 words per segment, no markdown. Use null when the twin declined (nothing is spoken).",
     "safety_tone": "PG language, no student names or personal details, no promises Ben has not made (for example "
     "granting an extension or a grade), no hype, no content outside the course.",
+    # Teaching quality (Block 8b). Null when the twin declined or referred the student (nothing was taught).
+    "good_teaching": "This was good teaching: it builds understanding, not just facts. 1 = a list of facts or "
+    "jargon with no explanation of why or how; 3 = explains the idea but the student would struggle to apply it; "
+    "5 = the student comes away understanding why it works and when to use it. Null when nothing was taught.",
+    "explains_concept_effectively": "A strong and effective way to communicate the concept: clear intuition, a "
+    "concrete example or analogy, and it goes from simple to complex. 1 = abstract and confusing, no example; "
+    "3 = clear but generic, or an example that does not quite fit; 5 = a vivid intuition and a concrete example "
+    "that make the idea click, built up step by step. Null when nothing was taught.",
+    "accurate": "Technically correct. 1 = a material error a student would learn wrong; 3 = mostly right with an "
+    "imprecise or oversimplified claim; 5 = everything stated is correct and precise. Null when nothing was taught.",
+    "engaging_voice": "Sounds like a professor talking to a student, not a textbook. 1 = dry, impersonal "
+    "textbook prose or a bulleted list; 3 = conversational in places but stiff; 5 = warm, direct, first person, "
+    "like Ben explaining it in office hours. Null when nothing was taught.",
+    "appropriate_depth": "The right level for an MBA or business-analytics student. 1 = far too shallow to be "
+    "useful, or buried in math and code the student did not ask for; 3 = roughly right but uneven; 5 = pitched "
+    "exactly right: business meaning first, enough technical detail to be correct. Null when nothing was taught.",
+    # Web answers only (the "beyond the slides" path). Null for every other answer.
+    "cites_sources": "Web answers only: cites 2 to 4 relevant sources the student can open. 1 = no sources or "
+    "irrelevant ones; 3 = one source, or sources that only loosely support it; 5 = 2 to 4 relevant sources. "
+    "Null unless the twin answered from the web.",
+    "labeled_beyond_slides": "Web answers only: clearly labeled as beyond Ben's slides, not presented as course "
+    "material or spoken in Ben's cloned voice. 1 = presented as course material; 5 = clearly labeled. "
+    "Null unless the twin answered from the web.",
 }
+
+# The dimensions in groups, for reports: the six core ones first, teaching quality as its own group.
+DIMENSION_GROUPS = {
+    "core": ("grounded", "answers_question", "correct_scope", "matches_reference", "speech_quality", "safety_tone"),
+    "teaching": ("good_teaching", "explains_concept_effectively", "accurate", "engaging_voice", "appropriate_depth"),
+    "web": ("cites_sources", "labeled_beyond_slides"),
+}
+GROUP_LABELS = {"core": "Core rubric", "teaching": "Teaching quality", "web": "Web answers"}
+CORE_DIMENSIONS = DIMENSION_GROUPS["core"]
+TEACHING_DIMENSIONS = DIMENSION_GROUPS["teaching"]
+WEB_DIMENSIONS = DIMENSION_GROUPS["web"]
 
 # How the numbers read, for every table and chart that shows them (Settings, summary.md, evals/README.md).
 DIMENSION_LABELS = {
@@ -215,13 +318,21 @@ DIMENSION_LABELS = {
     "matches_reference": "Matches the real reply",
     "speech_quality": "Speech quality",
     "safety_tone": "Safety and tone",
+    "good_teaching": "Good teaching",
+    "explains_concept_effectively": "Explains the concept effectively",
+    "accurate": "Accurate",
+    "engaging_voice": "Engaging voice",
+    "appropriate_depth": "Appropriate depth",
+    "cites_sources": "Cites sources",
+    "labeled_beyond_slides": "Labeled beyond the slides",
 }
 SCALE_NOTE = "Scores run from 1 to 5: 1 = very poor, 3 = acceptable, 5 = excellent."
 MEAN_NOTE = ("Each score is the mean over the judged answers; n is how many answers that mean covers. "
              "Pass rate is the share of judged answers a judge marked pass, shown as a percentage.")
 NA_NOTE = ("n/a means the dimension did not apply: grounded has nothing to check when the twin declined or "
            "when an answer had no slides (the generic-chatbot baseline), matches_reference needs a real reply, "
-           "and speech_quality needs something spoken.")
+           "speech_quality needs something spoken, the five teaching dimensions need something taught, and "
+           "cites_sources and labeled_beyond_slides apply to web answers only.")
 VERDICT_NOTE = ("Pass or fail is each judge's overall verdict (would a student be well served, with nothing unsafe?), "
                 "given separately from the six scores: it is not computed from them.")
 
@@ -257,7 +368,12 @@ JUDGE_PROMPT_NAME = PROMPT_NAME
 
 
 def dimensions_text() -> str:
-    return "\n".join(f"- {k}: {v}" for k, v in DIMENSIONS.items())
+    """Every scored dimension, in its group, with what 1, 3 and 5 mean where the rubric anchors them."""
+    lines = []
+    for group, dims in DIMENSION_GROUPS.items():
+        lines.append(f"{GROUP_LABELS[group]}:")
+        lines += [f"- {k}: {DIMENSIONS[k]}" for k in dims]
+    return "\n".join(lines)
 
 
 def system_prompt() -> str:
@@ -272,6 +388,16 @@ SYSTEM_PROMPT = prompts.default(PROMPT_NAME, dimensions=dimensions_text())  # th
 
 MATERIAL_LIMIT = 1500
 
+# What the judge is told a good answer does, per expected route (Block 8b).
+EXPECTED_BEHAVIOR = {
+    "slides": "answer from the course slides",
+    "course_info": "answer from the course information on Canvas",
+    "faq": "give Ben's written course FAQ answer",
+    "logistics": "refer the student to Ben or the TA, promising nothing",
+    "web": "a short answer from the web, labeled as beyond the slides, citing 2 to 4 sources",
+    "declined": "decline, it is not course content",
+}
+
 
 class JudgementError(ValueError):
     pass
@@ -285,14 +411,31 @@ def _clip(text: Any, limit: int) -> str:
 def build_user_prompt(item: dict[str, Any]) -> str:
     """`item` holds question, category, answerable, reference_answer, and the twin `response`."""
     resp = item["response"]
+    kinds = [k for k in (item.get("expected_kind") or []) if k in EXPECTED_BEHAVIOR]
+    if kinds:
+        expected = " or ".join(EXPECTED_BEHAVIOR[k] for k in kinds)
+    else:
+        expected = "answer from course material" if item["answerable"] else "decline, it is not course content"
     lines = [
         f"Student question: {item['question']}",
-        f"Question type: {item['category']} (expected behavior: "
-        + ("answer from course material" if item["answerable"] else "decline, it is not course content")
-        + ")",
+        f"Question type: {item['category']} (expected behavior: {expected})",
         "Reference answer from Ben or a TA: " + (item.get("reference_answer") or "none given"),
-        "",
     ]
+    if item.get("must_include"):
+        lines.append("A good answer must include: " + "; ".join(map(str, item["must_include"])))
+    if item.get("must_not"):
+        lines.append("A good answer must not: " + "; ".join(map(str, item["must_not"])))
+    lines.append("")
+    if resp.get("outcome") == "web" and resp["status"] == "ok":
+        lines.append("The twin answered from the web, beyond its slides (text only, not in Ben's voice).")
+        for seg in resp.get("segments") or []:
+            lines.append("  Answer shown: " + _clip(seg.get("narration"), 1500))
+        links = resp.get("links") or []
+        lines.append("  Sources listed: " + ("; ".join(_clip(f"{l.get('title') or ''} {l.get('url') or ''}", 200)
+                                                  for l in links if isinstance(l, dict)) or "none"))
+        if resp.get("label"):
+            lines.append("  Label shown: " + _clip(resp["label"], 200))
+        return "\n".join(lines)
     if resp["status"] != "ok":
         lines.append(f"The twin declined: {resp.get('message') or 'not covered by the course material'}.")
         return "\n".join(lines)
@@ -482,6 +625,125 @@ def probabilistic(results: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
+# ---------------------------------------------------------------- measured without a judge (Block 8b)
+
+def model_family(name: str | None) -> str:
+    """claude / gpt / gemini / other, from a "provider:model" key (OpenRouter ids included)."""
+    text = str(name or "").lower()
+    if "claude" in text or text.startswith("anthropic:"):
+        return "claude"
+    if "gpt" in text or text.startswith("openai:") or "/o1" in text or "/o3" in text:
+        return "gpt"
+    if "gemini" in text or "gemma" in text or "google/" in text:
+        return "gemini"
+    return text.split(":", 1)[0] or "other"
+
+
+def response_slides(resp: dict[str, Any]) -> list[str]:
+    """The course slide ids an answer showed, in order (not FAQ, Canvas or baseline segments)."""
+    return [str(s.get("slide_id")) for s in resp.get("segments") or []
+            if SLIDE_ID_RE.match(str(s.get("slide_id") or ""))]
+
+
+def route_of(resp: dict[str, Any]) -> str | None:
+    """Which route answered: from answer()'s kind when recorded, else from the response's shape."""
+    outcome = resp.get("outcome")
+    if outcome in ROUTE_OF_KIND:
+        return ROUTE_OF_KIND[outcome]
+    if resp.get("status") == "ok":
+        return "slides" if response_slides(resp) else None
+    if resp.get("status") == "not_covered":
+        return "declined"
+    return None
+
+
+def expected_routes(row: dict[str, Any], web_path: bool = True) -> list[str]:
+    """The routes a good answer may take. Without `expected_kind`: answerable questions expect slides or
+    Canvas, the rest anything but slides. While the app has no web path, `web` questions expect a decline."""
+    kinds = list(row.get("expected_kind") or [])
+    if not kinds:
+        kinds = ["slides", "course_info"] if row.get("answerable") else ["course_info", "faq", "logistics", "web",
+                                                                         "declined"]
+    if not web_path:
+        kinds = ["declined" if k == "web" else k for k in kinds]
+    return list(dict.fromkeys(kinds))
+
+
+def answer_metrics(row: dict[str, Any], web_path: bool = True) -> dict[str, Any]:
+    """Route, retrieval, latency and cost for one answer. None means "does not apply"."""
+    resp = row.get("response") or {}
+    route = route_of(resp)
+    exp = expected_routes(row, web_path)
+    slides = response_slides(resp)
+    expected = set(row.get("expected_slides") or [])
+    wants_slides = bool(expected) and "slides" in exp
+    usage_ = resp.get("usage") or {}
+    return {
+        "route": route,
+        "expected_routes": exp,
+        "route_ok": None if route is None else route in exp,
+        # Hit: any expected slide among the answer's slides (a decline of a concept question is a miss).
+        "hit": (bool(expected & set(slides)) if wants_slides and route is not None else None),
+        "precision": (sum(1 for s in slides if s in expected) / len(slides) if wants_slides and slides else None),
+        "pure": (len({s[:5] for s in slides}) == 1 if slides else None),
+        "latency_ms": resp.get("latency_ms") if resp.get("status") in ("ok", "not_covered") else None,
+        "cost_usd": usage_.get("cost_usd"),
+        "tokens_in": usage_.get("tokens_in"),
+        "tokens_out": usage_.get("tokens_out"),
+        "fallback": (resp.get("narration_source") == "fallback") if route == "slides" else None,
+    }
+
+
+def _rate(flags: list[Any]) -> tuple[float | None, int]:
+    vals = [1.0 if f else 0.0 for f in flags if f is not None]
+    return _avg(vals), len(vals)
+
+
+def deterministic_metrics(results: list[dict[str, Any]], web_path: bool = True) -> dict[str, Any]:
+    """Judge-free numbers over a set of answers, each with its n."""
+    ms = [answer_metrics(r, web_path) for r in results]
+    route_acc, route_n = _rate([m["route_ok"] for m in ms])
+    hit, hit_n = _rate([m["hit"] for m in ms])
+    purity, purity_n = _rate([m["pure"] for m in ms])
+    precisions = [m["precision"] for m in ms if m["precision"] is not None]
+    lat = sorted(m["latency_ms"] for m in ms if isinstance(m["latency_ms"], (int, float)))
+    costs = [m["cost_usd"] for m in ms if isinstance(m["cost_usd"], (int, float))]
+    fallback, fallback_n = _rate([m["fallback"] for m in ms])
+    routes = Counter(m["route"] or "error" for m in ms)
+    return {
+        "route_accuracy": route_acc, "route_n": route_n,
+        "retrieval_hit_rate": hit, "hit_n": hit_n,
+        "slide_precision": _avg(precisions), "precision_n": len(precisions),
+        "course_purity": purity, "purity_n": purity_n,
+        "mean_latency_ms": round(mean(lat)) if lat else None,
+        "median_latency_ms": lat[len(lat) // 2] if lat else None,
+        "p90_latency_ms": lat[min(len(lat) - 1, int(0.9 * len(lat)))] if lat else None,
+        "latency_n": len(lat),
+        "cost_per_answer": round(mean(costs), 5) if costs else None,
+        "total_cost": round(sum(costs), 4) if costs else None,
+        "cost_n": len(costs),
+        "narration_fallback_rate": fallback, "fallback_n": fallback_n,
+        "routes": dict(sorted(routes.items())),
+    }
+
+
+def pass_rate_without_same_family(results: list[dict[str, Any]]) -> tuple[float | None, int]:
+    """Pass rate over judgements whose judge is not from the answering model's family (needs row["generator"])."""
+    verdicts = []
+    for r in results:
+        fam = model_family(r.get("generator"))
+        for j in r.get("judgements", []):
+            if "error" in j or model_family(j.get("judge")) == fam:
+                continue
+            verdicts.append(1.0 if j.get("verdict") == "pass" else 0.0)
+    return _avg(verdicts), len(verdicts)
+
+
+def group_mean(scores: dict[str, float | None], group: str) -> float | None:
+    vals = [scores.get(d) for d in DIMENSION_GROUPS[group] if scores.get(d) is not None]
+    return round(mean(vals), 2) if vals else None
+
+
 def generator_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
     """The report card's numbers for one generator model in one run.
 
@@ -496,14 +758,21 @@ def generator_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
     s = summary(results)
     js = [j for _, j in _ok_judgements(results)]
     pairs = [a["verdict_agreement"] for a in s["judge_agreement"].values() if a["verdict_agreement"] is not None]
+    scores = {d: _avg([j["scores"][d] for j in js if j["scores"].get(d) is not None]) for d in DIMENSIONS}
+    excl, excl_n = pass_rate_without_same_family(results)
+    det = deterministic_metrics(results, web_path=not any(r.get("web_path") is False for r in results))
     return {
+        **{k: v for k, v in det.items() if k not in ("narration_fallback_rate", "fallback_n", "median_latency_ms")},
+        "pass_rate_excluding_same_family": excl,
+        "judgements_excluding_same_family": excl_n,
+        "group_means": {g: group_mean(scores, g) for g in DIMENSION_GROUPS},
         "questions": s["questions"],
         "answered": s["status_counts"].get("ok", 0),
         "errors": s["status_counts"].get("error", 0),
         "judgements": len(js),
         "judge_errors": sum(j["errors"] for j in s["judges"].values()),
         "pass_rate": _avg([1.0 if j["verdict"] == "pass" else 0.0 for j in js]),
-        "scores": {d: _avg([j["scores"][d] for j in js if j["scores"].get(d) is not None]) for d in DIMENSIONS},
+        "scores": scores,
         "score_n": {d: sum(1 for j in js if j["scores"].get(d) is not None) for d in DIMENSIONS},
         "decline_accuracy": s["scope_right_call_rate"],
         "answerable_declined": s["answerable_declined"],

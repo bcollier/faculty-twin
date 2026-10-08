@@ -38,8 +38,12 @@ ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = ROOT / "evals" / "private"
 
 
-def load_dotenv(path: Path = ROOT / ".env") -> None:
-    """Read KEY=VALUE lines from the git-ignored .env without overriding the environment."""
+def load_dotenv(path: Path | None = None) -> None:
+    """Read KEY=VALUE lines from the git-ignored .env without overriding the environment.
+
+    `FT_ENV_FILE` points at another checkout's .env (for example from a git worktree, which has none).
+    """
+    path = path or Path(os.environ.get("FT_ENV_FILE") or ROOT / ".env")
     if not path.exists():
         return
     for line in path.read_text(encoding="utf-8").splitlines():

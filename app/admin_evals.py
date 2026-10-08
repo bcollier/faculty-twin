@@ -13,7 +13,7 @@ step at a time, because a Vercel function must answer within 60 seconds:
 and the page loops on /step until the run is done. A reload resumes from the
 server's state: the next pair is always the first one without a result.
 
-Spend guards (docs/SECURITY.md): at most 30 questions, 3 generators and 3
+Spend guards (docs/SECURITY.md): at most 30 questions, 6 generators and 3
 judges per run; one active run at a time; OpenRouter models priced above the
 ceiling are refused (the same check as the Model section); every model call
 counts against the global DAILY_LLM_CALL_CAP, against the admin-eval daily cap
@@ -40,7 +40,8 @@ import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from . import auth, config, embed, eval_core, eval_store, limits, llm, narration, prompts, settings_store, storage, usage
+from . import (auth, config, embed, eval_core, eval_store, limits, llm, narration, pricing, prompts, settings_store,
+               storage, usage)
 from .eval_runs import (  # noqa: F401  (re-exported for tests and callers)
     ACTIVE,
     FINISHED,
@@ -553,6 +554,15 @@ def response_from(playlist: dict[str, Any], info: dict[str, Any], content: stora
             "narration_source": info.get("narration"), "top_score": info.get("top_score"),
             "latency_ms": latency_ms, "outcome": kind}
     segs = playlist.get("segments") or []
+    if kind == "web":  # "beyond the slides": a short web answer with its sources, never in Ben's voice
+        text = _answer_text(playlist) or str(playlist.get("text") or playlist.get("message") or "")
+        links = [{"title": str(link.get("title") or "")[:200], "url": str(link.get("url") or "")[:500]}
+                 for link in (playlist.get("sources") or playlist.get("links") or []) if isinstance(link, dict)]
+        closest = [str(seg.get("slide_id")) for seg in (playlist.get("closest") or segs)
+                   if isinstance(seg, dict) and seg.get("slide_id")]
+        return {**base, "status": "ok", "narration_source": "web",
+                "segments": [{"n": 1, "slide_id": "web", "narration": text, "evidence": None}],
+                "links": links, "label": playlist.get("label"), "closest_slides": closest}
     if playlist.get("covered") and segs:
         out_segs = []
         for seg in segs:
@@ -573,6 +583,34 @@ def response_from(playlist: dict[str, Any], info: dict[str, Any], content: stora
     else:
         msg = None
     return {**base, "status": "not_covered", "message": msg, "follow_ups": []}
+
+
+EXPECTATION_KEYS = ("type", "expected_kind", "expected_slides", "must_include", "must_not")
+
+
+def web_path_available() -> bool:
+    """Whether the app has the "beyond the slides" web path (kind `web`); until then web questions expect a decline."""
+    from . import main
+
+    return "web" in getattr(main, "LOG_KINDS", ())
+
+
+def answer_usage(gen: dict[str, str], spent: usage.Tally) -> dict[str, Any]:
+    """One answer's model tokens and their estimated cost (the price table in Settings > Analytics)."""
+    try:
+        cost = pricing.llm_cost(pricing.current(), gen["provider"], gen["model"], spent.tokens_in, spent.tokens_out)
+    except Exception:  # an unreadable price table never fails an answer
+        cost = None
+    return {"tokens_in": spent.tokens_in, "tokens_out": spent.tokens_out, "calls": spent.calls,
+            "cost_usd": None if cost is None else round(cost, 6)}
+
+
+def judge_item(q: dict[str, Any], response: dict[str, Any], web_path: bool) -> dict[str, Any]:
+    """What a judge sees for one answer: the question, what a good answer does, and the answer."""
+    return {"question": q["question"], "category": q["category"], "answerable": q["answerable"],
+            "reference_answer": q.get("reference_answer"), "response": response,
+            "expected_kind": eval_core.expected_routes(q, web_path) if q.get("expected_kind") else None,
+            "must_include": q.get("must_include"), "must_not": q.get("must_not")}
 
 
 def judge_one(judge: dict[str, str], item: dict[str, Any], complete: Callable[..., str], deadline: float,
@@ -675,11 +713,13 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
     info: dict[str, Any] = {}
     try:
         # Counted as eval spend in Settings > Analytics, not student narration (sticky: inner tags keep it).
-        with llm.model_override(gen["provider"], gen["model"]), usage.purpose("eval_generate", sticky=True):
+        with llm.model_override(gen["provider"], gen["model"]), usage.purpose("eval_generate", sticky=True), \
+                usage.tally() as spent:
             playlist, info = answer(q["question"], None, content, retriever,
                                     _cached_embedder(f"{run_id}:{run.get('nonce', '')}", q["qid"], embedder), gen_complete,
                                     gen["provider"], gen["model"])
         response = response_from(playlist, info, content, int((time.monotonic() - t0) * 1000))
+        response["usage"] = answer_usage(gen, spent)
     except RetrievalNotReady:
         response = {"status": "retrieval_not_ready", "message": "retrieval not implemented yet", "segments": [],
                     "follow_ups": [], "narration_source": None, "top_score": None, "latency_ms": 0,
@@ -696,8 +736,7 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
         return {"progress": progress(run), "row": None,
                 "waiting": {"seconds": 22, "reason": f"{exc.detail} Retrying this question shortly."}}
 
-    item = {"question": q["question"], "category": q["category"], "answerable": q["answerable"],
-            "reference_answer": q.get("reference_answer"), "response": response}
+    item = judge_item(q, response, web_path_available())
     judgements: list[dict[str, Any]] = []
     if response["status"] in ("ok", "not_covered"):
         judge_complete = counted(judge_completer, budget)
@@ -708,6 +747,8 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
     row = {
         "qid": q["qid"],
         "pair": pair,
+        **{k: q[k] for k in EXPECTATION_KEYS if q.get(k)},
+        "web_path": web_path_available(),
         "category": q["category"],
         "course": q.get("course"),
         "answerable": q["answerable"],

@@ -40,6 +40,8 @@ Categories: `API_KEY_NOT_WORKING`, `CODE_HELP`, `CONCEPT_QUESTION`, `ASSIGNMENT_
    - **speech_quality:** works when spoken aloud
    - **safety_tone:** PG, no personal details, no promises made on Ben's behalf
 
+   Since October 8 the judges also score five teaching-quality dimensions and two for web answers (see [Model comparison](#model-comparison)).
+
    Each judge then gives a pass or fail verdict. Judges call the providers directly with the keys in `.env`, so they don't count against the site's daily model-call cap.
 4. **Reports** go to `evals/private/runs/<UTC time>/`:
 
@@ -149,6 +151,105 @@ What the judges' reasons point to:
 How it was run: Voyage's free tier allows 3 embedding requests a minute, so the first attempt failed on 20 questions. The rerun spaced question embeddings 21 seconds apart with a wrapper outside the repo; the evals code was unchanged.
 
 Next: rerun after PR #35. Compare against the baseline per category, since the twin's value shows up as clean declines and should show up as grounded concept answers.
+
+## Model comparison
+
+Added October 8, 2026 (docs/SPEC.md, Block 8b). `python -m evals.compare` runs one question set through several answering models in-process, with the same three judges for all, and writes a comparison report.
+
+### Two question sets
+
+- **`evals/questions.course.jsonl` (committed).** 40 invented, realistic questions, no student data:
+  - 20 concept questions across both courses' sessions, each with `expected_slides` (slide ids a good answer should use) and a short reference answer written from those slides
+  - 8 "beyond the slides" course-adjacent questions (agent frameworks, prompt caching, RAG evaluation, embedding models, self-hosting n8n, building an MCP server...) with `must_include` and `must_not`
+  - 6 off-topic questions (must decline) and 6 logistics questions (FAQ or referral expected)
+- **`evals/private/questions.jsonl` (git-ignored).** The 22 de-identified real email questions, as before.
+
+Optional fields on a question line: `type`, `expected_kind` (`slides`, `course_info`, `faq`, `logistics`, `web`, `declined`, or a list), `expected_slides`, `must_include`, `must_not`. The old format still loads, and the privacy checks cover the new fields.
+
+### What is measured
+
+Without a judge, per answer:
+
+| Measure | What it counts |
+| --- | --- |
+| Right route (% of answers) | The answer came from the path the question expects. Without `expected_kind`, answerable questions expect slides or Canvas, the rest anything but slides. While the app has no web path, web questions expect a decline |
+| Retrieval hit (% of questions) | At least one expected slide was among the answer's slides (questions that should be answered from slides) |
+| Slide precision (%) | Share of the answer's slides that were expected |
+| One course only (%) | Answers whose slides all came from one course |
+| Time to answer (s) | Inside `answer()`; reported for answers that called the model |
+| Cost per answer (USD) | The answer's tokens (`usage.tally()`) times the price table |
+| Fell back to notes (%) | Narration replaced by the slides' speaker notes |
+
+By the judges, 1 to 5 (null when a dimension does not apply), plus pass or fail:
+- **Core (as before):** grounded, answers the question, right scope, matches the real reply, speech quality, safety and tone.
+- **Teaching quality (its own group):**
+  - `good_teaching`: builds understanding, not just facts
+  - `explains_concept_effectively`: clear intuition, a concrete example or analogy, simple to complex
+  - `accurate`: technically correct
+  - `engaging_voice`: a professor talking to a student, not a textbook
+  - `appropriate_depth`: the right level for an MBA or business-analytics student
+
+  Each is anchored in the rubric with what 1, 3 and 5 mean.
+- **Web answers only:** `cites_sources` and `labeled_beyond_slides`.
+
+The rubric is still the `eval_judge` prompt (Settings > Prompts), with every dimension filled into `{dimensions}`.
+
+### Reliability
+
+| Statistic | Reads as |
+| --- | --- |
+| ICC(2,1), generator test-retest | The same question and model answered twice; each answer's score is the mean over judges and the 11 scored dimensions. 0.8 or more = scores repeat closely; below 0.5 = mostly noise |
+| Verdict flip rate | How often the same judge passed one run's answer and failed the other's |
+| ICC(2,1) and Cohen's kappa, judge test-retest | The same judge scoring the same answer twice (a random 25% of answers). Kappa 1 = always the same verdict, 0 = chance |
+| Krippendorff's alpha (ordinal), per dimension | Agreement among the three judges beyond chance. 0.8 or more is reliable, 0.67 to 0.8 tentative, below that one judge alone is not enough |
+| Same score, within one point | Share of judge pairs that gave the same score, or scores at most one point apart |
+
+### Judges and self-grading
+
+Judges come from three families: `anthropic:claude-opus-5-5`, `openai:gpt-6.1-sol`, and `openrouter:google/gemini-3.8-flash`. Gemini 3.8 Flash is the newest Gemini text model on OpenRouter's list on October 8, 2026 (released September 2026, after the last Pro model, `gemini-3.1-pro-preview`, from February). Both were calibrated with the new rubric:
+
+| Judge | Calibration cases met (of 8, October 8, new rubric) | Mean seconds per case |
+| --- | --- | --- |
+| `openrouter:google/gemini-3.8-flash` | 8 | 5.1 |
+| `openrouter:google/gemini-3.1-pro-preview` | 8 | 9.2 |
+| `anthropic:claude-opus-5-5` | 8 | 4.9 |
+| `openai:gpt-6.1-sol` | 8 | 6.7 |
+
+A judge grading its own model (Opus on Opus, Sol on Sol) is flagged. Every headline number is shown twice: with all judges, and without same-family judges (no Claude judge on Claude answers, no GPT judge on GPT answers).
+
+### Reports
+
+In `evals/private/runs/<run>/`:
+- `results.jsonl`: private
+- `compare.md`: every table, then question by question with the question text, so it stays private
+- `compare_summary.md` and `compare_summary.json`: no question text
+- `meta.json`
+- `report.html`: one self-contained page, light and dark. It has:
+  - a model by dimension heatmap and dot plots with 95% confidence intervals
+  - the self-grading check
+  - route and retrieval bars
+  - cost against quality, and time to answer
+  - test-retest scatter per model with its ICC
+  - the judge agreement matrix and alpha per dimension
+
+For the committed course set, `report.html`, `compare.md` and `compare_summary.json` are also written to `evals/reports/<run>/`. `python -m scripts.import_eval_history --compare <run folder>` uploads run 1 to Settings > Evals, so it shows on the report card.
+
+### Command
+
+```bash
+uv run --no-project --python 3.12 --with-requirements requirements.txt python -m evals.compare \
+  --questions evals/questions.course.jsonl \
+  --generator anthropic:claude-sonnet-5-5 --generator anthropic:claude-opus-5-5 --generator anthropic:claude-fable-5-1 \
+  --generator openai:gpt-5.6-sol --generator openai:gpt-6.1-sol \
+  --judge anthropic:claude-opus-5-5 --judge openai:gpt-6.1-sol --judge openrouter:google/gemini-3.8-flash \
+  --reps 2 --judge-retest 0.25 --budget 80 --concurrency 8
+```
+
+How the command runs:
+- **Estimate first.** It prints the estimate and refuses a plan over `--budget`. `--dry-run` stops after the estimate, and the run stops if its spend reaches the budget.
+- **Resumable.** A run folder can be resumed with `--out`; rows already there are not asked again.
+- **Its own call path.** Answering calls go straight to the providers (like the judges), so a comparison never uses the site's `DAILY_LLM_CALL_CAP`. Spend still shows in Settings > Analytics under `eval_generate` and `eval_judge`.
+- **One embedding per question.** Embeddings are made once per question, in one Voyage request, and cached in `evals/private/embed_cache/`.
 
 ## Settings > Evals
 

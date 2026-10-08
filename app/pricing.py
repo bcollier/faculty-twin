@@ -50,6 +50,8 @@ DEFAULT_PRICING: dict[str, Any] = {
         _llm("openai", "gpt-6.1-sol", 2.0, 10.0, SRC_OPENAI),
         _llm("openai", "gpt-6-luna", 0.10, 0.50, SRC_OPENAI),
         _llm("openai", "gpt-6-astra", 10.0, 50.0, SRC_OPENAI),
+        # Added Oct 8 for the model comparison; OpenRouter lists it at this price (check OpenAI's page).
+        _llm("openai", "gpt-5.6-sol", 2.0, 10.0, SRC_OPENROUTER),
         _llm("openrouter", "anthropic/claude-sonnet-5.5", 2.0, 10.0, SRC_OPENROUTER),
         _llm("openrouter", "anthropic/claude-haiku-4.5", 1.0, 5.0, SRC_OPENROUTER),
         _llm("openrouter", "openai/gpt-6.1-sol", 2.0, 10.0, SRC_OPENROUTER),

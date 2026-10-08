@@ -41,8 +41,14 @@ const baseModel = (m) => String(m || '').split('/').pop().toLowerCase().replace(
 const DIMS = {
   grounded: 'Grounded', answers_question: 'Answers the question', correct_scope: 'Right scope',
   matches_reference: 'Matches the real reply', speech_quality: 'Speech quality', safety_tone: 'Safety and tone',
+  // Teaching quality (added Oct 8): their own group in the rubric (app/eval_core.py, DIMENSION_GROUPS).
+  good_teaching: 'Good teaching', explains_concept_effectively: 'Explains the concept effectively', accurate: 'Accurate',
+  engaging_voice: 'Engaging voice', appropriate_depth: 'Appropriate depth',
 };
-const DIM_SHORT = { grounded: 'Grounded', answers_question: 'Answers', correct_scope: 'Scope', matches_reference: 'Real reply', speech_quality: 'Speech', safety_tone: 'Safety' };
+const DIM_SHORT = {
+  grounded: 'Grounded', answers_question: 'Answers', correct_scope: 'Scope', matches_reference: 'Real reply', speech_quality: 'Speech', safety_tone: 'Safety',
+  good_teaching: 'Teaching', explains_concept_effectively: 'Explains', accurate: 'Accurate', engaging_voice: 'Voice', appropriate_depth: 'Depth',
+};
 const dimHeader = (d) => `${DIMS[d]} (1–5, 5 best)`;
 const METRICS = {
   pass_rate: { label: 'Pass rate (% of answers judged pass)', short: 'Pass rate', rate: true, n: 'judgements' },
@@ -50,6 +56,12 @@ const METRICS = {
   decline_accuracy: { label: 'Right call: answer versus decline (% of questions)', short: 'Right call', rate: true, n: 'questions' },
   fallback_rate: { label: 'Fell back to speaker notes (% of answers with slides)', short: 'Fell back to notes', rate: true, n: 'answered' },
   judge_agreement: { label: 'Judges agree on the verdict (% of answers both judged)', short: 'Judges agree', rate: true },
+  // Added Oct 8 (docs/SPEC.md, Block 8b). Runs before then show n/a.
+  pass_rate_excluding_same_family: { label: 'Pass rate without same-family judges (% of answers judged pass)', short: 'Pass rate, other families', rate: true, n: 'judgements_excluding_same_family' },
+  route_accuracy: { label: 'Right route: slides, Canvas, FAQ, referral, web or decline (% of answers)', short: 'Right route', rate: true, n: 'route_n' },
+  retrieval_hit_rate: { label: 'Retrieval hit: an expected slide was used (% of questions with expected slides)', short: 'Retrieval hit', rate: true, n: 'hit_n' },
+  cost_per_answer: { label: 'Cost per answer (USD, estimated from tokens)', short: 'Cost per answer', unit: 'usd', n: 'cost_n' },
+  mean_latency_ms: { label: 'Mean time to answer (seconds, inside answer())', short: 'Time to answer', unit: 's', n: 'latency_n' },
 };
 // Shown under every table when the server's copy (app/eval_core.py) has not loaded yet.
 const LEGEND_FALLBACK = {
@@ -62,9 +74,11 @@ const LEGEND_FALLBACK = {
 const scoreCell = (dim, mean, n) => (mean == null ? (dim === 'grounded' ? 'n/a (no slides)' : 'n/a')
   : `${Number(mean).toFixed(2)}${n != null ? ` (n=${n})` : ''}`);
 const rateCell = (rate, n) => (rate == null ? 'n/a' : `${pct(rate)}${n != null ? ` (n=${n})` : ''}`);
+const unitText = (unit, v) => (v == null ? 'n/a' : unit === 'usd' ? `$${Number(v).toFixed(4)}` : `${(Number(v) / 1000).toFixed(1)} s`);
 function metricCell(m, key) {
   const meta = METRICS[key];
   if (meta.dim) return scoreCell(key, m.scores?.[key], m.score_n ? m.score_n[key] : null);
+  if (meta.unit) return `${unitText(meta.unit, m[key])}${m[key] != null && meta.n && m[meta.n] != null ? ` (n=${m[meta.n]})` : ''}`;
   return rateCell(m[key], meta.n ? m[meta.n] : null);
 }
 const legendCalls = new Map();
@@ -271,7 +285,8 @@ function addModel(key, list) {
   const st = $('#ev-run-status');
   if (!model) { say(st, 'Type or pick a model id first.', 'err'); return; }
   if (/^jev/i.test(model)) { say(st, 'Jev runs from the command line only (it needs deepeval, which is not in the Vercel bundle).', 'err'); return; }
-  if (list.length >= 3) { say(st, 'Up to 3 of each.', 'err'); return; }
+  const cap = key === 'gen' ? (E.limits?.max_generators || 6) : (E.limits?.max_judges || 3);
+  if (list.length >= cap) { say(st, key === 'gen' ? `Up to ${cap} models that answer.` : `Up to ${cap} judges.`, 'err'); return; }
   if (list.some(m => m.provider === provider && m.model === model)) { say(st, 'That one is already in the list.', 'err'); return; }
   list.push({ provider, model });
   $(`#ev-${key}-model`).value = '';
@@ -660,16 +675,23 @@ function renderCard() {
   // Drawn at the container's own width so text stays 11 px on a phone.
   const W = Math.max(320, Math.round(plot.clientWidth || 760)), H = W < 560 ? 280 : 320;
   const L = 60, R = W < 560 ? 96 : 190, T = 14, B = 62;
-  const yMax = meta.rate ? 1 : 5;
-  const ticks = meta.rate ? [0, 0.25, 0.5, 0.75, 1] : [0, 1, 2, 3, 4, 5];
+  // Units (cost, seconds) get a clean axis from zero to just above the largest value.
+  const unitMax = (() => {
+    const vals = series.flatMap(x => x.points.map(p => valueOf(p, metric))).filter(v => v != null);
+    const top = Math.max(...vals, 0) * (meta.unit === 's' ? 1 / 1000 : 1) || 1;
+    const step = 10 ** Math.floor(Math.log10(top));
+    return Math.ceil(top / step) * step * (meta.unit === 's' ? 1000 : 1);
+  })();
+  const yMax = meta.rate ? 1 : meta.unit ? unitMax : 5;
+  const ticks = meta.rate ? [0, 0.25, 0.5, 0.75, 1] : meta.unit ? [0, 0.25, 0.5, 0.75, 1].map(f => f * unitMax) : [0, 1, 2, 3, 4, 5];
   const xOf = (i) => (runs.length < 2 ? L + (W - L - R) / 2 : L + (i * (W - L - R)) / (runs.length - 1));
   const yOf = (v) => T + (H - T - B) * (1 - v / yMax);
   const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${meta.label} over time. Values are in the table below.` });
   for (const t of ticks) {
     root.append(svg('line', { class: t === 0 ? 'axis' : 'grid', x1: L, x2: W - R + 12, y1: yOf(t), y2: yOf(t) }));
-    root.append(svg('text', { x: L - 8, y: yOf(t) + 4, 'text-anchor': 'end' }, meta.rate ? `${Math.round(t * 100)}%` : String(t)));
+    root.append(svg('text', { x: L - 8, y: yOf(t) + 4, 'text-anchor': 'end' }, meta.rate ? `${Math.round(t * 100)}%` : meta.unit ? unitText(meta.unit, t) : String(t)));
   }
-  const yTitle = meta.rate ? `${meta.short} (%)` : `${meta.short} (mean, 1–5; 5 best)`;
+  const yTitle = meta.rate ? `${meta.short} (%)` : meta.unit ? `${meta.short} (${meta.unit === 'usd' ? 'USD' : 'seconds'})` : `${meta.short} (mean, 1–5; 5 best)`;
   root.append(svg('text', { class: 'axis-title', x: 14, y: T + (H - T - B) / 2, 'text-anchor': 'middle', transform: `rotate(-90 14 ${T + (H - T - B) / 2})` }, yTitle));
   root.append(svg('text', { class: 'axis-title', x: L + (W - L - R) / 2, y: H - 6, 'text-anchor': 'middle' }, 'Run date (oldest on the left)'));
   runs.forEach((r, i) => {
@@ -699,7 +721,7 @@ function renderCard() {
           `${s.label.split(' (')[0].slice(0, W < 560 ? 10 : 22)}: ${na}`));
         continue;
       }
-      const value = meta.rate ? pct(x.v) : num(x.v);
+      const value = meta.rate ? pct(x.v) : meta.unit ? unitText(meta.unit, x.v) : num(x.v);
       const label = `${s.label}: ${meta.short} ${value}, ${x.p.run_name || x.p.run_id}, ${fmtDay(x.p.at)}`;
       const g = svg('g', {});
       const hit = svg('circle', { class: 'hit', cx: xOf(x.i), cy: yOf(x.v), r: 12, tabindex: 0, 'aria-label': label });
