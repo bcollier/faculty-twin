@@ -7,6 +7,7 @@ app/admin.py and need the admin cookie.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import contextvars
 import re
@@ -43,6 +44,7 @@ from . import (
     speech,
     storage,
     thresholds,
+    timings,
     usage,
     voices,
     web_answer,
@@ -500,12 +502,20 @@ def _replay_topic(content: Content, question: str, topic: dict[str, Any], voice:
     prefixes = voice.primary.audio_prefixes()
     paths = {s["slide_id"]: str(s.get("audio_path") or "").lstrip("/") for s in segs}
     usable = {k: p for k, p in paths.items() if p.startswith(prefixes)}
-    audio = storage.media_urls(list(usable.values()))
+    # Read-along: each stored mp3 may have its word timings next to it (`<hash>.words.json`).
+    sidecars = {p: w for p in usable.values() if (w := words_path(p))}
+    audio = storage.media_urls(list(usable.values()) + list(sidecars.values()))
     for seg in result["segments"]:
         path = usable.get(seg["slide_id"])
         if path and audio.get(path):
             seg["audio"] = audio[path]
+            seg["timings"] = audio.get(sidecars.get(path, ""))
     return result
+
+
+def words_path(mp3_path: str) -> Optional[str]:
+    """`audio/<tag>/<hash>.mp3` -> `audio/<tag>/<hash>.words.json` (the stored clip's word timings)."""
+    return mp3_path[: -len(".mp3")] + ".words.json" if mp3_path.endswith(".mp3") else None
 
 
 # ---------------------------------------------------------------- routes
@@ -672,12 +682,13 @@ async def audio(
                                                pool=voice.pool):
         raise HTTPException(429, "The voice has reached today's limit. Captions only for now.")
     headers = {"Cache-Control": "private, max-age=86400"}
+    collector = timings.Collector("edge" if voice.provider == voices.EDGE else "elevenlabs")
     try:
         if voice.provider == voices.EDGE:
-            stream = await edge_voice.open_stream(text, voice.voice_id)
+            stream = await edge_voice.open_stream(text, voice.voice_id, collector)
         else:
             client, resp = await speech.open_stream(text, voice.voice_id)
-            stream = speech.stream_bytes(client, resp)
+            stream = speech.stream_bytes(client, resp, collector)
     except (edge_voice.FreeVoiceError, speech.VoiceError) as exc:
         # Nothing was spoken: give the characters back, so an outage does not use up today's cap.
         if charged:
@@ -685,7 +696,44 @@ async def audio(
         config.log.warning("%s failed: %s", "free voice" if voice.provider == voices.EDGE else "voice", exc)
         raise HTTPException(502, "The voice service is not available right now. Captions only.") from exc
     usage.record_tts(voice.kind or "unverified", len(text))  # characters sent, by voice tier (Analytics)
-    return StreamingResponse(stream, media_type="audio/mpeg", headers=headers)
+    return StreamingResponse(_keep_timings(stream, collector, v, text), media_type="audio/mpeg", headers=headers)
+
+
+async def _keep_timings(stream, collector: "timings.Collector", tag: str, text: str):
+    """Pass the audio through; once all of it was sent, save its word timings for the read-along."""
+    async for chunk in stream:
+        yield chunk
+    if collector.failed:
+        return
+    words = collector.result(text)
+    if words:
+        await asyncio.to_thread(timings.save, tag, text, words, collector.source)
+
+
+TIMINGS_PER_MINUTE = 120
+
+
+@app.get("/api/audio/timings")
+def audio_timings(
+    t: str = Query(..., max_length=4000),
+    s: str = Query(..., max_length=100),
+    v: str = Query("", max_length=40),
+    session: auth.Session = Depends(auth.require_student),
+) -> JSONResponse:
+    """Word timings for a signed narration (read-along). Same signature as /api/audio; never calls a voice."""
+    text = speech.verify(t, v, s)
+    if text is None:
+        raise HTTPException(403, "This audio link is not valid.")
+    minute = time.strftime("%Y%m%d%H%M", time.gmtime())
+    ok, _ = limits.increment(f"rl:timings-min:{auth.visitor_key(session)}:{minute}", 1, cap=TIMINGS_PER_MINUTE,
+                             ttl_seconds=300)
+    if not ok:
+        raise HTTPException(429, "Too many requests. Please wait a minute.")
+    entry = timings.load(v, text)
+    if not entry:
+        return JSONResponse({"words": None, "source": "pending"}, headers={"Cache-Control": "no-store"})
+    return JSONResponse({"words": entry.get("words"), "source": entry.get("source")},
+                        headers={"Cache-Control": timings.CACHE_CONTROL})
 
 
 @app.get("/api/files/{path:path}")

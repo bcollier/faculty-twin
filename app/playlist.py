@@ -83,17 +83,35 @@ def related_code(content: Content, rec: dict[str, Any]) -> dict[str, Any] | None
 LINKS_MAX_SLIDES = 10
 
 
+def boxes_path(rec: dict[str, Any]) -> str | None:
+    """The slide's word-box sidecar (read-along): `<slide image without .webp>.boxes.json`.
+
+    The indexer writes one next to each slide image it could read words from;
+    signing a path with no object behind it just leaves that slide without boxes.
+    """
+    image = str(rec.get("image") or "").lstrip("/")
+    if not image.startswith("slides/") or not image.endswith(".webp") or image.endswith("-thumb.webp"):
+        return None
+    return image[: -len(".webp")] + ".boxes.json"
+
+
 def media_links(content: Content, recs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """`{slide_id: {image, clip}}`: signed slide-image links and `{url, start, end}` clips (or None), one batch."""
+    """`{slide_id: {image, clip, boxes}}`: signed slide-image links, `{url, start, end}` clips (or None),
+    and the slide's word boxes (or None), in one batch."""
     clips = {r["id"]: str(r.get("clip")).lstrip("/") for r in recs if r.get("clip")}
-    urls = storage.media_urls([r.get("image") for r in recs] + list(clips.values()))
+    boxes = {r["id"]: b for r in recs if (b := boxes_path(r))}
+    urls = storage.media_urls([r.get("image") for r in recs] + list(clips.values()) + list(boxes.values()))
     out: dict[str, dict[str, Any]] = {}
     for rec in recs:
         clip = None
         if urls.get(clips.get(rec["id"], "")):
             start, end = content.clip_windows.get(rec["id"], (None, None))
             clip = {"url": urls[clips[rec["id"]]], "start": start, "end": end}
-        out[rec["id"]] = {"image": urls.get(str(rec.get("image") or "").lstrip("/")), "clip": clip}
+        out[rec["id"]] = {
+            "image": urls.get(str(rec.get("image") or "").lstrip("/")),
+            "clip": clip,
+            "boxes": urls.get(boxes.get(rec["id"], "")),
+        }
     return out
 
 
@@ -157,6 +175,10 @@ def build_playlist(
                 "voice_fallback": fallback.public() if (audio_fallback and fallback) else None,
                 "code": related_code(content, rec),
                 "clip": clip,
+                # Read-along (added Oct 8): word timings for each audio link, and the slide's word boxes.
+                "timings": speech.timings_link(audio),
+                "timings_fallback": speech.timings_link(audio_fallback),
+                "boxes": media[rec["id"]]["boxes"],
             }
         )
         sources.append(

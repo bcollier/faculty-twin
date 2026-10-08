@@ -12,6 +12,11 @@ free service), retry a piece with a growing pause, and join the MP3 pieces
 byte for byte (constant bit rate, same format). Here the first piece is
 streamed as it arrives so audio starts quickly, while the later pieces are
 recorded in the background.
+
+Word timings (read-along, Oct 8): every request asks for WordBoundary events
+(offsets in 100 ns units, from the start of that piece). A piece's words are
+offset by the length of the pieces before it (48 kbit/s CBR: bytes / 6,000
+seconds), as Ignatius does, and handed to a `timings.Collector`.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ from typing import Any, AsyncIterator
 import edge_tts
 
 from . import config
+from .timings import EDGE_BYTES_PER_SECOND, Collector
 
 # Curated teaching voices (Microsoft neural voices). Ids are edge-tts ShortNames.
 FREE_VOICES: dict[str, tuple[str, str]] = {
@@ -116,6 +122,9 @@ def _slot() -> asyncio.Semaphore:
     return sem
 
 
+TICKS_PER_SECOND = 10_000_000  # edge-tts offsets are in 100 ns units
+
+
 def _communicate(text: str, voice: str) -> Any:
     return edge_tts.Communicate(
         text,
@@ -124,27 +133,35 @@ def _communicate(text: str, voice: str) -> Any:
         pitch=pitch(),
         connect_timeout=CONNECT_TIMEOUT,
         receive_timeout=RECEIVE_TIMEOUT,
+        boundary="WordBoundary",
     )
 
 
-async def _audio_chunks(text: str, voice: str) -> AsyncIterator[bytes]:
+async def _audio_chunks(text: str, voice: str, words: list | None = None) -> AsyncIterator[bytes]:
+    """MP3 bytes of one piece; its WordBoundary events go to `words` as (seconds, word)."""
     async for chunk in _communicate(text, voice).stream():
-        if chunk.get("type") == "audio" and chunk.get("data"):
+        kind = chunk.get("type")
+        if kind == "audio" and chunk.get("data"):
             yield chunk["data"]
+        elif kind == "WordBoundary" and words is not None and chunk.get("text"):
+            words.append((float(chunk.get("offset") or 0) / TICKS_PER_SECOND, str(chunk["text"])))
 
 
 async def _backoff(attempt: int) -> None:
     await asyncio.sleep(0.5 * 2**attempt)  # 0.5 s, 1 s
 
 
-async def synthesize(text: str, voice: str) -> bytes:
-    """Record one piece to MP3 bytes, retried with a growing pause."""
+async def synthesize(text: str, voice: str, words: list | None = None) -> bytes:
+    """Record one piece to MP3 bytes, retried with a growing pause. Its word timings go to `words`."""
     last: BaseException | None = None
     for attempt in range(ATTEMPTS):
         try:
+            found: list = []
             async with _slot():
-                parts = await asyncio.wait_for(_collect(text, voice), PIECE_TIMEOUT)
+                parts = await asyncio.wait_for(_collect(text, voice, found), PIECE_TIMEOUT)
             if parts:
+                if words is not None:
+                    words.extend(found)
                 return parts
             last = FreeVoiceError("no audio returned")
         except asyncio.CancelledError:
@@ -156,15 +173,17 @@ async def synthesize(text: str, voice: str) -> bytes:
     raise FreeVoiceError(f"free voice failed: {type(last).__name__}") from last
 
 
-async def _collect(text: str, voice: str) -> bytes:
-    return b"".join([c async for c in _audio_chunks(text, voice)])
+async def _collect(text: str, voice: str, words: list | None = None) -> bytes:
+    return b"".join([c async for c in _audio_chunks(text, voice, words)])
 
 
-async def _start(text: str, voice: str) -> tuple[AsyncIterator[bytes], bytes]:
+async def _start(text: str, voice: str, words: list | None = None) -> tuple[AsyncIterator[bytes], bytes]:
     """Open the first piece and wait for its first audio bytes, retrying a dead start."""
     last: BaseException | None = None
     for attempt in range(ATTEMPTS):
-        gen = _audio_chunks(text, voice)
+        if words is not None:
+            words.clear()  # a retried start begins its word list again
+        gen = _audio_chunks(text, voice, words)
         try:
             first = await asyncio.wait_for(gen.__anext__(), FIRST_AUDIO_TIMEOUT)
             return gen, first
@@ -181,34 +200,53 @@ async def _start(text: str, voice: str) -> tuple[AsyncIterator[bytes], bytes]:
     raise FreeVoiceError(f"free voice failed to start: {type(last).__name__}") from last
 
 
-async def open_stream(text: str, voice: str) -> AsyncIterator[bytes]:
+async def open_stream(text: str, voice: str, collector: Collector | None = None) -> AsyncIterator[bytes]:
     """Start speaking `text`; returns an async iterator of MP3 bytes once the first bytes exist.
 
     Raises FreeVoiceError before any byte is sent, so the route can still
     answer 502 (the frontend then shows captions). A failure later in the
-    stream ends the audio early instead.
+    stream ends the audio early instead (and marks `collector` failed).
     """
     pieces = chunk_text(text)
     if not pieces:
         raise FreeVoiceError("nothing to say")
-    rest = [asyncio.create_task(synthesize(p, voice)) for p in pieces[1:]]
+    piece_words: list[list] = [[] for _ in pieces]
+    rest = [asyncio.create_task(synthesize(p, voice, piece_words[k + 1])) for k, p in enumerate(pieces[1:])]
     try:
-        gen, first = await _start(pieces[0], voice)
+        gen, first = await _start(pieces[0], voice, piece_words[0])
     except BaseException:
         for task in rest:
             task.cancel()
         raise
-    return _stream(gen, first, rest)
+    return _stream(gen, first, rest, piece_words, collector)
 
 
-async def _stream(gen: AsyncIterator[bytes], first: bytes, rest: list[asyncio.Task]) -> AsyncIterator[bytes]:
+async def _stream(
+    gen: AsyncIterator[bytes],
+    first: bytes,
+    rest: list[asyncio.Task],
+    piece_words: list[list] | None = None,
+    collector: Collector | None = None,
+) -> AsyncIterator[bytes]:
+    sizes = [len(first)]
     try:
         yield first
         async for chunk in gen:
+            sizes[0] += len(chunk)
             yield chunk
         for task in rest:
-            yield await task
+            data = await task
+            sizes.append(len(data))
+            yield data
+        if collector is not None and piece_words is not None:
+            offset = 0.0
+            for size, words in zip(sizes, piece_words):
+                for t, w in words:
+                    collector.add_word(offset + t, w)
+                offset += size / EDGE_BYTES_PER_SECOND
     except Exception as exc:
+        if collector is not None:
+            collector.failed = True
         config.log.warning("free voice stopped mid-stream: %s", type(exc).__name__)
     finally:
         for task in rest:

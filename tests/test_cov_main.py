@@ -258,7 +258,7 @@ def test_audio_route_free_voice_failure_is_502(student, monkeypatch):
 
     settings_store.put({"voice_id": voice})
 
-    async def broken(text, voice_id):
+    async def broken(text, voice_id, collector=None):
         raise edge_voice.FreeVoiceError("down")
 
     monkeypatch.setattr(edge_voice, "open_stream", broken)
@@ -273,7 +273,7 @@ def test_audio_route_free_voice_streams(student, monkeypatch):
     settings_store.put({"voice_id": voice})
     seen = []
 
-    async def fake_stream(text, voice_id):
+    async def fake_stream(text, voice_id, collector=None):
         seen.append((text, voice_id))
 
         async def gen():

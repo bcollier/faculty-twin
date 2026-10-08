@@ -4,8 +4,10 @@ Uploads only an allowlist, built from the index itself:
   content/index.json, content/embeddings.npy, content/manifest.json
   content/info_index.json, content/info_embeddings.npy (Canvas course info, when built)
   slides/<course>/s<NN>/<slide_id>.webp and <slide_id>-thumb.webp, for indexed slides only
+  slides/<course>/s<NN>/<slide_id>.boxes.json, the slide's word boxes (read-along), when built
   clips/<slide_id>.mp4 for indexed slides that have a clip, and clips/manifest.json (those rows only)
-  topics/topics.json and the audio/<voice_id>/<hash>.mp3 files it points to
+  topics/topics.json and the audio/<voice_id>/<hash>.mp3 files it points to, with each mp3's
+  <hash>.words.json word timings (read-along) when there is one
 
 Never uploaded, whatever is in _build/: transcripts, alignment, review files,
 rosters, notebooks and code JSON, slides.json / deck.json, source_converted.pdf,
@@ -58,10 +60,12 @@ EXIT_OK, EXIT_PLAN, EXIT_LEAK, EXIT_UPLOAD, EXIT_CONFIG = 0, 2, 4, 5, 6
 ALLOWED = [
     re.compile(r"^content/(index\.json|embeddings\.npy|manifest\.json|info_index\.json|info_embeddings\.npy)$"),
     re.compile(r"^slides/\d{5}/s\d{2}/\d{5}-s\d{2}-\d{3}(-thumb)?\.webp$"),
+    re.compile(r"^slides/\d{5}/s\d{2}/\d{5}-s\d{2}-\d{3}\.boxes\.json$"),
     re.compile(r"^clips/\d{5}-s\d{2}-\d{3}\.mp4$"),
     re.compile(r"^clips/manifest\.json$"),
     re.compile(r"^topics/topics\.json$"),
     re.compile(r"^audio/[A-Za-z0-9_\-]{1,100}/[A-Za-z0-9_\-]{1,100}\.mp3$"),
+    re.compile(r"^audio/[A-Za-z0-9_\-]{1,100}/[A-Za-z0-9_\-]{1,100}\.words\.json$"),
 ]
 CLIP_FIELDS = ("slide_id", "course", "session", "start", "end", "duration", "reason_kept")
 # Never uploaded, even if a path would otherwise match the allowlist (belt and braces).
@@ -193,6 +197,9 @@ def _add_media(plan: _Plan, records: list[dict[str, Any]]) -> None:
         for key in ("image", "thumb"):
             if rec.get(key):
                 plan.add_file(rec[key])
+        boxes = boxes_for(rec.get("image"))
+        if boxes and (plan.build / boxes).is_file():  # word boxes are optional (read-along highlights)
+            plan.add_file(boxes)
         if rec.get("clip"):
             plan.add_file(rec["clip"])
             clip_ids.add(rec["id"])
@@ -218,6 +225,9 @@ def _add_topics(plan: _Plan) -> None:
         for seg in ((t or {}).get("playlist") or {}).get("segments", []):
             if seg.get("audio_path"):
                 plan.add_file(seg["audio_path"])
+                words = words_for(seg["audio_path"])
+                if words and (plan.build / words).is_file():  # word timings are optional
+                    plan.add_file(words)
 
 
 def plan(build: Path) -> tuple[list[Item], dict[str, Any]]:
@@ -244,6 +254,18 @@ def plan(build: Path) -> tuple[list[Item], dict[str, Any]]:
         info_hash = common.sha256_bytes(info[1][1])[:8]
         manifest = {**manifest, "index_version": f"{manifest['index_version']}+info-{info_hash}"}
     return ordered, manifest
+
+
+def boxes_for(image: str | None) -> str | None:
+    """`slides/.../<slide_id>.webp` -> its word-box sidecar `slides/.../<slide_id>.boxes.json`."""
+    image = str(image or "").lstrip("/")
+    return image[: -len(".webp")] + ".boxes.json" if image.endswith(".webp") else None
+
+
+def words_for(audio_path: str | None) -> str | None:
+    """`audio/<tag>/<hash>.mp3` -> its word timings `audio/<tag>/<hash>.words.json`."""
+    path = str(audio_path or "").lstrip("/")
+    return path[: -len(".mp3")] + ".words.json" if path.endswith(".mp3") else None
 
 
 def info_files(content: Path) -> list[tuple[str, bytes]]:

@@ -14,6 +14,7 @@ Outputs, under ``~/Lecture Archive/_build/``:
   slides/<course>/s<NN>/slides.json            [{slide_id, course, session, slide_number,
                                                  title, text, notes, flags, notes_match, ...}]
   slides/<course>/s<NN>/deck.json              deck-level facts (sources, counts, match quality)
+  slides/<course>/s<NN>/<slide_id>.boxes.json  word boxes for the read-along highlights (indexer/slide_boxes.py)
   slides/missing.json                          sessions with no renderable deck, with the reason
   code/<course>/s<NN>.json                     [{cell_id, source, markdown_above, ...}], outputs stripped
 
@@ -72,7 +73,7 @@ from pathlib import Path
 if __package__ in (None, ""):  # run as a script (python indexer/slides.py): make `indexer` importable
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from indexer import layout  # noqa: E402
+from indexer import layout, slide_boxes  # noqa: E402
 from indexer.layout import NO_CLIP_SESSIONS, TERM, file_fingerprint, write_json  # noqa: E402
 from indexer.pg_filter import smooth as pg_smooth  # noqa: E402
 from indexer.roster import lowercase_dictionary_words, names_pattern, read_people  # noqa: E402
@@ -980,6 +981,17 @@ def _extract_changed(results: list[Deck], scrubber: NameScrubber, force: bool, u
         extract_deck(d, scrubber, ocr)
 
 
+def _write_word_boxes(results: list[Deck], scrubber: NameScrubber, force: bool, use_ocr: bool) -> None:
+    """Word boxes for the read-along highlights (indexer/slide_boxes.py); current files are skipped."""
+    for d in results:
+        try:
+            ids, flagged = slide_boxes.deck_inputs(d.out)
+            slide_boxes.build_deck(d.pdf, d.out, ids, scrubber.check, flagged, ocr=use_ocr,
+                                   force=force, cache=build_dir() / ".cache")
+        except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+            print(f"  ! {d.session.tag}: word boxes skipped ({type(exc).__name__})", file=sys.stderr)
+
+
 def _print_summary(results: list[Deck], sessions: list[Session], missing: dict, code_rows: list,
                    started: float) -> None:
     """Counts per deck, flag totals, missing decks and notebooks. Never slide text."""
@@ -1050,6 +1062,7 @@ def main(argv: list[str] | None = None) -> int:
 
     write_json(missing_path, sorted(missing.values(), key=lambda m: (m["course"], m["session"])))
     _extract_changed(results, scrubber, args.force, use_ocr=not args.no_ocr)
+    _write_word_boxes(results, scrubber, args.force, use_ocr=not args.no_ocr)
     _print_summary(results, sessions, missing, code_rows, started)
     return 0
 
