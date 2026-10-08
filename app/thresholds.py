@@ -17,8 +17,8 @@ is appended to `settings.threshold_history` (last 20, newest first).
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -35,7 +35,7 @@ SLIDE_KEY, INFO_KEY, MARGIN_KEY = "slide_threshold", "info_threshold", "info_mar
 RANGES = {SLIDE_KEY: (MIN, MAX), INFO_KEY: (MIN, MAX), MARGIN_KEY: (MARGIN_MIN, MARGIN_MAX)}
 
 
-def _valid(raw: Any, lo: float = MIN, hi: float = MAX) -> Optional[float]:
+def _valid(raw: Any, lo: float = MIN, hi: float = MAX) -> float | None:
     """A stored override as a float in range, or None (missing or unusable values are ignored)."""
     if raw is None or isinstance(raw, bool):
         return None
@@ -49,11 +49,11 @@ def _valid(raw: Any, lo: float = MIN, hi: float = MAX) -> Optional[float]:
     return value
 
 
-def _stored(key: str) -> Optional[float]:
+def _stored(key: str) -> float | None:
     return _valid(settings_store.get(key), *RANGES[key])
 
 
-def slide_default() -> Optional[float]:
+def slide_default() -> float | None:
     return retrieval.NOT_COVERED_THRESHOLD
 
 
@@ -76,12 +76,14 @@ def margin_default() -> tuple[float, str]:
         return DEFAULT_MARGIN, "code"
     value = _valid(raw, MARGIN_MIN, MARGIN_MAX)
     if value is None:
-        config.log.warning("INFO_MARGIN is not a number from %s to %s; using %s", MARGIN_MIN, MARGIN_MAX, DEFAULT_MARGIN)
+        config.log.warning("INFO_MARGIN is not a number from %s to %s; using %s",
+                           MARGIN_MIN, MARGIN_MAX, DEFAULT_MARGIN)
         return DEFAULT_MARGIN, "code"
     return value, "env"
 
 
-def slide_effective() -> tuple[Optional[float], str]:
+def slide_effective() -> tuple[float | None, str]:
+    """(slide threshold, "settings" or "code"): the Settings override, else the value Ben set in retrieval.py."""
     override = _stored(SLIDE_KEY)
     if override is not None:
         return override, "settings"
@@ -89,6 +91,7 @@ def slide_effective() -> tuple[Optional[float], str]:
 
 
 def info_effective() -> tuple[float, str]:
+    """(course-info threshold, where it came from)."""
     override = _stored(INFO_KEY)
     if override is not None:
         return override, "settings"
@@ -96,13 +99,14 @@ def info_effective() -> tuple[float, str]:
 
 
 def info_margin_effective() -> tuple[float, str]:
+    """(how far Canvas must beat the slides, where it came from)."""
     override = _stored(MARGIN_KEY)
     if override is not None:
         return override, "settings"
     return margin_default()
 
 
-def slide_threshold() -> Optional[float]:
+def slide_threshold() -> float | None:
     return slide_effective()[0]
 
 
@@ -120,6 +124,7 @@ def history() -> list[dict[str, Any]]:
 
 
 def view() -> dict[str, Any]:
+    """The three values with their defaults, sources and ranges, for Settings > Answer thresholds."""
     slide, slide_source = slide_effective()
     info, info_source = info_effective()
     margin, margin_source = info_margin_effective()
@@ -157,12 +162,14 @@ router = APIRouter(prefix="/api/admin")
 
 
 class ThresholdsBody(BaseModel):
-    slide_threshold: Optional[float] = None
-    info_threshold: Optional[float] = None
-    info_margin: Optional[float] = None
+    """The thresholds Settings sends; a field left out is not changed."""
+
+    slide_threshold: float | None = None
+    info_threshold: float | None = None
+    info_margin: float | None = None
 
 
-def _check(name: str, value: Optional[float], lo: float = MIN, hi: float = MAX) -> Optional[float]:
+def _check(name: str, value: float | None, lo: float = MIN, hi: float = MAX) -> float | None:
     if value is None:
         return None  # reset to the default
     if not math.isfinite(value) or not lo <= value <= hi:
@@ -177,6 +184,7 @@ def get_thresholds(_: auth.Session = Depends(auth.require_admin)) -> dict[str, A
 
 @router.put("/thresholds")
 def put_thresholds(body: ThresholdsBody, _: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """Save the thresholds that were sent (null resets to the default) and append to the history."""
     sent = body.model_fields_set & set(RANGES)
     if not sent:
         raise HTTPException(400, "Nothing to save.")
@@ -191,9 +199,10 @@ def put_thresholds(body: ThresholdsBody, _: auth.Session = Depends(auth.require_
     try:
         settings_store.put(changed)
         after = {SLIDE_KEY: slide_effective(), INFO_KEY: info_effective(), MARGIN_KEY: info_margin_effective()}
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         entries = [
-            {"at": now, "who": "admin", "setting": key, "old": before[key], "new": after[key][0], "source": after[key][1]}
+            {"at": now, "who": "admin", "setting": key, "old": before[key], "new": after[key][0],
+             "source": after[key][1]}
             for key in changed
         ]
         settings_store.put({HISTORY_KEY: (entries + history())[:HISTORY_LEN]})

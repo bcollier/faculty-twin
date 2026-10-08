@@ -95,6 +95,7 @@ def put(values: dict[str, Any]) -> None:
 
 
 def clear_cache() -> None:
+    """Forget the cached settings, so the next read goes to the database (after a save, and in tests)."""
     global _cache_at, _cache, _generation, _ever_read
     with _lock:
         _cache_at = 0.0
@@ -125,6 +126,7 @@ def llm_choice() -> tuple[str, str]:
 
 
 def daily_voice_char_cap() -> int:
+    """Today's ElevenLabs character cap: the Settings value, else DAILY_VOICE_CHAR_CAP."""
     raw = get("daily_voice_char_cap")
     if raw is not None:
         try:

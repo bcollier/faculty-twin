@@ -63,6 +63,7 @@ def env(name: str, default: str | None = None) -> str | None:
 
 
 def env_int(name: str, default: int) -> int:
+    """An integer environment variable; `default` when it is unset or not a number."""
     raw = env(name)
     if raw is None:
         return default

@@ -73,12 +73,15 @@ def _obj_path(path: str) -> str:
 # ---------------------------------------------------------------- PostgREST
 
 def select(table: str, params: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """GET rows from a table with PostgREST query parameters."""
     with _client() as c:
         r = c.get(f"{_base()}/rest/v1/{table}", params=params or {}, headers=_headers())
     return _check(r, f"select {table}").json()
 
 
-def insert(table: str, row: dict[str, Any] | list[dict[str, Any]], upsert_on: str | None = None) -> list[dict[str, Any]]:
+def insert(table: str, row: dict[str, Any] | list[dict[str, Any]],
+           upsert_on: str | None = None) -> list[dict[str, Any]]:
+    """Insert one or more rows; with `upsert_on`, merge into the row with the same key."""
     prefer = "return=representation"
     params = {}
     if upsert_on:
@@ -107,6 +110,7 @@ def update(table: str, match: dict[str, str], values: dict[str, Any]) -> list[di
 
 
 def rpc(fn: str, args: dict[str, Any]) -> Any:
+    """Call a database function (the atomic counters use this)."""
     with _client() as c:
         r = c.post(
             f"{_base()}/rest/v1/rpc/{fn}",
@@ -119,6 +123,7 @@ def rpc(fn: str, args: dict[str, Any]) -> Any:
 # ---------------------------------------------------------------- Storage
 
 def download(path: str) -> bytes:
+    """An object's bytes from the private bucket; a missing object is a SupabaseError."""
     with _client() as c:
         r = c.get(f"{_base()}/storage/v1/object/{config.bucket()}/{_obj_path(path)}", headers=_headers())
     return _check(r, f"download {path}").content
@@ -176,6 +181,7 @@ def delete_objects(paths: list[str]) -> None:
 
 
 def object_exists(path: str) -> bool:
+    """Whether an object is in the private bucket (a HEAD request)."""
     with _client() as c:
         r = c.head(f"{_base()}/storage/v1/object/{config.bucket()}/{_obj_path(path)}", headers=_headers())
     return r.status_code == 200

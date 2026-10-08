@@ -25,9 +25,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
-from typing import Any, Callable
+from typing import Any
 
 from . import config, llm, prompts, usage
 
@@ -50,6 +50,8 @@ SYSTEM_PROMPT = prompts.default(PROMPT_NAME, target_words=TARGET_WORDS, max_word
 
 @dataclass
 class NarrationResult:
+    """What narration produced: one text per slide, follow-ups, and where the text came from."""
+
     narrations: dict[str, str]
     follow_ups: list[str]
     source: str  # "llm" or "fallback"
@@ -64,6 +66,8 @@ class ValidationError(ValueError):
 
 # ---------------------------------------------------------------- grounding check
 
+# The slide record fields whose words count as "in the material" for the grounding check.
+GROUNDING_FIELDS = ("title", "text", "notes", "transcript", "course_title", "session_title")
 GROUNDING_MAX_UNGROUNDED_SHARE = 0.5  # reject when more than half the content words are not in the material
 GROUNDING_MIN_UNGROUNDED_WORDS = 2  # ...and at least this many are
 ECHO_MAX_WORDS = 8  # reject a run of this many question words that the material does not contain
@@ -243,7 +247,7 @@ class Grounding:
     question_runs: set[tuple[str, ...]]
 
     @classmethod
-    def build(cls, question: str, materials: Iterable[str]) -> "Grounding":
+    def build(cls, question: str, materials: Iterable[str]) -> Grounding:
         text = "\n".join(str(m or "") for m in materials)
         vocab = set(_content_words(text))
         runs = _ngrams(_plain_words(question), ECHO_MAX_WORDS) - _ngrams(_plain_words(text), ECHO_MAX_WORDS)
@@ -272,9 +276,10 @@ class Grounding:
 
 
 def grounding_for(question: str, slides: list[dict[str, Any]], codes: dict[str, str | None]) -> Grounding:
+    """The grounding check for these slides: their text, notes, transcript and code, and the question."""
     materials: list[str] = []
     for rec in slides:
-        materials += [rec.get(k) or "" for k in ("title", "text", "notes", "transcript", "course_title", "session_title")]
+        materials += [rec.get(k) or "" for k in GROUNDING_FIELDS]
         materials.append(codes.get(rec["id"]) or "")
     return Grounding.build(question, materials)
 
@@ -285,6 +290,7 @@ def _clip(text: Any, limit: int) -> str:
 
 
 def slide_payload(rec: dict[str, Any], code: str | None) -> dict[str, Any]:
+    """What the narration model sees of one slide (de-identified text only, each field clipped)."""
     return {
         "slide_id": rec["id"],
         "course": rec.get("course_title") or rec.get("course"),
@@ -300,6 +306,7 @@ def slide_payload(rec: dict[str, Any], code: str | None) -> dict[str, Any]:
 
 
 def build_user_prompt(question: str, slides: list[dict[str, Any]]) -> str:
+    """The narration prompt: the question, then the slides in the order they will be shown."""
     return (
         "Student question (answer it only from the slides below):\n"
         + json.dumps(question)
@@ -319,20 +326,11 @@ def clean_speech(text: str) -> str:
 
 
 def _extract_json(raw: str) -> Any:
-    raw = raw.strip()
-    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```$", raw, re.S)
-    if fence:
-        raw = fence.group(1)
+    """The reply's JSON (llm.extract_json), as a ValidationError when there is none so narration retries."""
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        start, end = raw.find("{"), raw.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                return json.loads(raw[start : end + 1])
-            except json.JSONDecodeError:
-                pass
-    raise ValidationError("reply was not JSON")
+        return llm.extract_json(raw)
+    except llm.ReplyNotJSON as exc:
+        raise ValidationError("reply was not JSON") from exc
 
 
 _SENTENCE = re.compile(r"[^.!?]+(?:[.!?]+[\"'”’)\]]*|$)\s*")
@@ -385,47 +383,64 @@ def validate(
     allowed = set(sent_ids)
     out: dict[str, str] = {}
     for seg in data["segments"]:
-        if not isinstance(seg, dict):
-            raise ValidationError("segment is not an object")
-        sid, text = seg.get("slide_id"), seg.get("narration")
-        if sid not in allowed:
-            raise ValidationError(f"unknown slide_id {sid!r}")
-        if not isinstance(text, str) or not text.strip():
-            raise ValidationError(f"empty narration for {sid}")
-        text = clean_speech(speakable_links(text))
-        trimmed = trim_to_sentences(text, config.NARRATION_MAX_WORDS, config.NARRATION_MAX_CHARS)
-        if trimmed is None:
-            if word_count(text) > config.NARRATION_MAX_WORDS:
-                raise ValidationError(f"narration for {sid} is {word_count(text)} words")
-            raise ValidationError(f"narration for {sid} is {len(text)} characters")
-        text = trimmed
-        if _URLISH.search(text):
-            raise ValidationError(f"narration for {sid} contains a web address")
-        problem = speech_problem(text)
-        if problem:
-            raise ValidationError(f"narration for {sid} is not allowed: {problem}")
-        if grounding is not None:
-            problem = grounding.echo_problem(text)
-            if problem:
-                raise ValidationError(f"narration for {sid} is not grounded: {problem}")
-            problem = grounding.vocab_problem(text)
-            if problem:
-                if dropped is None:
-                    raise ValidationError(f"narration for {sid} is not grounded: {problem}")
-                dropped.append(f"narration for {sid} is not grounded: {problem}")
-                continue
-        out[sid] = text
+        checked = _checked_segment(seg, allowed, grounding, dropped)
+        if checked is not None:
+            sid, text = checked
+            out[sid] = text
     if not out:
         raise ValidationError("no segments")
+    return out, _follow_ups(data)
+
+
+def _checked_segment(seg: Any, allowed: set[str], grounding: Grounding | None,
+                     dropped: list[str] | None) -> tuple[str, str] | None:
+    """(slide_id, speakable narration) for one segment; None when it is dropped. Raises ValidationError.
+
+    The order matters: links become "the link on the slide" and dashes go before the length
+    check, so what is measured is what will be spoken.
+    """
+    if not isinstance(seg, dict):
+        raise ValidationError("segment is not an object")
+    sid, text = seg.get("slide_id"), seg.get("narration")
+    if sid not in allowed:
+        raise ValidationError(f"unknown slide_id {sid!r}")
+    if not isinstance(text, str) or not text.strip():
+        raise ValidationError(f"empty narration for {sid}")
+    text = clean_speech(speakable_links(text))
+    trimmed = trim_to_sentences(text, config.NARRATION_MAX_WORDS, config.NARRATION_MAX_CHARS)
+    if trimmed is None:
+        if word_count(text) > config.NARRATION_MAX_WORDS:
+            raise ValidationError(f"narration for {sid} is {word_count(text)} words")
+        raise ValidationError(f"narration for {sid} is {len(text)} characters")
+    text = trimmed
+    if _URLISH.search(text):
+        raise ValidationError(f"narration for {sid} contains a web address")
+    problem = speech_problem(text)
+    if problem:
+        raise ValidationError(f"narration for {sid} is not allowed: {problem}")
+    if grounding is not None:
+        problem = grounding.echo_problem(text)
+        if problem:
+            raise ValidationError(f"narration for {sid} is not grounded: {problem}")
+        problem = grounding.vocab_problem(text)
+        if problem:
+            if dropped is None:
+                raise ValidationError(f"narration for {sid} is not grounded: {problem}")
+            dropped.append(f"narration for {sid} is not grounded: {problem}")
+            return None
+    return sid, text
+
+
+def _follow_ups(data: dict[str, Any]) -> list[str]:
+    """Up to two suggested follow-up questions; any with a web address or a speech problem is left out."""
     follow = data.get("follow_ups") or []
     if not isinstance(follow, list):
         follow = []
-    follow_ups = [
+    return [
         clean_speech(f)[:150]
         for f in follow
         if isinstance(f, str) and f.strip() and not _URLISH.search(f) and not speech_problem(f)
     ][:2]
-    return out, follow_ups
 
 
 def _first_words(text: str, limit: int = FALLBACK_WORDS) -> str:
@@ -438,6 +453,7 @@ def _first_words(text: str, limit: int = FALLBACK_WORDS) -> str:
 
 
 def fallback_narration(rec: dict[str, Any]) -> str:
+    """Speakable text without a model: the slide's notes, else what Ben said, else its text or title."""
     for key in ("notes", "transcript", "text"):
         value = str(rec.get(key) or "").strip()
         if value:

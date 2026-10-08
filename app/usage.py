@@ -34,10 +34,11 @@ import contextlib
 import contextvars
 import re
 import threading
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Callable, Iterator, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from . import config
 
@@ -103,17 +104,19 @@ _SAFE = re.compile(r"[^A-Za-z0-9._/~@+\-:]")
 
 # ---------------------------------------------------------------- purpose and per-request tally
 
-_purpose: contextvars.ContextVar[Optional[tuple[str, bool]]] = contextvars.ContextVar("ft_usage_purpose", default=None)
+_purpose: contextvars.ContextVar[tuple[str, bool] | None] = contextvars.ContextVar("ft_usage_purpose", default=None)
 
 
 @dataclass
 class Tally:
+    """Tokens and calls counted inside a `tally()` block."""
+
     tokens_in: int = 0
     tokens_out: int = 0
     calls: int = 0
 
 
-_tally: contextvars.ContextVar[Optional[Tally]] = contextvars.ContextVar("ft_usage_tally", default=None)
+_tally: contextvars.ContextVar[Tally | None] = contextvars.ContextVar("ft_usage_tally", default=None)
 
 
 @contextlib.contextmanager
@@ -183,7 +186,7 @@ def parse_embed_usage(data: Any, texts: list[str] | None = None) -> int:
 # ---------------------------------------------------------------- keys
 
 def _day() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 def _part(text: Any) -> str:
@@ -217,7 +220,7 @@ def sms_key(day: str, metric: str) -> str:
 PREFIXES = ("usage:", "embed:", "tts:", "event:", "faq:", "sms:")
 
 
-def parse_key(key: str) -> Optional[dict[str, Any]]:
+def parse_key(key: str) -> dict[str, Any] | None:
     """Split an analytics counter key into its parts, or None when it is not one."""
     parts = key.split(":")
     kind = parts[0]
@@ -241,7 +244,7 @@ def parse_key(key: str) -> Optional[dict[str, Any]]:
 
 # ---------------------------------------------------------------- fire and forget
 
-_pool: Optional[ThreadPoolExecutor] = None
+_pool: ThreadPoolExecutor | None = None
 _pool_lock = threading.Lock()
 _pending: set[Future] = set()
 
@@ -313,7 +316,7 @@ def _safely(fn: Callable[..., None]) -> Callable[..., None]:
 # ---------------------------------------------------------------- record
 
 @_safely
-def record_llm(provider: str, model: str, data: Any, purpose_name: Optional[str] = None) -> None:
+def record_llm(provider: str, model: str, data: Any, purpose_name: str | None = None) -> None:
     """One model call: its input and output tokens, under the current purpose."""
     tin, tout = parse_llm_usage(provider, data)
     t = _tally.get()
@@ -331,7 +334,7 @@ def record_llm(provider: str, model: str, data: Any, purpose_name: Optional[str]
 
 @_safely
 def record_search_call(provider: str, model: str, tokens_in: int, tokens_out: int, searches: int,
-                       purpose_name: Optional[str] = None) -> None:
+                       purpose_name: str | None = None) -> None:
     """One model call that used a web search tool: tokens like record_llm, plus the searches it ran."""
     tin, tout = _int(tokens_in), _int(tokens_out)
     t = _tally.get()
@@ -355,7 +358,7 @@ def record_embed(model: str, tokens: int) -> None:
 
 
 @_safely
-def record_tts(tier: Optional[str], chars: int) -> None:
+def record_tts(tier: str | None, chars: int) -> None:
     """Characters sent to a voice: ElevenLabs tiers (clone, stock, unverified) cost money; "free" is edge-tts."""
     day, tier = _day(), tier if tier in VOICE_TIERS else "unverified"
     _submit([(tts_key(day, tier, "calls"), 1), (tts_key(day, tier, "chars"), _int(chars))])
@@ -363,13 +366,14 @@ def record_tts(tier: Optional[str], chars: int) -> None:
 
 @_safely
 def record_event(name: str) -> None:
+    """Count one page event by name; unknown names are ignored."""
     if name not in EVENT_NAMES:
         return
     _submit([(event_key(_day(), name), 1)])
 
 
 @_safely
-def record_faq(entry_id: Optional[str]) -> None:
+def record_faq(entry_id: str | None) -> None:
     if entry_id:
         _submit([(faq_key(_day(), entry_id), 1)])
 

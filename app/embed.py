@@ -34,6 +34,7 @@ def model_name() -> str:
 
 
 def build_request(text: str) -> tuple[str, dict[str, str], dict]:
+    """The Voyage request for one question (input_type query, the index's model)."""
     key = config.env("VOYAGE_API_KEY")
     if not key:
         raise EmbeddingError("VOYAGE_API_KEY is not set")
@@ -43,6 +44,7 @@ def build_request(text: str) -> tuple[str, dict[str, str], dict]:
 
 
 def parse_response(data: dict) -> np.ndarray:
+    """The question vector from a Voyage reply, or EmbeddingError."""
     try:
         vec = data["data"][0]["embedding"]
     except (KeyError, IndexError, TypeError) as exc:
@@ -51,6 +53,7 @@ def parse_response(data: dict) -> np.ndarray:
 
 
 def embed_question(text: str, client: httpx.Client | None = None) -> np.ndarray:
+    """Embed one question, counted against DAILY_EMBED_CAP (fails closed when the cap cannot be read)."""
     url, headers, body = build_request(text)
     from . import limits
 

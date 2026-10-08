@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Any, Optional
+from typing import Any
 
 CHECKED = "2026-10-07"
 SRC_ANTHROPIC = "https://platform.claude.com/docs/en/about-claude/pricing"
@@ -125,20 +125,43 @@ def _price(value: Any, what: str) -> float:
     return out
 
 
-def _text(value: Any, limit: int = 300) -> Optional[str]:
+def _text(value: Any, limit: int = 300) -> str | None:
     return None if value in (None, "") else str(value)[:limit]
 
 
 def validate(raw: Any) -> dict[str, Any]:
-    """Check a price table sent by the Settings page and return the clean copy to store."""
+    """Check a price table sent by the Settings page and return the clean copy to store.
+
+    Sections are checked in a fixed order (model prices, embeddings, web search, voice, SMS),
+    so the first problem reported is always the same one.
+    """
     if not isinstance(raw, dict):
         raise BadPricing("The price table must be an object.")
-    out: dict[str, Any] = {"llm": [], "embed": [], "tts": {}, "sms": {}, "web_search": []}
-    rows = raw.get("llm") or []
-    if not isinstance(rows, list) or len(rows) > MAX_ROWS:
-        raise BadPricing(f"llm must be a list of at most {MAX_ROWS} rows.")
+    llm_rows = _llm_rows(raw)
+    embed_rows = _embed_rows(raw)
+    search_rows = _web_search_rows(raw)
+    tts = _tts(raw)
+    sms = _sms(raw)
+    return {"llm": llm_rows, "embed": embed_rows, "tts": tts, "sms": sms, "web_search": search_rows}
+
+
+def _row_list(raw: dict[str, Any], key: str, limit: int, message: str) -> list[Any]:
+    rows = raw.get(key) or []
+    if not isinstance(rows, list) or len(rows) > limit:
+        raise BadPricing(message)
+    return rows
+
+
+def _checked_fields(row: dict[str, Any]) -> dict[str, Any]:
+    """Where a price came from and whether Ben should check it again."""
+    return {"source": _text(row.get("source")), "checked": _text(row.get("checked"), 20),
+            "verify": bool(row.get("verify", False))}
+
+
+def _llm_rows(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     seen = set()
-    for row in rows:
+    for row in _row_list(raw, "llm", MAX_ROWS, f"llm must be a list of at most {MAX_ROWS} rows."):
         if not isinstance(row, dict):
             raise BadPricing("Each model price must be an object.")
         provider, model = str(row.get("provider") or ""), str(row.get("model") or "").strip()
@@ -147,45 +170,50 @@ def validate(raw: Any) -> dict[str, Any]:
         if not MODEL_RE.match(model):
             raise BadPricing(f"The model id {model[:40]!r} does not look right.")
         if (provider, model) in seen:
-            continue
+            continue  # the first row for a model wins
         seen.add((provider, model))
-        out["llm"].append({
+        out.append({
             "provider": provider, "model": model,
             "in": _price(row.get("in"), f"{model} input price"),
             "out": _price(row.get("out"), f"{model} output price"),
-            "source": _text(row.get("source")), "checked": _text(row.get("checked"), 20),
-            "verify": bool(row.get("verify", False)),
+            **_checked_fields(row),
         })
-    embeds = raw.get("embed") or []
-    if not isinstance(embeds, list) or len(embeds) > 20:
-        raise BadPricing("embed must be a list of at most 20 rows.")
-    for row in embeds:
+    return out
+
+
+def _embed_rows(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    out = []
+    for row in _row_list(raw, "embed", 20, "embed must be a list of at most 20 rows."):
         if not isinstance(row, dict):
             raise BadPricing("Each embedding price must be an object.")
         model = str(row.get("model") or "").strip()
         if not MODEL_RE.match(model):
             raise BadPricing("An embedding model id does not look right.")
-        out["embed"].append({
+        out.append({
             "provider": "voyage", "model": model, "per_mtok": _price(row.get("per_mtok"), f"{model} price"),
-            "source": _text(row.get("source")), "checked": _text(row.get("checked"), 20),
-            "verify": bool(row.get("verify", False)), "note": _text(row.get("note")),
+            **_checked_fields(row), "note": _text(row.get("note")),
         })
-    searches = raw.get("web_search") or []
-    if not isinstance(searches, list) or len(searches) > 10:
-        raise BadPricing("web_search must be a list of at most 10 rows.")
-    for row in searches:
+    return out
+
+
+def _web_search_rows(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in _row_list(raw, "web_search", 10, "web_search must be a list of at most 10 rows."):
         if not isinstance(row, dict):
             raise BadPricing("Each web search price must be an object.")
         provider = str(row.get("provider") or "")
         if provider not in PROVIDERS:
             raise BadPricing("A web search price needs provider anthropic, openai, or openrouter.")
-        if any(r["provider"] == provider for r in out["web_search"]):
-            continue
-        out["web_search"].append({
+        if any(r["provider"] == provider for r in out):
+            continue  # one price per provider: the first row wins
+        out.append({
             "provider": provider, "per_1k": _price(row.get("per_1k"), f"{provider} web search price"),
-            "source": _text(row.get("source")), "checked": _text(row.get("checked"), 20),
-            "verify": bool(row.get("verify", False)), "note": _text(row.get("note")),
+            **_checked_fields(row), "note": _text(row.get("note")),
         })
+    return out
+
+
+def _tts(raw: dict[str, Any]) -> dict[str, Any]:
     tts = raw.get("tts") or {}
     if not isinstance(tts, dict):
         raise BadPricing("tts must be an object.")
@@ -196,7 +224,7 @@ def validate(raw: Any) -> dict[str, Any]:
     if not isinstance(per, dict):
         raise BadPricing("elevenlabs_per_1k_chars must be an object.")
     default_per = DEFAULT_PRICING["tts"]["elevenlabs_per_1k_chars"]
-    out["tts"] = {
+    return {
         "elevenlabs_plan": plan,
         "elevenlabs_per_1k_chars": {p: _price(per.get(p, default_per[p]), f"ElevenLabs {p} price") for p in PLANS},
         "edge_per_1k_chars": _price(tts.get("edge_per_1k_chars", 0.0), "edge-tts price"),
@@ -204,11 +232,14 @@ def validate(raw: Any) -> dict[str, Any]:
         "checked": _text(tts.get("checked"), 20), "verify": bool(tts.get("verify", False)),
         "note": _text(tts.get("note"), 500),
     }
+
+
+def _sms(raw: dict[str, Any]) -> dict[str, Any]:
     sms = raw.get("sms") or {}
     if not isinstance(sms, dict):
         raise BadPricing("sms must be an object.")
     default_sms = DEFAULT_PRICING["sms"]
-    out["sms"] = {
+    return {
         "provider": "twilio",
         "per_segment": _price(sms.get("per_segment", default_sms["per_segment"]), "Twilio price per segment"),
         "carrier_fee_per_segment": _price(sms.get("carrier_fee_per_segment", default_sms["carrier_fee_per_segment"]),
@@ -216,7 +247,6 @@ def validate(raw: Any) -> dict[str, Any]:
         "source": _text(sms.get("source", default_sms["source"])), "checked": _text(sms.get("checked"), 20),
         "verify": bool(sms.get("verify", False)), "note": _text(sms.get("note"), 500),
     }
-    return out
 
 
 def current(stored: Any = None) -> dict[str, Any]:
@@ -250,7 +280,7 @@ def current(stored: Any = None) -> dict[str, Any]:
 # ---------------------------------------------------------------- math
 
 def llm_price(table: dict[str, Any], provider: str, model: str,
-              live: Optional[dict[str, dict[str, Any]]] = None) -> Optional[tuple[float, float, str]]:
+              live: dict[str, dict[str, Any]] | None = None) -> tuple[float, float, str] | None:
     """(USD per 1M input, per 1M output, source) for one model, or None when unknown.
 
     `live` is OpenRouter's model list by id (prices per token), used only for
@@ -271,14 +301,15 @@ def llm_price(table: dict[str, Any], provider: str, model: str,
 
 
 def llm_cost(table: dict[str, Any], provider: str, model: str, tokens_in: int, tokens_out: int,
-             live: Optional[dict[str, dict[str, Any]]] = None) -> Optional[float]:
+             live: dict[str, dict[str, Any]] | None = None) -> float | None:
+    """USD for one model call's tokens, or None when the model has no price."""
     price = llm_price(table, provider, model, live)
     if price is None:
         return None
     return tokens_in / 1_000_000 * price[0] + tokens_out / 1_000_000 * price[1]
 
 
-def search_cost(table: dict[str, Any], provider: str, searches: int) -> Optional[float]:
+def search_cost(table: dict[str, Any], provider: str, searches: int) -> float | None:
     """USD for `searches` web searches on this provider, or None when the table has no price for it."""
     for row in table.get("web_search", []):
         if row["provider"] == provider:
@@ -286,7 +317,8 @@ def search_cost(table: dict[str, Any], provider: str, searches: int) -> Optional
     return None
 
 
-def embed_cost(table: dict[str, Any], model: str, tokens: int) -> Optional[float]:
+def embed_cost(table: dict[str, Any], model: str, tokens: int) -> float | None:
+    """USD for embedding tokens, or None when the model has no price."""
     for row in table.get("embed", []):
         if row["model"] == model:
             return tokens / 1_000_000 * float(row["per_mtok"])
@@ -300,6 +332,7 @@ def sms_cost(table: dict[str, Any], segments: int) -> float:
 
 
 def tts_cost(table: dict[str, Any], tier: str, chars: int) -> float:
+    """USD for voice characters on the free tier or the ElevenLabs plan in the table."""
     tts = table.get("tts") or {}
     if tier == "free":
         per = float(tts.get("edge_per_1k_chars") or 0.0)

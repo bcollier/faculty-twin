@@ -21,7 +21,8 @@ import re
 import time
 import weakref
 from collections import OrderedDict
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 import edge_tts
 
@@ -105,7 +106,7 @@ def chunk_text(text: str, limit: int = CHUNK_CHARS) -> list[str]:
 
 
 # One semaphore per event loop (asyncio primitives are bound to the loop that first waits on them).
-_slots: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
+_slots: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = weakref.WeakKeyDictionary()
 
 
 def _slot() -> asyncio.Semaphore:
@@ -280,10 +281,11 @@ def describe(short_name: str) -> tuple[str, str]:
 
 # ---------------------------------------------------------------- previews (admin only)
 
-_preview_cache: "OrderedDict[str, bytes]" = OrderedDict()
+_preview_cache: OrderedDict[str, bytes] = OrderedDict()
 
 
 def preview_cached(short_name: str) -> bytes | None:
+    """A voice preview already made in this process, or None."""
     data = _preview_cache.get(short_name)
     if data is not None:
         _preview_cache.move_to_end(short_name)

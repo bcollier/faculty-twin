@@ -22,7 +22,7 @@ import hashlib
 import hmac
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -39,7 +39,7 @@ LOGIN_MAX_ATTEMPTS = {"student": 10, "admin": 5}
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 def _warn_once() -> None:
@@ -86,6 +86,7 @@ def increment(
 
 
 def read_counter(key: str) -> int:
+    """A counter's value today (0 when it does not exist or cannot be read)."""
     if config.supabase_configured():
         try:
             rows = supa.select("counters", {"select": "count", "key": f"eq.{key}"})
@@ -311,6 +312,10 @@ def give_back_voice_chars(chars: int, visitor_hash: str | None = None, address_h
 
 
 def today_counters() -> dict[str, int]:
+    """Today's counters for Settings > Activity.
+
+    Questions, coverage, rate limits, voice characters, model calls, embeddings and web answers.
+    """
     day = _today()
     return {
         "questions": read_counter(f"questions:{day}"),
@@ -349,7 +354,8 @@ def log_question(
     """One question-log row. See docs/TESTING_AND_SCORES.md for what each field means.
 
     `kind` is what answered: "course_content", "stored_topic", "faq", "course_info",
-    "logistics", "web" (beyond the slides, from a web search), or "not_covered". `provider` and `model` are None when no model was called.
+    "logistics", "web" (beyond the slides, from a web search), or "not_covered".
+    `provider` and `model` are None when no model was called.
     `extra` may carry the analytics columns (ANALYTICS_COLUMNS): the top slide and its
     session, tokens in/out, voice characters signed, and where the question came from
     (chip, typed, follow_up, or a test source). Never a visitor id, a cookie, or an address.
@@ -373,24 +379,32 @@ def log_question(
         if extra.get(name):
             row[name] = extra[name]
     if config.supabase_configured():
-        # Until the migrations in supabase/schema.sql have run, keep logging with fewer columns:
-        # first without the fallback reason, then without the analytics columns, then without `kind`.
-        attempts = [row, {k: v for k, v in row.items() if k not in REASON_COLUMNS}]
-        attempts.append({k: v for k, v in attempts[1].items() if k not in ANALYTICS_COLUMNS})
-        attempts.append({k: v for k, v in attempts[2].items() if k != "kind"})
-        for i, attempt in enumerate(attempts):
-            if i and attempt == attempts[i - 1]:
-                continue
-            try:
-                supa.insert("question_log", attempt)
-                return
-            except supa.SupabaseError as exc:
-                config.log.warning("question log insert failed (%s columns): %s", len(attempt), exc)
+        _insert_log_row(row)
         return
     _warn_once()
-    row["at"] = datetime.now(timezone.utc).isoformat()
+    row["at"] = datetime.now(UTC).isoformat()
     _mem_log.append(row)
     del _mem_log[:-2000]
+
+
+def _insert_log_row(row: dict[str, Any]) -> None:
+    """Insert, retrying with fewer columns on a database that has not had every migration.
+
+    Until the migrations in supabase/schema.sql have run, keep logging with fewer columns:
+    first without the fallback reason, then without the analytics columns, then without `kind`.
+    A failed insert is logged and dropped: the question log never blocks an answer.
+    """
+    attempts = [row, {k: v for k, v in row.items() if k not in REASON_COLUMNS}]
+    attempts.append({k: v for k, v in attempts[1].items() if k not in ANALYTICS_COLUMNS})
+    attempts.append({k: v for k, v in attempts[2].items() if k != "kind"})
+    for i, attempt in enumerate(attempts):
+        if i and attempt == attempts[i - 1]:
+            continue
+        try:
+            supa.insert("question_log", attempt)
+            return
+        except supa.SupabaseError as exc:
+            config.log.warning("question log insert failed (%s columns): %s", len(attempt), exc)
 
 
 LOG_COLUMNS = "at,question,covered,top_score,provider,model,latency_ms,course"
