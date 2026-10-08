@@ -193,7 +193,10 @@ def _supabase_down(monkeypatch):
 
 def test_admin_login_fails_closed_when_counters_are_down(client, monkeypatch):
     _supabase_down(monkeypatch)
+    # Only the counters are down here: the settings read is faked as working (no rotated passcode).
+    # With the settings table unreadable on a cold start, student login fails closed too (test_auth.py).
     monkeypatch.setattr("app.settings_store.get", lambda key, default=None: default)
+    monkeypatch.setattr("app.settings_store.get_required", lambda key, default=None: default)
     assert client.post("/api/admin/login", json={"passcode": "admin-pass"}).status_code == 429
     assert client.post("/api/login", json={"passcode": "student-pass"}).status_code == 204
 
