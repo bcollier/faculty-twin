@@ -1435,3 +1435,9 @@ Two tests were added in `tests/test_retrieval.py`:
 **Response summary.** Kept the prompt log rule. Looked up Astra: OpenAI's GPT-6 Astra, API model ID `gpt-6-astra`, announced September 3, 2026. It was already in the app's model list (`app/llm.py`) and price table (`app/pricing.py`). `docs/V2.md` now names the approved models by exact ID: `claude-opus-5-5` and `gpt-6-astra`.
 
 **Where the AI got it wrong.** It asked me which company makes Astra and for its model ID instead of looking it up. A web search answered it, and the ID was already in this repo.
+
+### Prompt (Oct 8, later)
+
+> fable is fine too for outiside-class answers
+
+**Response summary.** Added Anthropic's Claude Fable 5.1 (`claude-fable-5-1`, already in the app's model list and price table) to the approved models for outside-class answers in `docs/V2.md`, next to `claude-opus-5-5` and `gpt-6-astra`. The doc notes that Fable took about 20 seconds per typed answer in a live test.
