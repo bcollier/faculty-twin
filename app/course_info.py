@@ -98,14 +98,38 @@ def margin() -> float:
     return thresholds.info_margin()
 
 
-def wins(best_info: Optional[float], best_slide: Optional[float]) -> bool:
+# A question about where something is on Canvas, or what a course page says (added Oct 8, live bug:
+# "Where is the syllabus on Canvas?" lost to the course intro slide, 0.702 against 0.586, and then went
+# to the logistics referral). Kept narrow: none of the course set's concept, beyond-the-slides or
+# off-topic questions match (tests/test_course_info.py checks every one).
+_COURSE_ITEM = (r"syllabus|polic(?:y|ies)|assignments?|homework|hw ?\d+|quiz(?:zes)?|labs?|rubrics?|"
+                r"recordings?|readings?|announcements?|modules?|pages?|instructions|due dates?|deadlines?|"
+                r"schedule|office hours|class summar(?:y|ies)")
+_CANVAS_REQUEST = re.compile(
+    r"\bcanvas\b|\bsyllabus\b"
+    rf"|\bwhere\b[^.?!]{{0,60}}\b(?:{_COURSE_ITEM})\b"
+    r"|\b(?:when is|when are|when's|when do)\b[^.?!]{0,60}\bdue\b|\bdue dates?\b",
+    re.I,
+)
+
+
+def canvas_request(question: str) -> bool:
+    """True when the question asks where something is on Canvas, or what a course page or due date says."""
+    return bool(_CANVAS_REQUEST.search(question or ""))
+
+
+def wins(best_info: Optional[float], best_slide: Optional[float], canvas: bool = False) -> bool:
     """True when the best Canvas chunk should answer instead of the slides (docs/SPEC.md step 6a).
 
     It must clear the info threshold and beat the best slide by the margin. Added Oct 8: the course-set
     eval had Canvas class summaries answering concept questions they led the slides by 0.003 to 0.011.
+    A `canvas` request (`canvas_request`) only needs the threshold: it asks for a Canvas page, so a
+    slide that happens to score higher is not the answer.
     """
     if best_info is None or best_info < threshold():
         return False
+    if canvas:
+        return True
     # Rounded so a lead of exactly the margin counts (0.68 - 0.63 is 0.04999... in floating point).
     return best_slide is None or round(best_info - best_slide, 6) >= margin()
 
@@ -127,7 +151,20 @@ def searchable(content: Any, course: Optional[str]) -> tuple[list[dict[str, Any]
     return [records[i] for i in rows], matrix[rows]
 
 
-def top_hits(ranked: list[tuple[int, float]], records: list[dict[str, Any]], n: int = TOP_CHUNKS) -> list[Hit]:
+_SYLLABUS = re.compile(r"\bsyllabus\b", re.I)
+SYLLABUS_FIRST = 2  # syllabus chunks moved to the front when the question names the syllabus
+
+
+def top_hits(ranked: list[tuple[int, float]], records: list[dict[str, Any]], n: int = TOP_CHUNKS,
+             question: str = "") -> list[Hit]:
+    """The top `n` chunks. A question that names the syllabus gets the best syllabus chunks first.
+
+    Added Oct 8 (live bug): "Where is the syllabus on Canvas?" ranked a welcome announcement above every
+    syllabus chunk, so the answer linked the announcement. Scores are unchanged; only the order is.
+    """
+    if _SYLLABUS.search(question or ""):
+        first = [(i, s) for i, s in ranked if records[i].get("kind") == "syllabus"][:SYLLABUS_FIRST]
+        ranked = first + [pair for pair in ranked if pair not in first]
     return [Hit(records[i], float(score)) for i, score in ranked[:n]]
 
 

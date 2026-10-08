@@ -301,10 +301,12 @@ def answer(
         return _referral(question, course, content), info
 
     # Course info from Canvas (spec step 6a): wins when it clears the info threshold and beats the best
-    # slide by the info margin. Otherwise the slides answer, or, when no slide clears its threshold, the
+    # slide by the info margin (a question about where something is on Canvas only needs the threshold).
+    # Otherwise the slides answer, or, when no slide clears its threshold, the
     # web path (step 7b) gets its turn even though a weaker Canvas chunk exists.
-    hits = course_info.top_hits(info_ranked, info_records)
-    if hits and course_info.wins(hits[0].score, best_slide):
+    hits = course_info.top_hits(info_ranked, info_records, question=question)
+    best_info = float(info_ranked[0][1]) if info_ranked else None
+    if hits and course_info.wins(best_info, best_slide, canvas=course_info.canvas_request(question)):
         used_model()
         with usage.purpose("course_info"):
             result = course_info.answer(
@@ -312,7 +314,7 @@ def answer(
             )
         info["kind"] = course_info.KIND
         info["top_slide_id"] = None  # answered from Canvas, not a slide
-        info["top_score"] = hits[0].score
+        info["top_score"] = best_info
         info["narration"] = result.source
         info["errors"] = result.errors
         info["fallback_reason"] = result.reason  # shown in Settings > Activity when it fell back
