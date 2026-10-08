@@ -249,6 +249,39 @@
             <p class="status-line" id="pass-status" role="status"></p>
           </form>
         </div>
+
+        <h3 class="h-sub" id="thresholds-h">Answer thresholds</h3>
+        <div id="sec-thresholds" aria-labelledby="thresholds-h">
+          <p class="hint">Every question is scored against every slide and Canvas page with cosine similarity (the score from <code>rank()</code>, the same Top score shown in Activity). Measured so far, across two 10-question checks: on-topic questions scored 0.543 to 0.712 and off-topic ones 0.377 to 0.509. Higher thresholds decline more real questions; lower ones let off-topic questions through. <a href="https://github.com/bcollier/faculty-twin/blob/main/docs/TESTING_AND_SCORES.md#changing-the-thresholds-in-settings" target="_blank" rel="noopener">How the thresholds were chosen</a>. After a change, <a href="https://github.com/bcollier/faculty-twin/blob/main/docs/TESTING_AND_SCORES.md#run-a-new-test" target="_blank" rel="noopener">run an eval</a> to check it. Changes reach every server within 30 seconds.</p>
+          <div class="grid-2">
+            <form id="slide-th-form" novalidate>
+              <div class="field">
+                <label for="slide-th">Slide threshold</label>
+                <input id="slide-th" type="number" min="0.30" max="0.90" step="0.01" aria-describedby="slide-th-now">
+                <p class="hint" id="slide-th-now"></p>
+              </div>
+              <div class="actions">
+                <button class="btn btn-primary" type="submit">Save</button>
+                <button class="btn btn-small" type="button" id="slide-th-reset">Reset to default</button>
+              </div>
+              <p class="status-line" id="slide-th-status" role="status"></p>
+            </form>
+            <form id="info-th-form" novalidate>
+              <div class="field">
+                <label for="info-th">Course-info threshold</label>
+                <input id="info-th" type="number" min="0.30" max="0.90" step="0.01" aria-describedby="info-th-now">
+                <p class="hint" id="info-th-now"></p>
+              </div>
+              <div class="actions">
+                <button class="btn btn-primary" type="submit">Save</button>
+                <button class="btn btn-small" type="button" id="info-th-reset">Reset to default</button>
+              </div>
+              <p class="status-line" id="info-th-status" role="status"></p>
+            </form>
+          </div>
+          <h4 class="h-sub">Recent changes</h4>
+          <ul class="small" id="th-history"></ul>
+        </div>
       </section>
 
       <!-- 5. Activity -->

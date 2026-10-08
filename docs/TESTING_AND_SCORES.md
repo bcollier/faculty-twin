@@ -31,8 +31,8 @@ The path is saved with the question as its **kind**.
 | --- | --- | --- | --- | --- | --- |
 | 1 | The question matches a suggested question (same words, ignoring case and punctuation, course fits the filter) | `stored_topic` | no | no | The stored, pre-generated walkthrough, with fresh signed links |
 | 2 | The question matches an entry in my course FAQ (`app/faq.py`, `app/faq_entries.json`) | `faq` | no | no | My written FAQ answer, word for word, with link buttons and TA contact cards |
-| 3 | Embed the question with Voyage once, rank every visible slide and every course-info chunk from Canvas with the same vector (`rank()` in `app/retrieval.py`). The best info chunk scores at least `INFO_THRESHOLD` (0.55) and beats the best slide (`app/course_info.py`) | `course_info` | yes | yes (one grounded answer call) | A short answer in my voice written only from the top 3 Canvas chunks, with buttons that open those Canvas pages |
-| 4 | No slide at or above the threshold | `not_covered` | yes | no | The not-covered reply |
+| 3 | Embed the question with Voyage once, rank every visible slide and every course-info chunk from Canvas with the same vector (`rank()` in `app/retrieval.py`). The best info chunk scores at least the course-info threshold (0.55 unless changed in Settings) and beats the best slide (`app/course_info.py`) | `course_info` | yes | yes (one grounded answer call) | A short answer in my voice written only from the top 3 Canvas chunks, with buttons that open those Canvas pages |
+| 4 | No slide at or above the slide threshold (0.52 unless changed in Settings) | `not_covered` | yes | no | The not-covered reply |
 | 5 | Slides found, but the logistics check says it is about meetings, absences, grades, deadlines, Canvas and the like (`app/logistics.py`) | `logistics` | yes | only if the keyword pre-check missed it | The "that one is for me directly" referral, with the Calendly button |
 | 6 | Slides found and it is course content | `course_content` | yes | yes (the logistics check, then narration) | A narrated walkthrough of the chosen slides |
 
@@ -70,7 +70,8 @@ A badge for the kind of answer (see the table above):
 How `covered` is computed: it is true when the answer has at least one slide
 segment. For a new question that means both of these held:
 
-1. **The top retrieval score was at or above `NOT_COVERED_THRESHOLD` (0.52).**
+1. **The top retrieval score was at or above the slide threshold** (my
+   `NOT_COVERED_THRESHOLD`, 0.52, unless Settings overrides it).
    `select_segments()` keeps the top 8 slides that score at or above the
    threshold, so it returns at least one slide exactly when the best slide
    does. If it returns none, the answer is not covered.
@@ -105,7 +106,12 @@ four decimals; the page shows three.
 
 For a **From Canvas** row it is the best course-info chunk's score instead
 (the same cosine similarity, against the Canvas index), which is at least
-`INFO_THRESHOLD` and higher than every slide.
+the course-info threshold and higher than every slide.
+
+The log stores the score, not the threshold in force when the question was
+asked. After changing a threshold in Settings, compare rows against the
+value that applied at the time (the "Recent changes" list under Answer
+thresholds shows when each change was made).
 
 It is blank, with the tooltip "No search ran", when retrieval never ran:
 
@@ -174,7 +180,7 @@ and after it exists:
   column is missing) gets one inferred from `covered` and `top_score`:
   covered with no score is a stored answer, covered with a score is course
   content, not covered with no score is an FAQ answer, not covered with a
-  score at or above the threshold is a referral, and anything else is not
+  score at or above today's slide threshold is a referral, and anything else is not
   covered. The badge tooltip says when a kind was inferred. Rows logged
   before `stored_topic` existed recorded stored answers as `course_content`;
   those are shown as stored answers too.
@@ -223,14 +229,51 @@ off-topic 0.378 to 0.509. 0.52 still separates them, but the closest
 off-topic question ("recommend a movie") came within 0.011 of the threshold.
 Worth watching as more off-topic questions come in.
 
-Changing the threshold is my call and my code: edit the value and the comment
-in `app/retrieval.py` by hand.
+The code default is my call and my code: to change it, edit the value and the
+comment in `app/retrieval.py` by hand. To try a different value without a
+deploy, use Settings instead (next section).
+
+## Changing the thresholds in Settings
+
+Settings, Limits and access, **Answer thresholds** holds both cutoffs:
+
+| Threshold | What it decides | Default when Settings has no override |
+| --- | --- | --- |
+| Slide threshold | "Slides scoring 0.52 or higher are used." Below it on every slide, the question is not covered | `NOT_COVERED_THRESHOLD` in `app/retrieval.py` (0.52, chosen by hand) |
+| Course-info threshold | The best Canvas chunk must score at least this and beat the best slide to answer from Canvas | the `INFO_THRESHOLD` environment variable, else 0.55 |
+
+- Each shows its current value and where it comes from: my code default, the
+  environment variable, or a Settings override.
+- Values run from 0.30 to 0.90 and are kept to 3 decimals. "Reset to default"
+  removes the override, so the default above applies again.
+- The values are stored as `slide_threshold` and `info_threshold` in the
+  `settings` table and read through its 30-second cache on every question, so
+  a change reaches every warm server within 30 seconds. No deploy needed.
+- Every change is recorded (who, when, old value to new value) in
+  `settings.threshold_history`, and the last few are listed under the
+  controls.
+
+What to keep in mind when moving one:
+
+- The score is the cosine similarity from `rank()`, the same number as the
+  Activity table's Top score.
+- Measured so far, across two 10-question checks: on-topic 0.543 to 0.712,
+  off-topic 0.377 to 0.509.
+- Higher declines more real questions; lower lets off-topic questions
+  through (and into narration in my voice).
+- After a change, run a new test (see "Run a new test" below): the
+  real-question eval's in-process target builds its retriever the same way
+  `/api/ask` does, so it uses the override when the local `.env` has the
+  Supabase keys; the threshold table needs `--threshold <new value>`. Then
+  watch the Activity table over the next few days.
 
 ## The course-info threshold (`INFO_THRESHOLD`)
 
-Course-info answers from Canvas have their own bar, set by the
-`INFO_THRESHOLD` environment variable (default 0.55, read on every question,
-so a change in Vercel takes effect on the next deploy). The best Canvas chunk
+Course-info answers from Canvas have their own bar: the Settings override
+when there is one, otherwise the `INFO_THRESHOLD` environment variable
+(default 0.55). Both are read on every question; an override in Settings
+applies within 30 seconds, while a change to the variable in Vercel takes
+effect on the next deploy. The best Canvas chunk
 must score at least this much **and** beat the best slide; otherwise the
 question goes on to the slides as before. 0.55 starts just above the
 logistics band from the Oct 7 eval (0.54 to 0.55 against slides), so a
