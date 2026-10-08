@@ -231,7 +231,7 @@ Needs [uv](https://docs.astral.sh/uv/). Nothing is installed into the repo (no `
 
 5. The page: FastAPI serves only `/api/*`. Run `vercel dev` for the page and the API together, or serve `public/` on its own with canned responses: `python3 -m http.server 8080 --directory public`, then open `http://localhost:8080/?mock=1`.
 
-Tests (no keys, no network, about 30 seconds; 1,123 passed and 4 skipped on October 8). GitHub runs the same command, plus the browser tests, on every pull request (`.github/workflows/tests.yml`); see [docs/TESTING_AND_SCORES.md](docs/TESTING_AND_SCORES.md) for coverage, the browser tests (`--e2e`) and the mock contract test:
+Tests (no keys, no network, about 30 seconds; 1,211 passed and 4 skipped on October 8). GitHub runs the same command, plus the browser tests, on every pull request (`.github/workflows/tests.yml`); see [docs/TESTING_AND_SCORES.md](docs/TESTING_AND_SCORES.md) for coverage, the browser tests (`--e2e`) and the mock contract test:
 
 ```bash
 uv run --no-project --with-requirements requirements.txt --with-requirements requirements-test.txt python -m pytest -q

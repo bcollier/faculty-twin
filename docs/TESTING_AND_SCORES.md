@@ -308,7 +308,7 @@ uv run --no-project --with-requirements requirements.txt --with-requirements req
 hypothesis, and the rapidfuzz, nicknames, nbformat, scikit-learn, pillow and
 scipy that `indexer/` and `evals/` need). Vercel never sees it.
 
-Expect about 1,120 passed and 4 skipped in about 30 seconds. Any failure means
+Expect about 1,210 passed and 4 skipped in about 30 seconds. Any failure means
 the code and the spec disagree; fix that before deploying. The skips are the
 two browser test files (they need `--e2e`, below), the Jev judge tests (they
 need deepeval, which only `evals/requirements.txt` installs), and one check

@@ -405,7 +405,8 @@ async function route(url, method, body) {
     return json(200, {
       keys: { ANTHROPIC_API_KEY: true, OPENAI_API_KEY: false, OPENROUTER_API_KEY: true, VOYAGE_API_KEY: true,
         ELEVENLABS_API_KEY: true, ELEVENLABS_VOICE_ID: true, SUPABASE_URL: true, SUPABASE_SERVICE_ROLE_KEY: true,
-        SESSION_SECRET: true, AUDIO_SIGNING_SECRET: true, STUDENT_PASSCODE: true, ADMIN_PASSCODE: true },
+        SESSION_SECRET: true, AUDIO_SIGNING_SECRET: true, STUDENT_PASSCODE: true, ADMIN_PASSCODE: true,
+        TWILIO_ACCOUNT_SID: false, TWILIO_AUTH_TOKEN: false, TWILIO_FROM: false, ALERT_TO_PHONE: false },
       llm: { provider: admin.settings.provider, model: admin.settings.model },
       voyage_model: 'voyage-3.5',
       content: { loaded: true, source: 'supabase', records: 412, slides: 380, info_chunks: 32, index_version: admin.settings.index_version },
