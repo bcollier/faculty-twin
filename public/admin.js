@@ -139,6 +139,8 @@ async function enter(status) {
   loadActivity();
   loadPrompts();
   loadThresholds();
+  // Settings > Evals lives in admin-evals.js; tell it the admin is signed in.
+  document.dispatchEvent(new CustomEvent('ft-admin-enter', { detail: { status } }));
 }
 
 /* ---------------- keys / status ---------------- */

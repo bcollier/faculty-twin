@@ -19,11 +19,19 @@ Three providers, plain httpx, no SDKs (keeps the Vercel bundle small):
 Which provider and model are active comes from the Supabase `settings` table
 (30 s cache, see settings_store), falling back to LLM_PROVIDER / LLM_MODEL.
 Keys stay in env vars; nothing here returns or logs them.
+
+Per-request override: Settings > Evals runs the real `answer()` path with a
+chosen generator model. `with model_override(provider, model):` sets a
+context variable that `settings_store.llm_choice()` (and so every model call in
+that request) reads first. It lives only in the request's own context, so the
+saved setting does not change and no student request ever sees it.
 """
 
 from __future__ import annotations
 
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -68,6 +76,30 @@ _FALLBACK_MODELS = {"claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5", "cl
 
 class LLMError(RuntimeError):
     pass
+
+
+# ---------------------------------------------------------------- per-request override
+
+_override: ContextVar[tuple[str, str] | None] = ContextVar("ft_llm_override", default=None)
+
+
+def current_override() -> tuple[str, str] | None:
+    """(provider, model) set by `model_override` in this context, or None."""
+    return _override.get()
+
+
+@contextmanager
+def model_override(provider: str, model: str):
+    """Use this provider and model for every model call inside the block, in this context only."""
+    if provider not in PROVIDERS:
+        raise LLMError(f"Unknown provider {provider!r}")
+    if not model:
+        raise LLMError("A model id is needed")
+    token = _override.set((provider, model))
+    try:
+        yield
+    finally:
+        _override.reset(token)
 
 
 def key_configured(provider: str) -> bool:

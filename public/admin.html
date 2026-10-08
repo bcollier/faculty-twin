@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="analytics.css">
   <script type="module" src="admin.js"></script>
   <script type="module" src="admin-analytics.js"></script>
+  <script type="module" src="admin-evals.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#admin-main">Skip to content</a>
@@ -56,6 +57,7 @@
         <li><a href="#sec-activity">Activity</a></li>
         <li><a href="#sec-prompts">Prompts</a></li>
         <li><a href="#sec-analytics">Analytics</a></li>
+        <li><a href="#sec-evals">Evals</a></li>
       </ul>
     </nav>
 
@@ -406,6 +408,169 @@
         <h3 class="an-h" id="an-pricing-h">Price table</h3>
         <p class="an-note muted small">Defaults were read from each provider's public price page on the date shown and are marked "verify". Edit a price and save; models you add here are used for the estimate. OpenRouter models not listed use OpenRouter's live price.</p>
         <div id="an-pricing"></div>
+      <!-- 8. Evals -->
+      <section class="panel" id="sec-evals" aria-labelledby="evals-h">
+        <h2 id="evals-h">Evals</h2>
+        <p class="panel-intro">Grade the twin on real student questions. Pick the models that answer (each runs the real ask path, with no change to the live model) and the models that judge (each scores six dimensions from 1 to 5 and gives a pass or fail). <a href="https://github.com/bcollier/faculty-twin/blob/main/docs/TESTING_AND_SCORES.md#run-evals-from-settings" target="_blank" rel="noopener">How evals work</a>.</p>
+        <p class="note" id="ev-privacy">Question text is de-identified and private: it lives only in the private bucket, shows only here behind the admin passcode, and never goes in git or a public link.</p>
+
+        <h3 class="h-sub">Question set</h3>
+        <dl class="kv" id="ev-q-kv"></dl>
+        <ul class="pills ev-cats" id="ev-q-cats" aria-label="Questions per category"></ul>
+        <p class="status-line" id="ev-q-status" role="status"></p>
+        <details class="ev-details" id="ev-q-details">
+          <summary>Show the questions (private)</summary>
+          <div class="table-wrap ev-scroll" tabindex="0" role="region" aria-label="Eval questions">
+            <table class="data stack">
+              <thead><tr><th scope="col">Id</th><th scope="col">Category</th><th scope="col">Expected</th><th scope="col">Question</th><th scope="col">How Ben or the TA replied</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+              <tbody id="ev-q-body"></tbody>
+            </table>
+          </div>
+          <ul class="ev-legend-list" id="ev-q-legend"></ul>
+          <form class="subform" id="ev-q-form" novalidate>
+            <fieldset class="bare">
+              <legend id="ev-q-form-legend">Add a question</legend>
+              <p class="hint">Rewrite it so no student can be recognized: no names, emails, ids, dates or places. The same privacy checks as the command line run when you save.</p>
+              <div class="field"><label for="ev-q-text">Question</label><textarea id="ev-q-text" rows="2" maxlength="1000" required></textarea></div>
+              <div class="grid-2">
+                <div class="field"><label for="ev-q-cat">Category</label><select id="ev-q-cat"></select></div>
+                <div class="field"><label class="check"><input type="checkbox" id="ev-q-ans"> The course material can answer it</label></div>
+              </div>
+              <div class="field"><label for="ev-q-ref">How Ben or the TA replied (optional)</label><textarea id="ev-q-ref" rows="2" maxlength="2000"></textarea></div>
+              <div class="actions">
+                <button class="btn" type="submit" id="ev-q-save">Add question</button>
+                <button class="btn btn-ghost" type="button" id="ev-q-cancel" hidden>Cancel edit</button>
+              </div>
+              <p class="status-line" id="ev-q-form-status" role="status"></p>
+            </fieldset>
+          </form>
+        </details>
+
+        <h3 class="h-sub">Calibrate a judge first</h3>
+        <p class="hint">Scores eight invented answers whose right verdict is known (a grounded answer, an invented fact, a promised extension, a wrong decline, and so on). Don't trust a judge on real answers until it meets them.</p>
+        <form class="ev-row" id="ev-cal-form" novalidate>
+          <div class="field"><label for="ev-cal-provider">Provider</label>
+            <select id="ev-cal-provider"><option value="anthropic">Claude</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select></div>
+          <div class="field ev-grow"><label for="ev-cal-model">Judge model</label>
+            <input id="ev-cal-model" type="text" list="ev-models-anthropic" autocomplete="off" spellcheck="false" required></div>
+          <div class="field ev-end"><button class="btn" type="submit" id="ev-cal-go">Calibrate</button></div>
+        </form>
+        <div class="progress" id="ev-cal-bar" hidden><span></span></div>
+        <p class="status-line" id="ev-cal-status" role="status"></p>
+
+        <h3 class="h-sub">Start a run</h3>
+        <form class="subform" id="ev-run-form" novalidate>
+          <fieldset class="bare">
+            <legend class="visually-hidden">New eval run</legend>
+            <div class="field"><label for="ev-name">Name</label><input id="ev-name" type="text" maxlength="80" placeholder="After the logistics fix"></div>
+            <div class="grid-2">
+              <div class="field">
+                <span class="field-label" id="ev-gen-label">Models that answer (up to 3)</span>
+                <div class="ev-row">
+                  <select id="ev-gen-provider" aria-label="Answering model provider"><option value="anthropic">Claude</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
+                  <input id="ev-gen-model" type="text" list="ev-models-anthropic" aria-label="Answering model id" autocomplete="off" spellcheck="false">
+                  <button class="btn btn-small" type="button" id="ev-gen-add">Add</button>
+                </div>
+                <ul class="pills ev-chips" id="ev-gen-list" aria-labelledby="ev-gen-label"></ul>
+              </div>
+              <div class="field">
+                <span class="field-label" id="ev-judge-label">Models that judge (up to 3)</span>
+                <div class="ev-row">
+                  <select id="ev-judge-provider" aria-label="Judge provider"><option value="anthropic">Claude</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
+                  <input id="ev-judge-model" type="text" list="ev-models-anthropic" aria-label="Judge model id" autocomplete="off" spellcheck="false">
+                  <button class="btn btn-small" type="button" id="ev-judge-add">Add</button>
+                </div>
+                <ul class="pills ev-chips" id="ev-judge-list" aria-labelledby="ev-judge-label"></ul>
+                <p class="hint">Use judges from a different model family than the answering model. Jev runs from the command line only (it needs deepeval, which is not in the Vercel bundle).</p>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="field"><label for="ev-top">Number of questions (1 to 30)</label><input id="ev-top" type="number" min="1" max="30" value="25" aria-describedby="ev-top-hint">
+                <p class="hint" id="ev-top-hint">Categories are taken in turn, most common first, newest question first.</p></div>
+              <fieldset class="field bare"><legend class="field-label">Categories</legend><div class="ev-catpick" id="ev-cat-pick"></div></fieldset>
+            </div>
+            <div class="actions"><button class="btn" type="submit" id="ev-estimate">Check the estimate</button></div>
+            <div class="ev-estimate" id="ev-estimate-box" hidden aria-live="polite"></div>
+            <div class="actions" id="ev-start-row" hidden>
+              <button class="btn btn-primary" type="button" id="ev-start">Confirm and start</button>
+            </div>
+            <p class="status-line" id="ev-run-status" role="status"></p>
+          </fieldset>
+        </form>
+
+        <div class="ev-active" id="ev-active" hidden>
+          <p class="ev-active-title" id="ev-active-title"></p>
+          <div class="progress" role="progressbar" aria-labelledby="ev-active-title" aria-valuemin="0" aria-valuemax="100" id="ev-active-bar"><span></span></div>
+          <p class="status-line" id="ev-active-status" role="status"></p>
+          <div class="actions">
+            <button class="btn btn-primary btn-small" type="button" id="ev-resume">Resume</button>
+            <button class="btn btn-small" type="button" id="ev-pause" hidden>Pause</button>
+            <button class="btn btn-small btn-ghost" type="button" id="ev-cancel">Cancel run</button>
+          </div>
+        </div>
+
+        <h3 class="h-sub">Report card</h3>
+        <div class="ev-row ev-filters">
+          <div class="field"><label for="ev-metric">Show</label><select id="ev-metric"></select></div>
+        </div>
+        <figure class="ev-chart" id="ev-chart" aria-labelledby="ev-chart-cap">
+          <figcaption id="ev-chart-cap" class="hint"></figcaption>
+          <div class="ev-legend" id="ev-legend"></div>
+          <div class="ev-plot" id="ev-plot"></div>
+          <div class="ev-tip" id="ev-tip" role="tooltip" hidden></div>
+        </figure>
+        <details class="ev-details">
+          <summary>Report card as a table</summary>
+          <div class="table-wrap ev-scroll" tabindex="0" role="region" aria-label="Report card table">
+            <table class="data" id="ev-rc-table"></table>
+          </div>
+          <ul class="ev-legend-list" id="ev-rc-legend"></ul>
+        </details>
+        <h4 class="ev-h4">Judge calibration</h4>
+        <div class="table-wrap">
+          <table class="data stack">
+            <thead><tr><th scope="col">Judge</th><th scope="col">Cases met</th><th scope="col">Missed</th><th scope="col">When</th><th scope="col">From</th></tr></thead>
+            <tbody id="ev-cal-body"></tbody>
+          </table>
+        </div>
+        <ul class="ev-legend-list" id="ev-cal-legend"></ul>
+
+        <h3 class="h-sub">Runs</h3>
+        <div class="actions"><button type="button" class="btn btn-small" id="ev-refresh">Refresh</button><span class="status-line" id="ev-runs-status" aria-live="polite"></span></div>
+        <div class="ev-cards" id="ev-runs"></div>
+        <ul class="ev-legend-list" id="ev-runs-legend"></ul>
+
+        <h4 class="ev-h4">Compare two runs</h4>
+        <div class="ev-row">
+          <div class="field ev-grow"><label for="ev-cmp-a">Run A</label><select id="ev-cmp-a"></select></div>
+          <div class="field ev-grow"><label for="ev-cmp-b">Run B</label><select id="ev-cmp-b"></select></div>
+        </div>
+        <div class="table-wrap"><table class="data" id="ev-cmp-table"></table></div>
+        <ul class="ev-legend-list" id="ev-cmp-legend"></ul>
+
+        <div id="ev-detail" class="ev-detail" hidden tabindex="-1">
+          <h3 class="h-sub" id="ev-detail-h"></h3>
+          <p class="hint" id="ev-detail-meta"></p>
+          <div id="ev-detail-notes"></div>
+          <div class="ev-row ev-filters">
+            <div class="field"><label for="ev-f-cat">Category</label><select id="ev-f-cat"></select></div>
+            <div class="field"><label for="ev-f-gen">Model</label><select id="ev-f-gen"></select></div>
+            <div class="field"><label for="ev-f-verdict">Verdict</label>
+              <select id="ev-f-verdict"><option value="">Any</option><option value="pass">Every judge passed it</option><option value="fail">Any judge failed it</option><option value="split">Judges disagree</option><option value="error">A judge errored</option></select></div>
+          </div>
+          <p class="status-line" id="ev-detail-count" aria-live="polite"></p>
+          <div class="table-wrap ev-scroll-lg" tabindex="0" role="region" aria-label="Run results">
+            <table class="data stack ev-results">
+              <thead><tr><th scope="col">Question</th><th scope="col">Category</th><th scope="col">Answering model</th><th scope="col">Top score (similarity, 0–1)</th><th scope="col">Outcome</th><th scope="col">Judges: verdict, then six scores (1–5, 5 best)</th></tr></thead>
+              <tbody id="ev-detail-body"></tbody>
+            </table>
+          </div>
+          <ul class="ev-legend-list" id="ev-detail-legend"></ul>
+        </div>
+
+        <datalist id="ev-models-anthropic"></datalist>
+        <datalist id="ev-models-openai"></datalist>
+        <datalist id="ev-models-openrouter"></datalist>
       </section>
     </main>
   </div>

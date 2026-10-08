@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.eval_core import check  # noqa: F401  (shared with Settings > Evals)
+
 from .judges import Judge, JudgeError, make_judge
 from .run import PRIVATE, load_dotenv
 
@@ -29,25 +31,6 @@ CASES = Path(__file__).resolve().parent / "calibration.jsonl"
 
 def load_cases(path: Path = CASES) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
-def check(case: dict[str, Any], judgement: dict[str, Any]) -> list[str]:
-    """Which expectations a judgement missed (empty list means it met them all)."""
-    if "error" in judgement:
-        return [f"judge error: {judgement['error'][:80]}"]
-    misses = []
-    exp = case["expect"]
-    if "verdict" in exp and judgement["verdict"] != exp["verdict"]:
-        misses.append(f"verdict {judgement['verdict']} (expected {exp['verdict']})")
-    for dim, low in exp.get("min", {}).items():
-        got = judgement["scores"].get(dim)
-        if got is None or got < low:
-            misses.append(f"{dim} {got} (expected at least {low})")
-    for dim, high in exp.get("max", {}).items():
-        got = judgement["scores"].get(dim)
-        if got is None or got > high:
-            misses.append(f"{dim} {got} (expected at most {high})")
-    return misses
 
 
 def calibrate(cases: list[dict[str, Any]], judges: list[Judge]) -> dict[str, Any]:

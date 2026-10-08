@@ -369,22 +369,34 @@ def _judgements(row: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
-def eval_performance(read: Callable[[str], Optional[bytes]] = _read_bucket) -> dict[str, Any]:
-    """Average judge scores per generator model across every eval run in the bucket."""
-    raw = read("evals/index.json")
-    if not raw:
-        return {"available": False, "runs": 0, "models": [], "dimensions": list(EVAL_DIMENSIONS)}
-    try:
-        index = json.loads(raw)
-    except ValueError:
-        return {"available": False, "runs": 0, "models": [], "dimensions": list(EVAL_DIMENSIONS),
-                "error": "evals/index.json is not valid JSON."}
+def eval_performance(read: Callable[[str], Optional[bytes]] = _read_bucket,
+                     runs_index: Optional[list[dict[str, Any]]] = None) -> dict[str, Any]:
+    """Average judge scores per generator model across every eval run in the bucket.
+
+    `runs_index` is the run list when the caller already has it (Settings > Evals keeps one entry
+    object per run, which is fresher than a CDN copy of evals/index.json; see app/eval_store.py).
+    """
+    if runs_index is not None:
+        index: Any = {"runs": runs_index}
+    else:
+        raw = read("evals/index.json")
+        if not raw:
+            return {"available": False, "runs": 0, "models": [], "dimensions": list(EVAL_DIMENSIONS)}
+        try:
+            index = json.loads(raw)
+        except ValueError:
+            return {"available": False, "runs": 0, "models": [], "dimensions": list(EVAL_DIMENSIONS),
+                    "error": "evals/index.json is not valid JSON."}
     runs = index.get("runs", []) if isinstance(index, dict) else index
+    if not runs:
+        return {"available": False, "runs": 0, "models": [], "dimensions": list(EVAL_DIMENSIONS)}
     runs = [r for r in runs if isinstance(r, dict)][-EVAL_MAX_RUNS:]
     acc: dict[str, dict[str, Any]] = {}
     used_runs = 0
     for run in runs:
         run_id = str(run.get("id") or run.get("run_id") or "")
+        if run.get("excluded") or run.get("status") == "excluded":  # e.g. a run that errored (Settings > Evals)
+            continue
         if not re.match(r"^[A-Za-z0-9_.:\-]{1,80}$", run_id):
             continue
         body = read(f"evals/runs/{run_id}/results.jsonl")
@@ -403,9 +415,12 @@ def eval_performance(read: Callable[[str], Optional[bytes]] = _read_bucket) -> d
                                       "scores": defaultdict(list), "latency": []})
             a["runs"].add(run_id)
             a["answers"] += 1
-            if row.get("latency_ms") is not None:
+            latency = row.get("latency_ms")
+            if latency is None and isinstance(row.get("response"), dict):  # Settings > Evals rows keep it here
+                latency = row["response"].get("latency_ms")
+            if latency is not None:
                 try:
-                    a["latency"].append(float(row["latency_ms"]))
+                    a["latency"].append(float(latency))
                 except (TypeError, ValueError):
                     pass
             for j in _judgements(row):
@@ -436,7 +451,11 @@ def cached_eval_performance() -> dict[str, Any]:
     if _eval_cache and now - _eval_cache[0] < EVAL_CACHE_SECONDS:
         return _eval_cache[1]
     try:
-        result = eval_performance()
+        from . import eval_store
+
+        bucket = eval_store.default_bucket()
+        result = eval_performance(lambda path: bucket.get(path),
+                                  list(reversed(eval_store.read_index(bucket))))  # oldest first, like index.json
     except Exception as exc:  # a malformed run file never breaks the page
         config.log.warning("eval scores unavailable: %s", exc)
         result = {"available": False, "runs": 0, "models": [], "dimensions": list(EVAL_DIMENSIONS)}

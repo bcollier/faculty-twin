@@ -166,6 +166,12 @@ These are requirements from the spec, not polish. Do not weaken them:
   kept PG. Never commit them, never paste them into a PR, issue, or the prompt
   log, and never send raw email text to a model. Only `summary.md` /
   `summary.json` from a run may be shared. See `evals/README.md`.
+- Eval questions may also live in the private Supabase bucket under `evals/`
+  (for Settings > Evals), uploaded by `scripts/upload_eval_questions.py` after
+  `evals/dataset.py`'s checks pass. They are served only through the admin
+  routes behind the admin cookie: never through a signed URL, a public link, or
+  anything a student page can reach. The same leak and privacy checks run on
+  every upload and on every question typed or edited in Settings.
 
 ## Copy
 

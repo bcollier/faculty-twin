@@ -547,3 +547,7 @@ from .analytics import router as analytics_router  # noqa: E402
 app.include_router(admin_router)
 app.include_router(thresholds.router)
 app.include_router(analytics_router)
+
+from .admin_evals import router as admin_evals_router  # noqa: E402  (Settings > Evals)
+
+app.include_router(admin_evals_router)
