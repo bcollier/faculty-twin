@@ -231,10 +231,10 @@ Needs [uv](https://docs.astral.sh/uv/). Nothing is installed into the repo (no `
 
 5. The page: FastAPI serves only `/api/*`. Run `vercel dev` for the page and the API together, or serve `public/` on its own with canned responses: `python3 -m http.server 8080 --directory public`, then open `http://localhost:8080/?mock=1`.
 
-Tests (no keys, no network, about 10 seconds; 881 passed and 2 skipped on October 8):
+Tests (no keys, no network, about 30 seconds; 1,123 passed and 4 skipped on October 8). GitHub runs the same command, plus the browser tests, on every pull request (`.github/workflows/tests.yml`); see [docs/TESTING_AND_SCORES.md](docs/TESTING_AND_SCORES.md) for coverage, the browser tests (`--e2e`) and the mock contract test:
 
 ```bash
-uv run --no-project --with-requirements requirements.txt --with pytest --with rapidfuzz --with nicknames --with nbformat --with scikit-learn --with pillow --with scipy python -m pytest -q
+uv run --no-project --with-requirements requirements.txt --with-requirements requirements-test.txt python -m pytest -q
 ```
 
 ### Deploy
@@ -243,7 +243,7 @@ uv run --no-project --with-requirements requirements.txt --with pytest --with ra
 - **Keys** live in the Vercel project's environment variables (the names are in `.env.example`). `SESSION_SECRET` and `AUDIO_SIGNING_SECRET` must each be at least 32 random characters in production.
 - **Supabase, once:** run `supabase/schema.sql` in the SQL editor and create a private Storage bucket named `twin-content` (see [supabase/README.md](supabase/README.md)).
 - **Content** is not part of a deploy: it reaches the bucket through `indexer/upload.py`, and warm functions pick up a new `index_version` within a minute.
-- **After a deploy:** `uv run --no-project --with-requirements requirements.txt python -m scripts.live_smoke` checks login, topics, an on-topic, an off-topic and an FAQ question against the live site.
+- **After a deploy:** `uv run --no-project --with-requirements requirements.txt python -m scripts.live_smoke` checks login, topics, on-topic, off-topic, FAQ, course-info and suggested questions, a signed slide image and a stored audio file (first kilobyte only), and Settings status when `ADMIN_PASSCODE` is set, against the live site (`--json` for a JSON report).
 
 ### Rebuild the content
 
