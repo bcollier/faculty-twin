@@ -117,6 +117,20 @@ def test_embedding_records_voyage_tokens(monkeypatch):
     assert limits.read_counter(f"embed:{TODAY}:voyage:voyage-3.5:calls") == 1
 
 
+def test_eval_judges_record_their_tokens(monkeypatch):
+    from evals.judges import Judge
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+                                         "usage": {"prompt_tokens": 900, "completion_tokens": 80}})
+
+    Judge("openai", "gpt-6-luna", client=mock_client(handler))._send("S", "U")
+    assert limits.read_counter(f"usage:{TODAY}:eval_judge:openai:gpt-6-luna:in") == 900
+    assert limits.read_counter(f"usage:{TODAY}:eval_judge:openai:gpt-6-luna:out") == 80
+
+
 def test_sticky_purpose_wins_over_inner_tags():
     with usage.purpose("prompt_test", sticky=True):
         with usage.purpose("narration"):
