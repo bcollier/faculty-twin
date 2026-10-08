@@ -1394,3 +1394,15 @@ Two tests were added in `tests/test_retrieval.py`:
 - **Feedback:** thumbs up and down with reasons, a Settings inbox where my rewrite becomes a golden answer and an eval reference, Ask Ben, a Monday digest, think-alouds and pulse surveys.
 - **Assignment coach:** a help level per assignment, a hint ladder, and solution fingerprints checked in code.
 - **Seven stages**, thumbs first so v1 has a baseline, and seven decisions for me, starting with whether my cloned voice may speak outside material.
+
+### Prompt (Oct 8, later)
+
+> Yes, i'm fine with my voice speaking about something a model like opus 5.5 or astra has said The doc lists seven. The one that blocks Stage 3: may your cloned voice speak outside-class material? I recommend yes, with a spoken handoff (“this next part is from outside class”) and the “Beyond class” label. That means rewriting the voice safety rules in AGENTS.md and the spec first. The other six can wait until their stage.
+
+(The second half is the AI's previous reply, pasted back.)
+
+**Response summary.** Recorded decision 1 in `docs/V2.md`: my cloned voice may speak outside-class material, with the spoken handoff and the Beyond class label.
+- **New source tier:** a beyond part may also come from an approved model's own knowledge (to start: Claude Opus 5.5 and Astra, editable in Settings). It's for stable ideas only. Anything that changes over time still needs a cited source.
+- **Labeling:** the card names the model.
+- **Unapproved model:** a model-knowledge part is dropped when the active model isn't on the list.
+- **Safety rules:** drafted the replacement "Safety rules for the voice" for `AGENTS.md`. It goes in with the first Stage 3 PR rather than now, because until then the code still grounds every spoken word in course material.
