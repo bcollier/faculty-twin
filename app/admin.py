@@ -20,9 +20,10 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Callable
+from datetime import UTC, datetime
 from datetime import date as date_cls
-from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
@@ -60,6 +61,7 @@ from .main import (
     get_embedder,
     get_retriever,
 )
+from .storage import Content
 
 router = APIRouter(prefix="/api/admin")
 
@@ -121,6 +123,7 @@ def _check_course(raw: str) -> str:
 # ---------------------------------------------------------------- model price guard
 
 def max_price_per_mtok() -> dict[str, float]:
+    """The OpenRouter price ceiling per million tokens (prompt, completion): env overrides, else the defaults."""
     out = dict(config.DEFAULT_MAX_PRICE_PER_MTOK)
     for key, var in (("prompt", "LLM_MAX_PROMPT_PRICE_PER_MTOK"), ("completion", "LLM_MAX_COMPLETION_PRICE_PER_MTOK")):
         raw = config.env(var)
@@ -144,7 +147,8 @@ def check_model_price(provider: str, model: str) -> None:
     try:
         listing = llm.list_models("openrouter")
     except llm.LLMError as exc:
-        raise HTTPException(400, "Could not check this model's price on OpenRouter right now. Try again shortly.") from exc
+        raise HTTPException(
+            400, "Could not check this model's price on OpenRouter right now. Try again shortly.") from exc
     found = next((m for m in listing.get("models", []) if m.get("id") == model), None)
     if found is None:
         raise HTTPException(400, "OpenRouter does not list that model id.")
@@ -153,7 +157,8 @@ def check_model_price(provider: str, model: str) -> None:
         prompt = float(pricing.get("prompt")) * 1_000_000
         completion = float(pricing.get("completion")) * 1_000_000
     except (TypeError, ValueError) as exc:
-        raise HTTPException(400, "OpenRouter does not publish a fixed price for that model, so it cannot be used.") from exc
+        raise HTTPException(
+            400, "OpenRouter does not publish a fixed price for that model, so it cannot be used.") from exc
     if prompt < 0 or completion < 0:
         raise HTTPException(400, "That model has a variable price (a router), so it cannot be used.")
     ceiling = max_price_per_mtok()
@@ -167,6 +172,7 @@ def check_model_price(provider: str, model: str) -> None:
 
 
 def model_warning(provider: str, model: str) -> str | None:
+    """A warning for a Claude or OpenAI model id that is not on the curated list, else None."""
     if provider in ("anthropic", "openai") and model not in {m["id"] for m in llm.CURATED[provider]}:
         return "This model id is not on the curated list. Check its price before students use it."
     return None
@@ -176,6 +182,7 @@ def model_warning(provider: str, model: str) -> str | None:
 
 @router.post("/login", status_code=204)
 def admin_login(body: PasscodeBody, request: Request, response: Response) -> None:
+    """Check the admin passcode (rate limited per address) and set the 12-hour Settings cookie."""
     limits.check_login_rate(request, "admin")
     code = (body.passcode or "").strip()
     if not code or len(code) > 200 or not auth.check_admin_passcode(code):
@@ -192,20 +199,23 @@ def admin_logout(response: Response) -> dict[str, bool]:
 # ---------------------------------------------------------------- settings
 
 class SettingsBody(BaseModel):
-    provider: Optional[str] = None
-    model: Optional[str] = None
-    voice_id: Optional[str] = None
-    voice_fallback: Optional[str] = None
-    voice_fallback_voice: Optional[str] = None
-    daily_voice_char_cap: Optional[int] = None
-    daily_free_voice_char_cap: Optional[int] = None
-    student_passcode: Optional[str] = None
-    web_answers_enabled: Optional[bool] = None
-    daily_web_answer_cap: Optional[int] = None
-    web_answer_voice: Optional[str] = None  # "none" (text only) or "edge:<ShortName>"
+    """PUT /api/admin/settings: every field optional; only the fields sent are saved."""
+
+    provider: str | None = None
+    model: str | None = None
+    voice_id: str | None = None
+    voice_fallback: str | None = None
+    voice_fallback_voice: str | None = None
+    daily_voice_char_cap: int | None = None
+    daily_free_voice_char_cap: int | None = None
+    student_passcode: str | None = None
+    web_answers_enabled: bool | None = None
+    daily_web_answer_cap: int | None = None
+    web_answer_voice: str | None = None  # "none" (text only) or "edge:<ShortName>"
 
 
 def settings_view() -> dict[str, Any]:
+    """The settings Settings shows: model, voices, caps, web answers (never a key or the passcode hash)."""
     provider, model = settings_store.llm_choice()
     stored_voice = settings_store.get("voice_id")
     voice_source = voices.setting_source()
@@ -268,7 +278,7 @@ def _check_free_voice(name: str) -> None:
         )
 
 
-def _voice_values(raw: Optional[str]) -> dict[str, Any]:
+def _voice_values(raw: str | None) -> dict[str, Any]:
     """Validate a voice choice and return the settings rows to write (voice_id and voice_kind)."""
     try:
         parsed = voices.parse(raw)
@@ -306,6 +316,29 @@ def get_settings(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any
 
 @router.put("/settings")
 def put_settings(body: SettingsBody, _: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """Save the fields that were sent, after checking each. 400 names the first bad field."""
+    values: dict[str, Any] = {}
+    values.update(_model_values(body))
+    values.update(_voice_setting_values(body))
+    values.update(_cap_and_web_values(body))
+    if body.student_passcode is not None:
+        code = body.student_passcode.strip()
+        if not 6 <= len(code) <= 100:
+            raise HTTPException(400, "The student passcode must be 6 to 100 characters.")
+        values["student_passcode_hash"] = auth.hash_passcode(code)  # rotating signs every student out
+    if not values:
+        raise HTTPException(400, "Nothing to save.")
+    if "model" in values:
+        check_model_price(values["provider"], values["model"])
+    try:
+        settings_store.put(values)
+    except supa.SupabaseError as exc:
+        raise _db_error(exc) from exc
+    return settings_view()
+
+
+def _model_values(body: SettingsBody) -> dict[str, Any]:
+    """Provider and model. A provider alone takes its default model; a model alone keeps the provider."""
     values: dict[str, Any] = {}
     if body.provider is not None:
         if body.provider not in llm.PROVIDERS:
@@ -318,6 +351,12 @@ def put_settings(body: SettingsBody, _: auth.Session = Depends(auth.require_admi
             raise HTTPException(400, "That model id does not look right.")
         values["model"] = model
         values.setdefault("provider", settings_store.llm_choice()[0])
+    return values
+
+
+def _voice_setting_values(body: SettingsBody) -> dict[str, Any]:
+    """The voice that reads answers, and the free fallback for when ElevenLabs fails or is capped."""
+    values: dict[str, Any] = {}
     if "voice_id" in body.model_fields_set:
         values.update(_voice_values(body.voice_id))  # null: server default; "none": captions only
     if body.voice_fallback is not None:
@@ -325,63 +364,58 @@ def put_settings(body: SettingsBody, _: auth.Session = Depends(auth.require_admi
             raise HTTPException(400, "voice_fallback must be captions or free.")
         values["voice_fallback"] = body.voice_fallback
     if body.voice_fallback_voice is not None:
-        try:
-            parsed = voices.parse(body.voice_fallback_voice)
-        except voices.BadVoice as exc:
-            raise HTTPException(400, str(exc)) from exc
-        if not parsed or parsed[0] != voices.EDGE:
-            raise HTTPException(400, "The fallback must be one of the free Microsoft voices (edge:...).")
-        _check_free_voice(parsed[1])
-        values["voice_fallback_voice"] = f"edge:{parsed[1]}"
+        values["voice_fallback_voice"] = _free_voice(
+            body.voice_fallback_voice, "The fallback must be one of the free Microsoft voices (edge:...).")
+    return values
+
+
+def _free_voice(raw: str, not_free_message: str) -> str:
+    """"edge:<voice>" for a free Microsoft voice that exists; 400 for anything else (never an ElevenLabs voice)."""
+    try:
+        parsed = voices.parse(raw)
+    except voices.BadVoice as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not parsed or parsed[0] != voices.EDGE:
+        raise HTTPException(400, not_free_message)
+    _check_free_voice(parsed[1])
+    return f"edge:{parsed[1]}"
+
+
+def _cap(value: int, top: int, message: str) -> int:
+    if not 0 <= value <= top:
+        raise HTTPException(400, message)
+    return value
+
+
+def _cap_and_web_values(body: SettingsBody) -> dict[str, Any]:
+    """The daily caps, and the beyond-the-slides web answers (on or off, cap, voice)."""
+    values: dict[str, Any] = {}
     if body.daily_voice_char_cap is not None:
-        if not 0 <= body.daily_voice_char_cap <= 10_000_000:
-            raise HTTPException(400, "The daily voice cap must be between 0 and 10,000,000 characters.")
-        values["daily_voice_char_cap"] = body.daily_voice_char_cap
+        values["daily_voice_char_cap"] = _cap(
+            body.daily_voice_char_cap, 10_000_000, "The daily voice cap must be between 0 and 10,000,000 characters.")
     if body.daily_free_voice_char_cap is not None:
-        if not 0 <= body.daily_free_voice_char_cap <= 10_000_000:
-            raise HTTPException(400, "The free voice cap must be between 0 and 10,000,000 characters.")
-        values["daily_free_voice_char_cap"] = body.daily_free_voice_char_cap
+        values["daily_free_voice_char_cap"] = _cap(
+            body.daily_free_voice_char_cap, 10_000_000,
+            "The free voice cap must be between 0 and 10,000,000 characters.")
     if body.web_answers_enabled is not None:
         values["web_answers_enabled"] = bool(body.web_answers_enabled)
     if body.daily_web_answer_cap is not None:
-        if not 0 <= body.daily_web_answer_cap <= 100_000:
-            raise HTTPException(400, "The daily web answer cap must be between 0 and 100,000.")
-        values["daily_web_answer_cap"] = body.daily_web_answer_cap
+        values["daily_web_answer_cap"] = _cap(
+            body.daily_web_answer_cap, 100_000, "The daily web answer cap must be between 0 and 100,000.")
     if body.web_answer_voice is not None:
         # Web answers are never read in my clone: only "none" or a free Microsoft voice.
         raw = body.web_answer_voice.strip()
-        if raw in ("", "none"):
-            values["web_answer_voice"] = "none"
-        else:
-            try:
-                parsed = voices.parse(raw)
-            except voices.BadVoice as exc:
-                raise HTTPException(400, str(exc)) from exc
-            if not parsed or parsed[0] != voices.EDGE:
-                raise HTTPException(400, "Web answers can only be read by a free Microsoft voice (edge:...), never "
-                                         "the voice clone or another ElevenLabs voice.")
-            _check_free_voice(parsed[1])
-            values["web_answer_voice"] = f"edge:{parsed[1]}"
-    if body.student_passcode is not None:
-        code = body.student_passcode.strip()
-        if not 6 <= len(code) <= 100:
-            raise HTTPException(400, "The student passcode must be 6 to 100 characters.")
-        values["student_passcode_hash"] = auth.hash_passcode(code)
-    if not values:
-        raise HTTPException(400, "Nothing to save.")
-    if "model" in values:
-        check_model_price(values["provider"], values["model"])
-    try:
-        settings_store.put(values)
-    except supa.SupabaseError as exc:
-        raise _db_error(exc) from exc
-    return settings_view()
+        values["web_answer_voice"] = "none" if raw in ("", "none") else _free_voice(
+            raw, "Web answers can only be read by a free Microsoft voice (edge:...), never "
+                 "the voice clone or another ElevenLabs voice.")
+    return values
 
 
 @router.get("/models")
 def models(
     provider: str = Query(..., max_length=20), _: auth.Session = Depends(auth.require_admin)
 ) -> dict[str, Any]:
+    """The model picker's list for one provider (curated, live, or both)."""
     if provider not in llm.PROVIDERS:
         raise HTTPException(400, "provider must be anthropic, openai, or openrouter.")
     try:
@@ -391,10 +425,31 @@ def models(
 
 
 class TestBody(BaseModel):
+    """POST /api/admin/test: a question and the provider and model to try (unsaved)."""
+
     question: str
-    provider: Optional[str] = None
-    model: Optional[str] = None
-    course: Optional[str] = None
+    provider: str | None = None
+    model: str | None = None
+    course: str | None = None
+
+
+def _model_to_test(body: TestBody) -> tuple[str, str]:
+    """The provider and model to test: the ones sent, else the saved ones, else the provider's default.
+
+    400 when the provider is unknown, the model id looks wrong, the key is missing, or the price is over the cap.
+    """
+    active_provider, active_model = settings_store.llm_choice()
+    provider = body.provider or active_provider
+    if provider not in llm.PROVIDERS:
+        raise HTTPException(400, "provider must be anthropic, openai, or openrouter.")
+    default = active_model if provider == active_provider else config.DEFAULT_LLM_MODELS[provider]
+    model = (body.model or default).strip()
+    if not MODEL_ID_RE.match(model):
+        raise HTTPException(400, "That model id does not look right.")
+    if not llm.key_configured(provider):
+        raise HTTPException(400, f"{llm.KEY_VARS[provider]} is not set, so this provider cannot be tested.")
+    check_model_price(provider, model)
+    return provider, model
 
 
 @router.post("/test")
@@ -409,16 +464,7 @@ def test_model(
     """Run one sample question through the chosen (unsaved) provider and model."""
     question = clean_question(body.question)
     course = clean_course(body.course)
-    active_provider, active_model = settings_store.llm_choice()
-    provider = body.provider or active_provider
-    if provider not in llm.PROVIDERS:
-        raise HTTPException(400, "provider must be anthropic, openai, or openrouter.")
-    model = (body.model or (active_model if provider == active_provider else config.DEFAULT_LLM_MODELS[provider])).strip()
-    if not MODEL_ID_RE.match(model):
-        raise HTTPException(400, "That model id does not look right.")
-    if not llm.key_configured(provider):
-        raise HTTPException(400, f"{llm.KEY_VARS[provider]} is not set, so this provider cannot be tested.")
-    check_model_price(provider, model)
+    provider, model = _model_to_test(body)
     limits.check_ask_rate(auth.visitor_key(session), limits.client_hash(request))  # counts against limits; not logged
     content = storage.store.get_or_503()
     started = time.monotonic()
@@ -430,14 +476,9 @@ def test_model(
         # Retrieval or embeddings are not ready: test the model on the first slides instead.
         if isinstance(exc, HTTPException) and exc.status_code != 503:
             raise
-        note = "Retrieval is not ready yet, so this test used the first three slides of the index."
-        from . import narration
-
-        sample = [r for r in content.records if r.get("kind", "slide") == "slide"][:3]
-        codes = {r["id"]: (playlist.related_code(content, r) or {}).get("source") for r in sample}
+        note = FIRST_SLIDES_NOTE
         with usage.purpose("prompt_test", sticky=True):
-            res = narration.narrate(question, sample, codes, provider=provider, model=model, complete=completer)
-        result = playlist.build_playlist(content, question, sample, res.narrations, res.follow_ups, None)
+            result, res = _first_slides_answer(content, question, completer, provider, model)
         info = {"narration": res.source, "errors": res.errors}
     return {
         "ok": info.get("narration") in ("llm", "stored") or not result["covered"],
@@ -459,22 +500,24 @@ def test_model(
 
 class PromptBody(BaseModel):
     text: str
-    note: Optional[str] = None
+    note: str | None = None
 
 
 class PromptNoteBody(BaseModel):
-    note: Optional[str] = None
+    note: str | None = None
 
 
 class PromptRestoreBody(BaseModel):
     version: str
-    note: Optional[str] = None
+    note: str | None = None
 
 
 class PromptTestBody(BaseModel):
+    """POST a draft prompt with a question to try it on."""
+
     text: str
     question: str
-    course: Optional[str] = None
+    course: str | None = None
 
 
 def _prompt_name(name: str) -> str:
@@ -517,7 +560,7 @@ def save_prompt(name: str, body: PromptBody, _: auth.Session = Depends(auth.requ
 
 @router.post("/prompts/{name}/reset")
 def reset_prompt(
-    name: str, body: Optional[PromptNoteBody] = None, _: auth.Session = Depends(auth.require_admin)
+    name: str, body: PromptNoteBody | None = None, _: auth.Session = Depends(auth.require_admin)
 ) -> dict[str, Any]:
     note = body.note if body else None
     return _prompt_write(lambda n, t: prompts.save(n, "", t, reset=True), _prompt_name(name), note or "")
@@ -561,44 +604,14 @@ def test_prompt(
     started = time.monotonic()
     with prompts.draft(name, text), usage.purpose("prompt_test", sticky=True):  # test spend, not student spend
         if name == web_answer.SCOPE_PROMPT:
-            scope = web_answer.classify(question, completer, provider=provider, model=model)
-            output = {"kind": scope.scope, "source": scope.source, "reason": scope.reason}
-            if scope.source == "keyword":
-                output["note"] = "The keyword pre-check caught this question, so the prompt was not used."
-            elif scope.source == "error":
-                output["note"] = "The reply was not a valid scope, so the question would be declined."
-            ok, errors = scope.source != "error", []
+            ok, errors, output = _test_scope_prompt(question, completer, provider, model)
         elif name == logistics.PROMPT_NAME:
-            kind = logistics.classify(question, completer, provider=provider, model=model)
-            output: dict[str, Any] = {"kind": kind.kind, "source": kind.source, "reason": kind.reason}
-            if kind.source == "keyword":
-                output["note"] = "The keyword pre-check caught this question, so the prompt was not used."
-            elif kind.source == "error":
-                output["note"] = "The reply was not a valid kind, so the question would be answered as course content."
-            ok, errors = kind.source != "error", []
+            ok, errors, output = _test_logistics_prompt(question, completer, provider, model)
         elif name == alerts.PROMPT_NAME:
-            content = storage.store.get_or_503()
-            output = alerts.detect(question, course, content, completer, provider=provider, model=model).public()
-            if output["keyword"] is None:
-                output["note"] = "The keyword pre-check found no problem phrase, so the prompt was not used."
-            elif output["classifier_source"] == "error":
-                output["note"] = "The reply was not usable, so only a strong keyword hit would alert."
-            output["note"] = output.get("note") or "A test never sends a text."
-            ok, errors = output["classifier_source"] != "error", []
+            ok, errors, output = _test_alert_prompt(question, course, completer, provider, model)
         else:
-            result, info = _answer_for_test(question, course, retriever, embedder, completer, provider, model)
-            output = {
-                "kind": info.get("kind"),
-                "narration_source": info.get("narration"),
-                "covered": result.get("covered"),
-                "message": result.get("message"),
-                "segments": [{"slide_id": s["slide_id"], "narration": s["narration"]} for s in result["segments"]],
-                "follow_ups": result.get("follow_ups") or [],
-                "links": result.get("links") or [],
-                "note": info.get("note"),
-            }
-            errors = info.get("errors") or []
-            ok = info.get("narration") in ("llm", "stored") or not result["covered"]
+            ok, errors, output = _test_answer_prompt(question, course, retriever, embedder, completer, provider,
+                                                     model)
     return {
         "ok": ok,
         "name": name,
@@ -610,25 +623,93 @@ def test_prompt(
     }
 
 
-def _answer_for_test(question, course, retriever, embedder, completer, provider, model):
+KEYWORD_NOTE = "The keyword pre-check caught this question, so the prompt was not used."
+
+
+def _test_scope_prompt(question: str, completer: Callable[..., str], provider: str,
+                       model: str) -> tuple[bool, list[str], dict[str, Any]]:
+    scope = web_answer.classify(question, completer, provider=provider, model=model)
+    output: dict[str, Any] = {"kind": scope.scope, "source": scope.source, "reason": scope.reason}
+    if scope.source == "keyword":
+        output["note"] = KEYWORD_NOTE
+    elif scope.source == "error":
+        output["note"] = "The reply was not a valid scope, so the question would be declined."
+    return scope.source != "error", [], output
+
+
+def _test_logistics_prompt(question: str, completer: Callable[..., str], provider: str,
+                           model: str) -> tuple[bool, list[str], dict[str, Any]]:
+    kind = logistics.classify(question, completer, provider=provider, model=model)
+    output: dict[str, Any] = {"kind": kind.kind, "source": kind.source, "reason": kind.reason}
+    if kind.source == "keyword":
+        output["note"] = KEYWORD_NOTE
+    elif kind.source == "error":
+        output["note"] = "The reply was not a valid kind, so the question would be answered as course content."
+    return kind.source != "error", [], output
+
+
+def _test_alert_prompt(question: str, course: str | None, completer: Callable[..., str], provider: str,
+                       model: str) -> tuple[bool, list[str], dict[str, Any]]:
+    """The incident classifier on its own: a test never sends a text."""
+    content = storage.store.get_or_503()
+    output = alerts.detect(question, course, content, completer, provider=provider, model=model).public()
+    if output["keyword"] is None:
+        output["note"] = "The keyword pre-check found no problem phrase, so the prompt was not used."
+    elif output["classifier_source"] == "error":
+        output["note"] = "The reply was not usable, so only a strong keyword hit would alert."
+    output["note"] = output.get("note") or "A test never sends a text."
+    return output["classifier_source"] != "error", [], output
+
+
+def _test_answer_prompt(question: str, course: str | None, retriever: Retriever, embedder: Any,
+                        completer: Callable[..., str], provider: str,
+                        model: str) -> tuple[bool, list[str], dict[str, Any]]:
+    """Any other prompt: a whole answer through the real path, with the draft in place."""
+    result, info = _answer_for_test(question, course, retriever, embedder, completer, provider, model)
+    output = {
+        "kind": info.get("kind"),
+        "narration_source": info.get("narration"),
+        "covered": result.get("covered"),
+        "message": result.get("message"),
+        "segments": [{"slide_id": s["slide_id"], "narration": s["narration"]} for s in result["segments"]],
+        "follow_ups": result.get("follow_ups") or [],
+        "links": result.get("links") or [],
+        "note": info.get("note"),
+    }
+    ok = info.get("narration") in ("llm", "stored") or not result["covered"]
+    return ok, info.get("errors") or [], output
+
+
+FIRST_SLIDES_NOTE = "Retrieval is not ready yet, so this test used the first three slides of the index."
+
+
+def _first_slides_answer(content: Content, question: str, completer: Callable[..., str], provider: str,
+                         model: str) -> tuple[dict[str, Any], Any]:
+    """Narrate the index's first three slides: how a model or prompt is tested before retrieval exists."""
+    from . import narration
+
+    sample = [r for r in content.records if r.get("kind", "slide") == "slide"][:3]
+    codes = {r["id"]: (playlist.related_code(content, r) or {}).get("source") for r in sample}
+    res = narration.narrate(question, sample, codes, provider=provider, model=model, complete=completer)
+    return playlist.build_playlist(content, question, sample, res.narrations, res.follow_ups, None), res
+
+
+def _answer_for_test(question: str, course: str | None, retriever: Retriever, embedder: Any,
+                     completer: Callable[..., str], provider: str, model: str) -> tuple[dict[str, Any], dict[str, Any]]:
     content = storage.store.get_or_503()
     try:
         return answer(question, course, content, retriever, embedder, completer, provider, model)
     except RetrievalNotReady:
-        from . import narration
-
-        sample = [r for r in content.records if r.get("kind", "slide") == "slide"][:3]
-        codes = {r["id"]: (playlist.related_code(content, r) or {}).get("source") for r in sample}
-        res = narration.narrate(question, sample, codes, provider=provider, model=model, complete=completer)
-        result = playlist.build_playlist(content, question, sample, res.narrations, res.follow_ups, None)
-        note = "Retrieval is not ready yet, so this test used the first three slides of the index."
-        return result, {"narration": res.source, "errors": res.errors, "note": note, "kind": "course_content"}
+        result, res = _first_slides_answer(content, question, completer, provider, model)
+        return result, {"narration": res.source, "errors": res.errors, "note": FIRST_SLIDES_NOTE,
+                        "kind": "course_content"}
 
 
 # ---------------------------------------------------------------- status and activity
 
 @router.get("/status")
 def status(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """What Settings > Status shows: which keys are set, the loaded index, today's counters."""
     loaded = storage.store.loaded
     if loaded is None:
         try:
@@ -708,6 +789,7 @@ def activity_row(row: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/log")
 def question_log(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """The last 50 question-log rows for Settings > Activity (scrubbed text and scores only)."""
     try:
         return {"rows": [activity_row(r) for r in limits.recent_questions(50)]}
     except supa.SupabaseError as exc:
@@ -742,13 +824,8 @@ def preview_path(setting: str) -> str:
     return f"/api/admin/voice-preview?voice={setting}"
 
 
-@router.get("/voices")
-def list_voice_options(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
-    """Every voice Settings can pick, in three groups: my clone, ElevenLabs stock, free Microsoft.
-
-    Ids are what `PUT /api/admin/settings {voice_id}` takes. "none" (captions
-    only) and null (server default) are offered by the page itself.
-    """
+def _eleven_voices() -> tuple[list[dict[str, Any]], list[dict[str, Any]], str | None]:
+    """(clones, stock voices, error) from ElevenLabs; the default voice first among the clones."""
     default_id = config.env("ELEVENLABS_VOICE_ID")
     clone: list[dict[str, Any]] = []
     stock: list[dict[str, Any]] = []
@@ -772,6 +849,17 @@ def list_voice_options(_: auth.Session = Depends(auth.require_admin)) -> dict[st
             eleven_error = f"Could not load ElevenLabs voices: {exc}"
     clone.sort(key=lambda e: (not e["is_default"], str(e["name"]).lower()))
     stock.sort(key=lambda e: str(e["name"]).lower())
+    return clone, stock, eleven_error
+
+
+@router.get("/voices")
+def list_voice_options(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """Every voice Settings can pick, in three groups: my clone, ElevenLabs stock, free Microsoft.
+
+    Ids are what `PUT /api/admin/settings {voice_id}` takes. "none" (captions
+    only) and null (server default) are offered by the page itself.
+    """
+    clone, stock, eleven_error = _eleven_voices()
     free = [
         {
             "voice_id": f"edge:{short}",
@@ -832,27 +920,27 @@ async def voice_preview(
 # ---------------------------------------------------------------- courses and sessions
 
 class CourseBody(BaseModel):
-    course: Optional[str] = None  # the Settings page sends `course`; the spec says `code`; both work
-    code: Optional[str] = None
+    course: str | None = None  # the Settings page sends `course`; the spec says `code`; both work
+    code: str | None = None
     title: str
-    term: Optional[str] = None
+    term: str | None = None
 
 
 class SessionBody(BaseModel):
     course: str
     session: int
-    date: Optional[str] = None
-    title: Optional[str] = None
-    visible: Optional[bool] = True
+    date: str | None = None
+    title: str | None = None
+    visible: bool | None = True
 
 
 class SessionPatch(BaseModel):
-    visible: Optional[bool] = None
-    title: Optional[str] = None
-    date: Optional[str] = None
+    visible: bool | None = None
+    title: str | None = None
+    date: str | None = None
 
 
-def _check_date(value: Optional[str]) -> Optional[str]:
+def _check_date(value: str | None) -> str | None:
     if value in (None, ""):
         return None
     try:
@@ -861,7 +949,7 @@ def _check_date(value: Optional[str]) -> Optional[str]:
         raise HTTPException(400, "date must look like 2026-10-05.") from exc
 
 
-def _check_title(value: Optional[str], what: str) -> Optional[str]:
+def _check_title(value: str | None, what: str) -> str | None:
     if value is None:
         return None
     value = value.strip()
@@ -877,23 +965,55 @@ def list_courses(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any
         loaded = storage.store.get()
     except storage.ContentUnavailable:
         loaded = None
-    course_rows: list[dict[str, Any]] = []
-    session_rows: list[dict[str, Any]] = []
-    source_rows: list[dict[str, Any]] = []
-    if config.supabase_configured():
-        try:
-            course_rows = supa.select("courses", {"select": "*", "order": "code"})
-            session_rows = supa.select("sessions", {"select": "*", "order": "course,session"})
-            source_rows = supa.select("sources", {"select": "*", "order": "updated_at.desc"})
-        except supa.SupabaseError as exc:
-            raise _db_error(exc) from exc
+    course_rows, session_rows, source_rows = _catalog_rows()
+    courses = _CourseTree({c["code"]: {"course": c["code"], "title": c.get("title"), "term": c.get("term"),
+                                       "sessions": {}} for c in course_rows})
+    for s in session_rows:
+        row = courses.session(s["course"], int(s["session"]))
+        row.update({"date": s.get("date"), "title": s.get("title"), "visible": s.get("visible", True)})
+    for src in source_rows:  # newest first: keep the latest per kind
+        row = courses.session(src["course"], int(src["session"]))
+        if row["sources"].get(src["kind"]) is None:
+            row["sources"][src["kind"]] = {
+                "id": src["id"],
+                "status": src["status"],
+                "message": src.get("message"),
+                "path": src["path"],
+                "updated_at": src.get("updated_at"),
+            }
+    if loaded is not None:
+        courses.add_index(loaded.records)
+    for c in courses.by_code.values():
+        for row in c["sessions"].values():
+            _summarize_session(row)
+    return {
+        "courses": [
+            {**c, "sessions": [c["sessions"][k] for k in sorted(c["sessions"])]}
+            for _, c in sorted(courses.by_code.items())
+        ]
+    }
 
-    courses: dict[str, dict[str, Any]] = {}
-    for c in course_rows:
-        courses[c["code"]] = {"course": c["code"], "title": c.get("title"), "term": c.get("term"), "sessions": {}}
 
-    def sess(course: str, number: int) -> dict[str, Any]:
-        entry = courses.setdefault(course, {"course": course, "title": None, "term": None, "sessions": {}})
+def _catalog_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """(courses, sessions, sources) rows from Postgres; all empty without Supabase."""
+    if not config.supabase_configured():
+        return [], [], []
+    try:
+        return (supa.select("courses", {"select": "*", "order": "code"}),
+                supa.select("sessions", {"select": "*", "order": "course,session"}),
+                supa.select("sources", {"select": "*", "order": "updated_at.desc"}))
+    except supa.SupabaseError as exc:
+        raise _db_error(exc) from exc
+
+
+class _CourseTree:
+    """Course code -> course entry with its sessions by number, created on first mention."""
+
+    def __init__(self, by_code: dict[str, dict[str, Any]]) -> None:
+        self.by_code = by_code
+
+    def session(self, course: str, number: int) -> dict[str, Any]:
+        entry = self.by_code.setdefault(course, {"course": course, "title": None, "term": None, "sessions": {}})
         return entry["sessions"].setdefault(
             number,
             {
@@ -908,51 +1028,37 @@ def list_courses(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any
             },
         )
 
-    for s in session_rows:
-        row = sess(s["course"], int(s["session"]))
-        row.update({"date": s.get("date"), "title": s.get("title"), "visible": s.get("visible", True)})
-    for src in source_rows:  # newest first: keep the latest per kind
-        row = sess(src["course"], int(src["session"]))
-        if row["sources"].get(src["kind"]) is None:
-            row["sources"][src["kind"]] = {
-                "id": src["id"],
-                "status": src["status"],
-                "message": src.get("message"),
-                "path": src["path"],
-                "updated_at": src.get("updated_at"),
-            }
-    if loaded is not None:
-        for r in loaded.records:
+    def add_index(self, records: list[dict[str, Any]]) -> None:
+        """Count indexed slides and clips per session, and fill missing dates and titles from the index."""
+        for r in records:
             if r.get("kind", "slide") != "slide" or not r.get("course"):
                 continue
-            row = sess(str(r["course"]), int(r.get("session") or 0))
+            row = self.session(str(r["course"]), int(r.get("session") or 0))
             row["slides_indexed"] += 1
             row["clips"] += 1 if r.get("clip") else 0
             row["_transcript"] = row.get("_transcript") or bool(str(r.get("transcript") or "").strip())
             row["date"] = row["date"] or r.get("date")
             row["title"] = row["title"] or r.get("session_title")
-            courses[str(r["course"])]["title"] = courses[str(r["course"])]["title"] or r.get("course_title")
-    for c in courses.values():
-        for row in c["sessions"].values():
-            src = row["sources"]
-            row["has"] = {
-                "slides": bool(src["slides"]) or row["slides_indexed"] > 0,
-                "transcript": bool(src["transcript"]) or row.pop("_transcript", False),
-                "video": bool(src["video"]) or row["clips"] > 0,
-                "clips": row["clips"] > 0,
-                "indexed": row["slides_indexed"] > 0,
-            }
-            row.pop("_transcript", None)
-    return {
-        "courses": [
-            {**c, "sessions": [c["sessions"][k] for k in sorted(c["sessions"])]}
-            for _, c in sorted(courses.items())
-        ]
+            course = self.by_code[str(r["course"])]
+            course["title"] = course["title"] or r.get("course_title")
+
+
+def _summarize_session(row: dict[str, Any]) -> None:
+    """Add `has`: which material a session has, from an upload or from the index."""
+    src = row["sources"]
+    row["has"] = {
+        "slides": bool(src["slides"]) or row["slides_indexed"] > 0,
+        "transcript": bool(src["transcript"]) or row.pop("_transcript", False),
+        "video": bool(src["video"]) or row["clips"] > 0,
+        "clips": row["clips"] > 0,
+        "indexed": row["slides_indexed"] > 0,
     }
+    row.pop("_transcript", None)
 
 
 @router.post("/courses")
 def add_course(body: CourseBody, _: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """Add a course to the catalog."""
     _need_supabase()
     code = (body.course or body.code or "").strip()
     if not COURSE_RE.match(code):
@@ -979,6 +1085,7 @@ def _ensure_session(course: str, number: int, extra: dict[str, Any] | None = Non
 
 @router.post("/sessions")
 def add_session(body: SessionBody, _: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """Add a session to a course."""
     _need_supabase()
     extra = {
         "date": _check_date(body.date),
@@ -1020,6 +1127,8 @@ def patch_session(sid: str, body: SessionPatch, _: auth.Session = Depends(auth.r
 # ---------------------------------------------------------------- uploads and sources
 
 class UploadBody(BaseModel):
+    """POST /api/admin/uploads: what is being uploaded, for which session."""
+
     course: str
     session: int
     kind: str
@@ -1028,6 +1137,7 @@ class UploadBody(BaseModel):
 
 
 def safe_filename(name: str) -> str:
+    """A file name safe in a bucket path: no folders, only letters, digits, dot, dash and underscore."""
     base = name.replace("\\", "/").rsplit("/", 1)[-1].strip()
     base = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._")
     return base[:120]
@@ -1035,6 +1145,7 @@ def safe_filename(name: str) -> str:
 
 @router.post("/uploads")
 def create_upload(body: UploadBody, _: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """A sources row and a signed upload URL into the bucket's inbox; the local worker picks the file up."""
     _check_course(body.course)
     _need_supabase()
     if body.kind not in UPLOAD_KINDS:
@@ -1062,7 +1173,7 @@ def create_upload(body: UploadBody, _: auth.Session = Depends(auth.require_admin
                 "status": "pending_upload",
                 "message": None,
                 "size_bytes": body.size,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             },
             upsert_on="path",
         )[0]
@@ -1079,11 +1190,11 @@ def create_upload(body: UploadBody, _: auth.Session = Depends(auth.require_admin
     }
 
 
-def _set_status(source_id: int, status: str, message: Optional[str] = None) -> dict[str, Any]:
+def _set_status(source_id: int, status: str, message: str | None = None) -> dict[str, Any]:
     rows = supa.update(
         "sources",
         {"id": f"eq.{source_id}"},
-        {"status": status, "message": message, "updated_at": datetime.now(timezone.utc).isoformat()},
+        {"status": status, "message": message, "updated_at": datetime.now(UTC).isoformat()},
     )
     if not rows:
         raise HTTPException(404, "No such source.")
@@ -1092,10 +1203,11 @@ def _set_status(source_id: int, status: str, message: Optional[str] = None) -> d
 
 @router.get("/sources")
 def list_sources(
-    course: Optional[str] = Query(None, max_length=5),
-    session: Optional[int] = Query(None, ge=1, le=99),
+    course: str | None = Query(None, max_length=5),
+    session: int | None = Query(None, ge=1, le=99),
     _: auth.Session = Depends(auth.require_admin),
 ) -> dict[str, Any]:
+    """Uploads with their processing status, newest first, optionally for one course or session."""
     _need_supabase()
     params = {"select": "*", "order": "updated_at.desc", "limit": "500"}
     if course:
@@ -1132,6 +1244,7 @@ def complete_source(source_id: int, _: auth.Session = Depends(auth.require_admin
 
 @router.post("/sources/{source_id}/rerun")
 def rerun_source(source_id: int, _: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """Queue an upload for processing again (status back to uploaded)."""
     _need_supabase()
     try:
         return _set_status(source_id, "uploaded")

@@ -31,17 +31,32 @@ import re
 import secrets
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from . import (auth, config, embed, eval_core, eval_store, limits, llm, narration, pricing, prompts, settings_store,
-               storage, usage)
+from . import (
+    auth,
+    config,
+    embed,
+    eval_core,
+    eval_store,
+    limits,
+    llm,
+    narration,
+    pricing,
+    prompts,
+    settings_store,
+    storage,
+    usage,
+)
+from .admin import MODEL_ID_RE, check_model_price
 from .eval_runs import (  # noqa: F401  (re-exported for tests and callers)
     ACTIVE,
     FINISHED,
@@ -57,7 +72,6 @@ from .eval_runs import (  # noqa: F401  (re-exported for tests and callers)
     self_grading,
     summarize,
 )
-from .admin import MODEL_ID_RE, check_model_price
 from .main import RetrievalNotReady, Retriever, answer, get_completer, get_embedder, get_retriever
 
 router = APIRouter(prefix="/api/admin/evals")
@@ -81,7 +95,7 @@ def get_bucket() -> eval_store.Bucket:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _store_error(exc: eval_store.StoreError) -> HTTPException:
@@ -99,6 +113,7 @@ class ModelRef(BaseModel):
 
 
 def check_model(ref: ModelRef, what: str) -> dict[str, str]:
+    """A {provider, model} for a run, checked; 400 names which model is wrong and why."""
     provider = (ref.provider or "").strip().lower()
     model = (ref.model or "").strip()
     if provider == "jev" or model.lower().startswith("jev"):
@@ -166,8 +181,9 @@ def estimate(pairs: int, generators: list[dict[str, str]], judges: list[dict[str
         n_in = questions_per_gen * (TOKENS["narration"][0] + TOKENS["classifier"][0])
         n_out = questions_per_gen * (TOKENS["narration"][1] + TOKENS["classifier"][1])
         cost = None if price is None else round(n_in * price[0] + n_out * price[1], 4)
-        per_model.append({"model": model_key(g), "role": "generator", "calls": questions_per_gen * GENERATOR_CALLS_TYPICAL,
-                          "input_tokens": n_in, "output_tokens": n_out, "cost_usd": cost})
+        per_model.append({"model": model_key(g), "role": "generator",
+                          "calls": questions_per_gen * GENERATOR_CALLS_TYPICAL, "input_tokens": n_in,
+                          "output_tokens": n_out, "cost_usd": cost})
         if cost is None:
             unknown.append(model_key(g))
         else:
@@ -221,7 +237,7 @@ def load_questions(bucket: eval_store.Bucket) -> list[eval_core.Question]:
     try:
         return eval_core.parse_lines(text)
     except eval_core.DatasetError as exc:
-        raise HTTPException(409, f"The uploaded question set failed the privacy check ({exc}). Fix and re-upload it.") from exc
+        raise HTTPException(409, PRIVACY_CHECK_FAILED.format(exc=exc)) from exc
 
 
 def _category_summary(questions: list[eval_core.Question]) -> list[dict[str, Any]]:
@@ -231,6 +247,7 @@ def _category_summary(questions: list[eval_core.Question]) -> list[dict[str, Any
 @router.get("/questions")
 def get_questions(_: auth.Session = Depends(auth.require_admin),
                   bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
+    """The private question set for Settings > Evals (admin only, never a public link)."""
     try:
         questions = load_questions(bucket)
     except HTTPException as exc:
@@ -249,16 +266,19 @@ def _view(questions: list[eval_core.Question]) -> dict[str, Any]:
         "questions": [q.as_dict() for q in questions],
         "uploaded": True,
         "all_categories": list(eval_core.CATEGORIES),
-        "privacy": "De-identified student questions (evals/README.md). Private: admin only, never in git or a public link.",
+        "privacy": "De-identified student questions (evals/README.md). "
+                   "Private: admin only, never in git or a public link.",
     }
 
 
 class QuestionBody(BaseModel):
+    """A question typed or edited in Settings; it gets the same privacy checks as an upload."""
+
     question: str
     category: str
-    course: Optional[str] = None
-    month: Optional[str] = None
-    reference_answer: Optional[str] = None
+    course: str | None = None
+    month: str | None = None
+    reference_answer: str | None = None
     answerable: bool = False
 
 
@@ -288,7 +308,7 @@ def _questions_view(bucket: eval_store.Bucket, pending: tuple[str, dict[str, Any
     try:
         questions = eval_core.parse_lines("\n".join(lines) + "\n")
     except eval_core.DatasetError as exc:
-        raise HTTPException(409, f"The uploaded question set failed the privacy check ({exc}). Fix and re-upload it.") from exc
+        raise HTTPException(409, PRIVACY_CHECK_FAILED.format(exc=exc)) from exc
     return _view(questions)
 
 
@@ -324,12 +344,17 @@ def edit_question(qid: str, body: QuestionBody, _: auth.Session = Depends(auth.r
 
 # ---------------------------------------------------------------- runs
 
+PRIVACY_CHECK_FAILED = "The uploaded question set failed the privacy check ({exc}). Fix and re-upload it."
+
+
 class RunBody(BaseModel):
-    name: Optional[str] = None
+    """POST /api/admin/evals/runs: what to ask, which models answer and judge, and the confirmation."""
+
+    name: str | None = None
     generators: list[ModelRef]
     judges: list[ModelRef]
     top: int = 25
-    categories: Optional[list[str]] = None
+    categories: list[str] | None = None
     confirm: bool = False
 
 
@@ -385,7 +410,7 @@ def estimate_run(body: RunBody, _: auth.Session = Depends(auth.require_admin),
 
 def _new_run_id(bucket: eval_store.Bucket) -> str:
     # Checked with the listing, not a read: a read of a path that does not exist yet could be cached.
-    base = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    base = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     if base not in eval_store.bucket_names(bucket, "evals/runs/"):
         return base
     return f"{base}-{secrets.token_hex(3)}"
@@ -394,6 +419,7 @@ def _new_run_id(bucket: eval_store.Bucket) -> str:
 @router.post("/runs", status_code=201)
 def create_run(body: RunBody, _: auth.Session = Depends(auth.require_admin),
                bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
+    """Start a run after the estimate was confirmed: one at a time, within the per-run call cap."""
     if not body.confirm:
         raise HTTPException(400, "Check the estimate and confirm before starting a run.")
     try:
@@ -413,39 +439,45 @@ def create_run(body: RunBody, _: auth.Session = Depends(auth.require_admin),
     name = re.sub(r"\s+", " ", body.name or "").strip()[:80]
     try:
         run_id = _new_run_id(bucket)
-        run = {
-            "id": run_id,
-            "nonce": secrets.token_hex(6),  # keys this run's in-process embedding cache
-            "name": name or f"Eval {run_id[:8]}",
-            "kind": "admin",
-            "created_at": _now(),
-            "updated_at": _now(),
-            "finished_at": None,
-            "status": ACTIVE,
-            "status_note": None,
-            "generators": plan["generators"],
-            "judges": plan["judges"],
-            "top": body.top,
-            "categories": plan["categories"],
-            "questions": [q.as_dict() for q in plan["questions"]],
-            "pairs_total": len(plan["questions"]) * len(plan["generators"]),
-            "pairs_done": 0,
-            "calls_used": 0,
-            "call_cap": est["run_call_cap"],
-            "estimate": est,
-            "self_grading": plan["self_grading"],
-            "judge_prompt": "custom" if eval_core.judge_system_prompt() != eval_core.SYSTEM_PROMPT else "default",
-            "prompt_versions": prompt_versions(),
-            "notes": [],
-            "lease": None,
-            "summary": {"by_generator": {}},
-        }
+        run = _new_run(run_id, name, body, plan)
         eval_store.write_run(bucket, run)
         eval_store.write_results(bucket, run_id, [])
         eval_store.upsert_index(bucket, index_entry(run))
     except eval_store.StoreError as exc:
         raise _store_error(exc) from exc
     return {"run": public_run(run), "progress": progress(run)}
+
+
+def _new_run(run_id: str, name: str, body: RunBody, plan: dict[str, Any]) -> dict[str, Any]:
+    """A new run.json: what it will ask and who judges, its call cap, and which prompt versions it used."""
+    est = plan["estimate"]
+    return {
+        "id": run_id,
+        "nonce": secrets.token_hex(6),  # keys this run's in-process embedding cache
+        "name": name or f"Eval {run_id[:8]}",
+        "kind": "admin",
+        "created_at": _now(),
+        "updated_at": _now(),
+        "finished_at": None,
+        "status": ACTIVE,
+        "status_note": None,
+        "generators": plan["generators"],
+        "judges": plan["judges"],
+        "top": body.top,
+        "categories": plan["categories"],
+        "questions": [q.as_dict() for q in plan["questions"]],
+        "pairs_total": len(plan["questions"]) * len(plan["generators"]),
+        "pairs_done": 0,
+        "calls_used": 0,
+        "call_cap": est["run_call_cap"],
+        "estimate": est,
+        "self_grading": plan["self_grading"],
+        "judge_prompt": "custom" if eval_core.judge_system_prompt() != eval_core.SYSTEM_PROMPT else "default",
+        "prompt_versions": prompt_versions(),
+        "notes": [],
+        "lease": None,
+        "summary": {"by_generator": {}},
+    }
 
 
 def prompt_versions() -> dict[str, dict[str, Any]]:
@@ -533,6 +565,7 @@ class Budget:
 
 
 def counted(complete: Callable[..., str], budget: Budget) -> Callable[..., str]:
+    """A completer that takes one call from the run's budget before each model call."""
     def call(system: str, user: str, max_tokens: int, provider: str | None = None, model: str | None = None,
              **kw: Any) -> str:
         budget.take()
@@ -682,6 +715,10 @@ def _spend_check(run: dict[str, Any]) -> None:
 
 def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embedder: Callable[[str], np.ndarray],
              completer: Callable[..., str], judge_completer: Callable[..., str]) -> dict[str, Any]:
+    """Answer and judge the next pair of a run, inside one function call's time budget.
+
+    A lease on the pair keeps a second tab (or a retry) from working on it at the same time.
+    """
     started = time.monotonic()
     deadline = started + STEP_BUDGET_SECONDS
     run = eval_store.read_run(bucket, run_id)
@@ -694,15 +731,13 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
     _sync_progress(run, rows)
     if eval_store.is_cancelled(bucket, run_id):
         _finish(run, rows, "cancelled", "Cancelled in Settings.")
-        eval_store.write_run(bucket, run)
-        eval_store.upsert_index(bucket, index_entry(run))
+        _save_run(bucket, run)
         return {"progress": progress(run), "row": None}
     done = {r.get("pair") for r in rows}
     todo = [(i, q, g) for i, q, g in pairs_of(run) if i not in done]
     if not todo:
         _finish(run, rows, "done", bucket=bucket)
-        eval_store.write_run(bucket, run)
-        eval_store.upsert_index(bucket, index_entry(run))
+        _save_run(bucket, run)
         return {"progress": progress(run), "row": None}
     lease = run.get("lease") or {}
     if lease and lease.get("until", 0) > time.time() and lease.get("pair") not in done:
@@ -716,26 +751,8 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
     eval_store.write_run(bucket, run)
 
     budget = Budget(int(run.get("call_cap", run_call_cap())) - int(run.get("calls_used", 0)))
-    gen_complete = counted(completer, budget)
-    t0 = time.monotonic()
-    info: dict[str, Any] = {}
     try:
-        # Counted as eval spend in Settings > Analytics, not student narration (sticky: inner tags keep it).
-        with llm.model_override(gen["provider"], gen["model"]), usage.purpose("eval_generate", sticky=True), \
-                usage.tally() as spent:
-            playlist, info = answer(q["question"], None, content, retriever,
-                                    _cached_embedder(f"{run_id}:{run.get('nonce', '')}", q["qid"], embedder), gen_complete,
-                                    gen["provider"], gen["model"])
-        response = response_from(playlist, info, content, int((time.monotonic() - t0) * 1000))
-        response["usage"] = answer_usage(gen, spent)
-        if any(eval_core.is_billing_error(e) for e in info.get("errors") or []):
-            # The answering model's provider refused for billing reasons: the narration is a fallback, not the model.
-            response = {**response, "status": eval_core.PROVIDER_ERROR, "segments": [],
-                        "message": next(str(e)[:300] for e in info["errors"] if eval_core.is_billing_error(e))}
-    except RetrievalNotReady:
-        response = {"status": "retrieval_not_ready", "message": "retrieval not implemented yet", "segments": [],
-                    "follow_ups": [], "narration_source": None, "top_score": None, "latency_ms": 0,
-                    "outcome": None}
+        response, info = _answer_pair(run, run_id, q, gen, content, retriever, embedder, counted(completer, budget))
     except HTTPException as exc:
         run["lease"] = None
         eval_store.write_run(bucket, run)
@@ -748,15 +765,73 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
         return {"progress": progress(run), "row": None,
                 "waiting": {"seconds": 22, "reason": f"{exc.detail} Retrying this question shortly."}}
 
-    item = judge_item(q, response, web_path_available())
     judgements: list[dict[str, Any]] = []
     if response["status"] in ("ok", "not_covered"):
-        judge_complete = counted(judge_completer, budget)
-        system = eval_core.judge_system_prompt()
-        with ThreadPoolExecutor(max_workers=len(run["judges"])) as pool:
-            futures = [pool.submit(judge_one, j, item, judge_complete, deadline, system) for j in run["judges"]]
-            judgements = [f.result() for f in futures]
-    row = {
+        judgements = _judge_pair(run, q, response, counted(judge_completer, budget), deadline)
+    row = _result_row(q, pair, gen, response, info, judgements, budget, started)
+    rows = _record_row(bucket, run_id, row)
+    _sync_progress(run, rows)
+    run["lease"] = None
+    run["updated_at"] = _now()
+    if eval_store.is_cancelled(bucket, run_id):
+        _finish(run, rows, "cancelled", "Cancelled in Settings.")
+    elif run["pairs_done"] >= run["pairs_total"]:
+        _finish(run, rows, "done", bucket=bucket)
+    else:
+        run["summary"] = summarize(run, rows)
+    _save_run(bucket, run)
+    return {"progress": progress(run), "row": public_row(row)}
+
+
+def _save_run(bucket: eval_store.Bucket, run: dict[str, Any]) -> None:
+    """Write run.json and its entry in the runs list."""
+    eval_store.write_run(bucket, run)
+    eval_store.upsert_index(bucket, index_entry(run))
+
+
+def _answer_pair(run: dict[str, Any], run_id: str, q: dict[str, Any], gen: dict[str, str], content: Any,
+                 retriever: Retriever, embedder: Callable[[str], np.ndarray],
+                 gen_complete: Callable[..., str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """One answer through the real answer() path with the generator's model, as an eval response.
+
+    A billing refusal from the generator's provider makes the response a provider_error (its narration
+    would be a fallback, not the model). HTTPException (embeddings busy, cap) is left to the caller.
+    """
+    t0 = time.monotonic()
+    info: dict[str, Any] = {}
+    try:
+        # Counted as eval spend in Settings > Analytics, not student narration (sticky: inner tags keep it).
+        with llm.model_override(gen["provider"], gen["model"]), usage.purpose("eval_generate", sticky=True), \
+                usage.tally() as spent:
+            playlist, info = answer(q["question"], None, content, retriever,
+                                    _cached_embedder(f"{run_id}:{run.get('nonce', '')}", q["qid"], embedder),
+                                    gen_complete, gen["provider"], gen["model"])
+        response = response_from(playlist, info, content, int((time.monotonic() - t0) * 1000))
+        response["usage"] = answer_usage(gen, spent)
+        if any(eval_core.is_billing_error(e) for e in info.get("errors") or []):
+            # The answering model's provider refused for billing reasons: the narration is a fallback, not the model.
+            response = {**response, "status": eval_core.PROVIDER_ERROR, "segments": [],
+                        "message": next(str(e)[:300] for e in info["errors"] if eval_core.is_billing_error(e))}
+    except RetrievalNotReady:
+        response = {"status": "retrieval_not_ready", "message": "retrieval not implemented yet", "segments": [],
+                    "follow_ups": [], "narration_source": None, "top_score": None, "latency_ms": 0,
+                    "outcome": None}
+    return response, info
+
+
+def _judge_pair(run: dict[str, Any], q: dict[str, Any], response: dict[str, Any],
+                judge_complete: Callable[..., str], deadline: float) -> list[dict[str, Any]]:
+    """Every judge of the run scores the answer, in parallel, before the step's deadline."""
+    item = judge_item(q, response, web_path_available())
+    system = eval_core.judge_system_prompt()
+    with ThreadPoolExecutor(max_workers=len(run["judges"])) as pool:
+        futures = [pool.submit(judge_one, j, item, judge_complete, deadline, system) for j in run["judges"]]
+        return [f.result() for f in futures]
+
+
+def _result_row(q: dict[str, Any], pair: int, gen: dict[str, str], response: dict[str, Any], info: dict[str, Any],
+                judgements: list[dict[str, Any]], budget: Budget, started: float) -> dict[str, Any]:
+    return {
         "qid": q["qid"],
         "pair": pair,
         **{k: q[k] for k in EXPECTATION_KEYS if q.get(k)},
@@ -775,26 +850,21 @@ def run_step(run_id: str, bucket: eval_store.Bucket, retriever: Retriever, embed
         "seconds": round(time.monotonic() - started, 1),
         "at": _now(),
     }
-    # The row is the record: written once under its pair number. Two steps racing for the same pair
-    # write the same file, so a pair is never counted twice.
+
+
+def _record_row(bucket: eval_store.Bucket, run_id: str, row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Write the row, then the run's results file; returns every row of the run.
+
+    The row is the record: written once under its pair number. Two steps racing for the same pair
+    write the same file, so a pair is never counted twice.
+    """
     eval_store.write_row(bucket, run_id, row)
     rows = eval_store.read_results(bucket, run_id)
     if row["pair"] not in {r.get("pair") for r in rows}:  # the listing lagged: keep our own row
         rows.append(row)
         rows.sort(key=lambda r: r.get("pair") or 0)
     eval_store.write_results(bucket, run_id, rows)
-    _sync_progress(run, rows)
-    run["lease"] = None
-    run["updated_at"] = _now()
-    if eval_store.is_cancelled(bucket, run_id):
-        _finish(run, rows, "cancelled", "Cancelled in Settings.")
-    elif run["pairs_done"] >= run["pairs_total"]:
-        _finish(run, rows, "done", bucket=bucket)
-    else:
-        run["summary"] = summarize(run, rows)
-    eval_store.write_run(bucket, run)
-    eval_store.upsert_index(bucket, index_entry(run))
-    return {"progress": progress(run), "row": public_row(row)}
+    return rows
 
 
 def _sync_progress(run: dict[str, Any], rows: list[dict[str, Any]]) -> None:
@@ -821,6 +891,7 @@ def step(
     completer=Depends(get_completer),
     judge_completer=Depends(get_judge_completer),
 ) -> dict[str, Any]:
+    """Answer and judge the next pair of a run (the page calls this until the run is done)."""
     try:
         eval_store.check_run_id(run_id)
         return run_step(run_id, bucket, retriever, embedder, completer, judge_completer)
@@ -831,6 +902,7 @@ def step(
 @router.post("/runs/{run_id}/cancel")
 def cancel(run_id: str, _: auth.Session = Depends(auth.require_admin),
            bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
+    """Mark a run cancelled; the next step finishes it with what it has."""
     try:
         eval_store.check_run_id(run_id)
         run = eval_store.read_run(bucket, run_id)
@@ -851,6 +923,7 @@ def cancel(run_id: str, _: auth.Session = Depends(auth.require_admin),
 @router.get("/runs")
 def list_runs(_: auth.Session = Depends(auth.require_admin),
               bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
+    """Every run, newest first, and which one is still running."""
     try:
         runs = current_runs(bucket)
     except eval_store.StoreError as exc:
@@ -861,6 +934,7 @@ def list_runs(_: auth.Session = Depends(auth.require_admin),
 @router.get("/runs/{run_id}")
 def get_run(run_id: str, _: auth.Session = Depends(auth.require_admin),
             bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
+    """One run with its rows (slide material sent to the judges left out)."""
     try:
         eval_store.check_run_id(run_id)
         run = eval_store.read_run(bucket, run_id)
@@ -878,6 +952,7 @@ def get_run(run_id: str, _: auth.Session = Depends(auth.require_admin),
 @router.get("/report-card")
 def get_report_card(_: auth.Session = Depends(auth.require_admin),
                     bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
+    """The report card across runs, with each judge calibration."""
     try:
         return report_card(eval_store.read_index(bucket), eval_store.read_calibration(bucket))
     except eval_store.StoreError as exc:
@@ -889,6 +964,7 @@ def get_report_card(_: auth.Session = Depends(auth.require_admin),
 @router.get("/calibration")
 def get_calibration(_: auth.Session = Depends(auth.require_admin),
                     bucket: eval_store.Bucket = Depends(get_bucket)) -> dict[str, Any]:
+    """Each judge's calibration result on the invented cases."""
     cases = eval_core.load_calibration_cases()
     try:
         results = eval_store.read_calibration(bucket)
@@ -898,10 +974,12 @@ def get_calibration(_: auth.Session = Depends(auth.require_admin),
 
 
 class CalibrateBody(BaseModel):
+    """POST /api/admin/evals/calibrate: which judge to calibrate."""
+
     provider: str
     model: str
     restart: bool = False
-    attempt: Optional[str] = None  # from the previous step's reply, so a stale read never mixes attempts
+    attempt: str | None = None  # from the previous step's reply, so a stale read never mixes attempts
 
 
 @router.post("/calibration/step")
@@ -921,7 +999,7 @@ def calibration_step(body: CalibrateBody, _: auth.Session = Depends(auth.require
         attempt = body.attempt if body.attempt and eval_store.ATTEMPT_RE.match(body.attempt) else None
         if body.restart or (attempt is None and not isinstance(current, dict)):
             check_model_price(judge["provider"], judge["model"])
-            attempt = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(2)
+            attempt = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(2)
         elif attempt is None:
             if current.get("done"):
                 return {"judge": key, "attempt": current.get("attempt"), "result": current}

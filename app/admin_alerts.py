@@ -7,8 +7,8 @@ destination is shown as its last 4 digits and each variable only as set or not s
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -31,8 +31,9 @@ def _public(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def view() -> dict[str, Any]:
+    """The alerts section: whether texting is set up, today's cap and count, and recent alerts."""
     cfg = alerts.twilio_config()
-    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    day = datetime.now(UTC).strftime("%Y-%m-%d")
     try:
         records = alerts.with_counts(alerts.recent(alerts.LIST_LIMIT))
         error = None
@@ -57,8 +58,8 @@ def view() -> dict[str, Any]:
 
 
 class AlertSettingsBody(BaseModel):
-    enabled: Optional[bool] = None
-    daily_cap: Optional[int] = None
+    enabled: bool | None = None
+    daily_cap: int | None = None
 
 
 @router.get("")
@@ -68,6 +69,7 @@ def get_alerts(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
 
 @router.put("")
 def put_alerts(body: AlertSettingsBody, _: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """Turn instructor alerts on or off, or change the daily cap."""
     values: dict[str, Any] = {}
     if body.enabled is not None:
         values["alerts_enabled"] = bool(body.enabled)
@@ -91,7 +93,7 @@ def send_test(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
     cfg = alerts.twilio_config()
     if not cfg.ready:
         raise HTTPException(400, "Twilio is not set up yet: " + "; ".join(cfg.problems) + ".")
-    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    day = datetime.now(UTC).strftime("%Y-%m-%d")
     ok, _ = limits.increment(alerts.test_key(day), 1, cap=alerts.MAX_TESTS_PER_DAY, fail_open=False)
     if not ok:
         raise HTTPException(429, f"That is {alerts.MAX_TESTS_PER_DAY} test texts today. Try again tomorrow.")
