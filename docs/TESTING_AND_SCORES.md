@@ -6,7 +6,7 @@ The Activity section links here ("How these numbers work").
 
 Everything below describes what the code does today: `app/main.py` (`answer()`
 and `/api/ask`), `app/limits.py` (`log_question`, `recent_questions`),
-`app/admin.py` (`GET /api/admin/log`) and `public/admin.js`.
+`app/admin/status_activity.py` (`GET /api/admin/log`) and `public/admin.js`.
 
 ## Where things run
 
