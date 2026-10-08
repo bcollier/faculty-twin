@@ -171,7 +171,7 @@ let helperModule = null;
 /** The drawn helper slide, or null when it cannot be drawn (the answer shows without it). */
 async function helperFigure(slide) {
   try {
-    helperModule = helperModule || await import('./helper-slide.js');
+    helperModule = helperModule || await import('../helper-slide.js');
     return helperModule.renderHelperFigure(slide);
   } catch { return null; }
 }
