@@ -1425,3 +1425,13 @@ Two tests were added in `tests/test_retrieval.py`:
   - Removed stale "Ben writes this by hand" stubs in `app/retrieval.py`, `public/app.js` and `indexer/pregenerate.py`, and the "fail until Ben writes" note in `tests/test_retrieval.py`.
 - **Left as is:** branch, PR and squash merge, secrets, privacy, the voice safety rules (those change in V2 Stage 3), the prompt log itself, the rule that I write the README, and the demo script (a record of the submission).
 - **Checked:** full test suite, 1604 passed and 5 skipped. `ruff check .` and `node --check public/app.js` pass.
+
+### Prompt (Oct 8, later)
+
+> yes keep the prompt log. Astra. Which company makes it, and what’s its exact model ID? I need that to put it on the approved list for outside-class answers.  -> this is such a dumb question, just do a google search for it you can find this
+
+(The middle part is the AI's previous question, pasted back.)
+
+**Response summary.** Kept the prompt log rule. Looked up Astra: OpenAI's GPT-6 Astra, API model ID `gpt-6-astra`, announced September 3, 2026. It was already in the app's model list (`app/llm.py`) and price table (`app/pricing.py`). `docs/V2.md` now names the approved models by exact ID: `claude-opus-5-5` and `gpt-6-astra`.
+
+**Where the AI got it wrong.** It asked me which company makes Astra and for its model ID instead of looking it up. A web search answered it, and the ID was already in this repo.
