@@ -4,7 +4,7 @@
 
 Seven diagrams, each with a short explanation. They render on GitHub (Mermaid).
 
-**How Ben's hand-written code is marked.** Four pieces of the app were written by Ben by hand for the course assignment (since Oct 8 they are ordinary code that anyone can change): `rank()` and `select_segments()` in `app/retrieval.py`, the not-covered threshold `NOT_COVERED_THRESHOLD = 0.52` in the same file, and `onClipEnded()` in `public/app.js`. In flowcharts they are **yellow boxes with a thick gold border** and the words "Ben's code". In the sequence diagram they sit inside **yellow shaded bands** with a "Ben's code" note.
+**How the code Ben first wrote by hand is marked.** Four pieces of the app were written by Ben by hand for the course assignment: `rank()` and `select_segments()` in `app/retrieval.py`, the not-covered threshold `NOT_COVERED_THRESHOLD = 0.52` in the same file, and `onClipEnded()` in `public/app.js`. Since Oct 8 they are ordinary code that anyone can change. The two retrieval functions were rebuilt on Oct 8 and measured with evals (one matrix product for the scores; one course per answer, no repeated slides, a relative cutoff; see "Slide retrieval" in [SPEC.md](SPEC.md)); the threshold value and `onClipEnded()` are still Ben's as he wrote them. In flowcharts these pieces are **yellow boxes with a thick gold border**, labeled "Ben's code" or "first written by Ben, rebuilt Oct 8". In the sequence diagram they sit inside **yellow shaded bands** with the same note.
 
 Contents:
 
@@ -37,7 +37,7 @@ flowchart LR
     subgraph Vercel["Vercel"]
         CDN["Static files<br/>public/ on the CDN"]
         FN["FastAPI function<br/>app/main.py and app/*.py<br/>holds every key"]
-        RET["rank(), select_segments(),<br/>NOT_COVERED_THRESHOLD 0.52<br/>app/retrieval.py<br/>Ben's code"]
+        RET["rank(), select_segments(),<br/>NOT_COVERED_THRESHOLD 0.52<br/>app/retrieval.py<br/>first written by Ben, rebuilt Oct 8<br/>(0.52 is still Ben's value)"]
     end
 
     subgraph Supa["Supabase"]
@@ -91,7 +91,7 @@ flowchart LR
     class ARCH private
 ```
 
-Faculty Twin is one Vercel project: the static page (`public/`) on Vercel's CDN and one FastAPI function (`app/`) that holds every key. The browser never talks to a model or voice provider; it calls `/api/*` with a signed cookie and fetches slide images, clips and stored audio straight from the private Supabase bucket through links the function signed for an hour. Postgres holds the settings, rate-limit counters, the question log and the course catalog. Everything the function serves was built ahead of time on the local build machine, which holds the private Lecture Archive (class video, raw transcripts, rosters) and runs the `indexer/` pipeline and the upload worker. The two yellow boxes are Ben's hand-written code: retrieval on the server and the player's advance logic in the browser.
+Faculty Twin is one Vercel project: the static page (`public/`) on Vercel's CDN and one FastAPI function (`app/`) that holds every key. The browser never talks to a model or voice provider; it calls `/api/*` with a signed cookie and fetches slide images, clips and stored audio straight from the private Supabase bucket through links the function signed for an hour. Postgres holds the settings, rate-limit counters, the question log and the course catalog. Everything the function serves was built ahead of time on the local build machine, which holds the private Lecture Archive (class video, raw transcripts, rosters) and runs the `indexer/` pipeline and the upload worker. The two yellow boxes are the code Ben first wrote by hand: retrieval on the server (rebuilt Oct 8, with his 0.52 threshold kept) and the player's advance logic in the browser (still his).
 
 ## 2. One question, step by step
 
@@ -119,7 +119,7 @@ sequenceDiagram
         API->>V: embed the question once (input type query)
         V-->>API: question vector
         rect rgb(255, 243, 196)
-            Note over API: Ben's code: rank() scores every visible slide and every Canvas chunk with the same vector
+            Note over API: first written by Ben, rebuilt Oct 8: rank() scores every visible slide and every Canvas chunk with the same vector
         end
         alt best Canvas chunk at least 0.55 and above the best slide
             API->>M: answer only from the top 3 Canvas chunks (app/course_info.py)
@@ -127,7 +127,7 @@ sequenceDiagram
             API-->>UI: kind course_info, the From Canvas card with links
         else slides
             rect rgb(255, 243, 196)
-                Note over API: Ben's code: select_segments() keeps slides at or above the threshold 0.52, fills gaps, at most 5, deck order
+                Note over API: first written by Ben, rebuilt Oct 8: select_segments() keeps slides at or above 0.52 and within 0.12 of the best, one course, no repeated slide, fills gaps, at most 5, deck order
             end
             alt nothing selected
                 API-->>UI: covered false, the not-covered reply
@@ -163,7 +163,7 @@ sequenceDiagram
     UI->>B: GET the class clip (signed link), the walkthrough pauses
 ```
 
-A question starts in the browser and goes to `/api/ask` with the 7-day `ft_session` cookie. The function checks the cookie, the length and the rate limits, then tries the cheap answers first: a suggested question replays its stored playlist, and Ben's course FAQ answers with his own words, neither calling a model. Otherwise the question is embedded once, and Ben's `rank()` scores both the slides and the Canvas chunks with that one vector; a strong Canvas match becomes a short "From Canvas" answer, and otherwise Ben's `select_segments()` picks the slides against the 0.52 threshold. Chosen slides pass a logistics check and then one narration call, whose JSON is validated in code before anything is signed for the voice. The page shows each slide from a signed link, plays each narration through `/api/audio` (which speaks only text the server signed), and Ben's `onClipEnded()` moves the walkthrough along when each narration ends. While it plays, the labeled narration box highlights the word being spoken (word timings from the voice service, or a syllable estimate until they arrive) and the slide lights up, with a highlighter over the slide words the narrator is saying (word boxes the indexer read from the PDF, or OCR for picture slides; `public/readalong.js`).
+A question starts in the browser and goes to `/api/ask` with the 7-day `ft_session` cookie. The function checks the cookie, the length and the rate limits, then tries the cheap answers first: a suggested question replays its stored playlist, and Ben's course FAQ answers with his own words, neither calling a model. Otherwise the question is embedded once, and `rank()` scores both the slides and the Canvas chunks with that one vector; a strong Canvas match becomes a short "From Canvas" answer, and otherwise `select_segments()` picks the slides against Ben's 0.52 threshold, from one course, with no slide repeated. Chosen slides pass a logistics check and then one narration call, whose JSON is validated in code before anything is signed for the voice. The page shows each slide from a signed link, plays each narration through `/api/audio` (which speaks only text the server signed), and Ben's `onClipEnded()` moves the walkthrough along when each narration ends. While it plays, the labeled narration box highlights the word being spoken (word timings from the voice service, or a syllable estimate until they arrive) and the slide lights up, with a highlighter over the slide words the narrator is saying (word boxes the indexer read from the PDF, or OCR for picture slides; `public/readalong.js`).
 
 ## 3. How a question is routed
 
@@ -178,10 +178,10 @@ flowchart TD
     T -- no --> F{"Matches Ben's course FAQ?<br/>app/faq.py keyword patterns"}
     F -- yes --> FAQ["Ben's written answer, word for word<br/>Calendly button, TA card<br/>kind faq, no model"]
     F -- no --> E["Embed once with Voyage"]
-    E --> R["rank() slides and Canvas chunks<br/>Ben's code"]
+    E --> R["rank() slides and Canvas chunks<br/>first written by Ben, rebuilt Oct 8"]
     R --> C{"Best Canvas chunk at least 0.55<br/>and above the best slide?"}
     C -- yes --> INFO["From Canvas card<br/>short answer from the chunks + links<br/>kind course_info"]
-    C -- no --> SEL["select_segments() with threshold 0.52<br/>Ben's code"]
+    C -- no --> SEL["select_segments(): threshold 0.52,<br/>one course, no repeated slide, best 5<br/>first written by Ben, rebuilt Oct 8"]
     SEL --> COV{"Any slide selected?"}
     COV -- no --> X{"Course filter set?<br/>select_segments() on the other course's<br/>slides, same threshold"}
     X -- "slides picked" --> L
@@ -195,7 +195,7 @@ flowchart TD
     class NC,LOG stop
 ```
 
-Every question takes exactly one path, and the path is saved with it in the question log as its **kind** (the badge in Settings > Activity). The order is cheapest first: stored topics and the FAQ need no embedding and no model. After one embedding, the Canvas course-info index wins only when its best chunk clears its own threshold (0.55 by default) and beats every slide, so a concept question still gets slides. Ben's `select_segments()` decides between slides and "not covered" using the slide threshold (0.52, Ben's value, overridable in Settings > Answer thresholds). When a course filter is set and nothing in that course clears it, the same function gets the other course's slides before the question is declined or sent to the web (added Oct 8: the filter on 45-884 hid 70-445's frames and semantic networks slides); the student is told the slides are from the other course. The logistics check exists because meeting, absence and grade emails scored just above 0.52 in the October 7 eval; if that check fails for any reason the question is treated as course content, so it can never block a real answer. More detail: [TESTING_AND_SCORES.md](TESTING_AND_SCORES.md#how-a-question-is-answered).
+Every question takes exactly one path, and the path is saved with it in the question log as its **kind** (the badge in Settings > Activity). The order is cheapest first: stored topics and the FAQ need no embedding and no model. After one embedding, the Canvas course-info index wins only when its best chunk clears its own threshold (0.55 by default) and beats every slide, so a concept question still gets slides. `select_segments()` (first written by Ben, rebuilt Oct 8) decides between slides and "not covered" using the slide threshold (0.52, Ben's value, overridable in Settings > Answer thresholds). When a course filter is set and nothing in that course clears it, the same function gets the other course's slides before the question is declined or sent to the web (added Oct 8: the filter on 45-884 hid 70-445's frames and semantic networks slides); the student is told the slides are from the other course. The logistics check exists because meeting, absence and grade emails scored just above 0.52 in the October 7 eval; if that check fails for any reason the question is treated as course content, so it can never block a real answer. More detail: [TESTING_AND_SCORES.md](TESTING_AND_SCORES.md#how-a-question-is-answered).
 
 ## 4. The content pipeline
 
@@ -398,7 +398,7 @@ flowchart TD
 
     CLI --> ANS["The real answer() path<br/>(in-process, http, or a no-course baseline)"]
     UI --> ANS
-    ANS --> RS["rank() + select_segments()<br/>Ben's code"]
+    ANS --> RS["rank() + select_segments()<br/>first written by Ben, rebuilt Oct 8"]
     RS --> J["Up to 3 judges from different companies<br/>six scores 1 to 5 + pass or fail<br/>evals/rubric.py, app/eval_core.py"]
     CJ -.-> J
     J --> RES["results.jsonl, report.md<br/>question text: private"]
@@ -410,4 +410,4 @@ flowchart TD
     class RS ben
 ```
 
-The eval harness asks how well the twin answers the questions students really send. Questions come from Ben's email, are rewritten so no student can be identified, live only in the git-ignored `evals/private/`, and are checked again by `evals/dataset.py` before any model sees them; a checked copy can be uploaded to the private bucket for Settings > Evals. A run sends each question through the same `answer()` path students use (so Ben's retrieval decides what is covered), then up to three judges from different companies score six dimensions and give a verdict, after each judge has passed the eight invented calibration cases. Only the summary (counts and scores, no question text) is shareable; it feeds the report card in Settings. The command line and Settings share one implementation (`app/eval_core.py`), so their numbers agree. Details: [evals/README.md](../evals/README.md) and [TESTING_AND_SCORES.md](TESTING_AND_SCORES.md#run-evals-from-settings).
+The eval harness asks how well the twin answers the questions students really send. Questions come from Ben's email, are rewritten so no student can be identified, live only in the git-ignored `evals/private/`, and are checked again by `evals/dataset.py` before any model sees them; a checked copy can be uploaded to the private bucket for Settings > Evals. A run sends each question through the same `answer()` path students use (so the app's own retrieval decides what is covered; `python -m evals.retrieval_check` measures routing and retrieval alone, with no judges), then up to three judges from different companies score six dimensions and give a verdict, after each judge has passed the eight invented calibration cases. Only the summary (counts and scores, no question text) is shareable; it feeds the report card in Settings. The command line and Settings share one implementation (`app/eval_core.py`), so their numbers agree. Details: [evals/README.md](../evals/README.md) and [TESTING_AND_SCORES.md](TESTING_AND_SCORES.md#run-evals-from-settings).
