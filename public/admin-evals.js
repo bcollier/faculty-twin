@@ -310,7 +310,7 @@ function addModel(key, list) {
   const st = $('#ev-run-status');
   if (!model) { say(st, 'Type or pick a model id first.', 'err'); return; }
   if (/^jev/i.test(model)) { say(st, 'Jev runs from the command line only (it needs deepeval, which is not in the Vercel bundle).', 'err'); return; }
-  const cap = key === 'gen' ? (E.limits?.max_generators || 6) : (E.limits?.max_judges || 3);
+  const cap = key === 'gen' ? (E.limits?.max_generators || 6) : (E.limits?.max_judges || 6);
   if (list.length >= cap) { say(st, key === 'gen' ? `Up to ${cap} models that answer.` : `Up to ${cap} judges.`, 'err'); return; }
   if (list.some(m => m.provider === provider && m.model === model)) { say(st, 'That one is already in the list.', 'err'); return; }
   list.push({ provider, model });

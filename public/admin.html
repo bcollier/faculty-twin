@@ -16,6 +16,7 @@
   <script type="module" src="admin.js"></script>
   <script type="module" src="admin-analytics.js"></script>
   <script type="module" src="admin-evals.js"></script>
+  <script type="module" src="admin-evals-explore.js"></script>
   <script type="module" src="admin-alerts.js"></script>
   <script type="module" src="admin-drafts.js"></script>
 </head>
@@ -622,6 +623,25 @@
           </div>
           <ul class="ev-legend-list" id="ev-detail-legend"></ul>
         </div>
+
+        <h3 class="h-sub" id="ev-x-h">Compare models and judges</h3>
+        <p class="hint">Pass rates for every answering model under every judge, how lenient each judge is, how often judges agree, and mean scores per dimension. Pick one run, or all runs together. (This replaces "Model performance" under Analytics.)</p>
+        <div class="ev-row">
+          <div class="field ev-grow"><label for="ev-x-run">Run</label><select id="ev-x-run"><option value="all">All runs together</option></select></div>
+          <button type="button" class="btn btn-small" id="ev-x-refresh">Refresh</button>
+        </div>
+        <p class="status-line" id="ev-x-status" aria-live="polite"></p>
+        <div id="ev-x-body"></div>
+
+        <h3 class="h-sub" id="ev-q-h">Questions, hardest first</h3>
+        <p class="hint">Every eval question across runs, sorted by the share of judgements that failed it. Filter by run or by the model that wrote the answer; open a question to see each judge's verdict, scores and reason, and how much the judges agreed.</p>
+        <div class="ev-row ev-filters">
+          <div class="field"><label for="ev-q-run">Run</label><select id="ev-q-run"><option value="">All runs</option></select></div>
+          <div class="field"><label for="ev-q-gen">Answering model</label><select id="ev-q-gen"><option value="">Every answering model</option></select></div>
+        </div>
+        <p class="status-line" id="ev-q-status" aria-live="polite"></p>
+        <div class="table-wrap ev-scroll-lg" tabindex="0" role="region" aria-label="Questions, hardest first"><table class="data stack" id="ev-q-table"></table></div>
+        <div id="ev-q-detail" class="ev-detail" hidden tabindex="-1"></div>
 
         <datalist id="ev-models-anthropic"></datalist>
         <datalist id="ev-models-openai"></datalist>
