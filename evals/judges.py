@@ -82,10 +82,11 @@ class Judge:
     def judge(self, item: dict[str, Any], sleep: Callable[[float], None] = time.sleep) -> dict[str, Any]:
         """Score one item. Retries transport errors and unparseable replies; never raises."""
         user = rubric.build_user_prompt(item)
+        system = rubric.system_prompt()  # read once per item
         last = ""
         for attempt in range(RETRIES):
             try:
-                out = rubric.parse(self._send(rubric.SYSTEM_PROMPT, user))
+                out = rubric.parse(self._send(system, user))
                 out["judge"] = self.name
                 return out
             except (JudgeError, llm.LLMError, rubric.JudgementError, KeyError, ValueError) as exc:

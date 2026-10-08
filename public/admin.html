@@ -52,6 +52,7 @@
         <li><a href="#sec-courses">Courses and source material</a></li>
         <li><a href="#sec-limits">Limits and access</a></li>
         <li><a href="#sec-activity">Activity</a></li>
+        <li><a href="#sec-prompts">Prompts</a></li>
       </ul>
     </nav>
 
@@ -302,6 +303,73 @@
             <thead><tr><th scope="col">When</th><th scope="col">Covered</th><th scope="col">Question</th><th scope="col">Top score</th><th scope="col">Latency</th><th scope="col">Model</th></tr></thead>
             <tbody id="log-body"></tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- 6. Prompts -->
+      <section class="panel" id="sec-prompts" aria-labelledby="prompts-h">
+        <h2 id="prompts-h">Prompts</h2>
+        <p class="panel-intro">Every instruction a model gets. Pick one, edit it, test the draft on a question, then save it with a note. Every saved version is kept, and any one can be restored.</p>
+        <p class="note" id="prompts-warning"><strong>These prompts change what students hear.</strong> A saved prompt is live for new questions within 30 seconds. The safety checks in code still run on every answer, whatever a prompt says: grounding in the slides and the injection check, word and character caps, slide id checks, PG language, access codes, and no student names. An answer that fails them falls back to the slide's speaker notes.</p>
+        <div class="prompt-layout">
+          <div>
+            <h3 class="h-sub" id="prompt-list-h">Choose a prompt</h3>
+            <ul class="prompt-list" id="prompt-list" aria-labelledby="prompt-list-h"></ul>
+            <p class="status-line" id="prompts-status" aria-live="polite"></p>
+          </div>
+          <div id="prompt-editor" hidden>
+            <h3 id="pe-title" class="pe-title"></h3>
+            <p class="hint" id="pe-desc"></p>
+            <p class="small muted" id="pe-meta"></p>
+            <div class="field">
+              <label for="pe-text">Prompt text</label>
+              <textarea id="pe-text" class="mono" rows="18" spellcheck="false" autocomplete="off" aria-describedby="pe-vars pe-count"></textarea>
+              <p class="hint" id="pe-vars"></p>
+              <p class="hint" id="pe-count" aria-live="polite"></p>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn btn-primary" id="pe-save">Review and save</button>
+              <button type="button" class="btn" id="pe-compare-default">Compare with default</button>
+              <button type="button" class="btn btn-ghost" id="pe-discard">Discard edits</button>
+              <button type="button" class="btn btn-ghost" id="pe-reset">Reset to default</button>
+            </div>
+            <p class="status-line" id="pe-status" role="status"></p>
+
+            <div class="review" id="pe-review" hidden>
+              <h4 id="pe-review-h" tabindex="-1"></h4>
+              <p class="small" id="pe-review-summary"></p>
+              <div class="diff" id="pe-diff" tabindex="0" role="region" aria-labelledby="pe-review-h"></div>
+              <div class="field" id="pe-note-field">
+                <label for="pe-note">Note: why this change</label>
+                <input id="pe-note" type="text" maxlength="300" autocomplete="off" aria-describedby="pe-note-hint">
+                <p class="hint" id="pe-note-hint">Saved with this version in the history.</p>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn btn-primary" id="pe-confirm">Confirm save</button>
+                <button type="button" class="btn" id="pe-cancel">Close</button>
+              </div>
+              <p class="status-line" id="pe-review-status" role="status"></p>
+            </div>
+
+            <div class="note after-save" id="pe-after" hidden>
+              <p id="pe-after-text"></p>
+              <a class="btn btn-small" id="pe-run-eval" href="https://github.com/bcollier/faculty-twin/blob/main/docs/TESTING_AND_SCORES.md#prompt-changes" target="_blank" rel="noopener">Run an eval with this prompt</a>
+            </div>
+
+            <h4 class="h-sub">Test the draft</h4>
+            <p class="hint" id="pe-test-hint">Runs one question through the real path with the text in the editor. Nothing is saved, and the same safety checks apply. Counts against your question limits.</p>
+            <div class="field">
+              <label for="pe-test-q">Test question</label>
+              <input id="pe-test-q" type="text" maxlength="300" value="What is the main idea of the first session?">
+            </div>
+            <button type="button" class="btn" id="pe-test">Test this draft</button>
+            <p class="status-line" id="pe-test-status" role="status"></p>
+            <pre class="json" id="pe-test-output" hidden></pre>
+
+            <h4 class="h-sub">History</h4>
+            <p class="status-line" id="pe-history-status" aria-live="polite"></p>
+            <ul class="history-list" id="pe-history" aria-label="Saved versions, newest first"></ul>
+          </div>
         </div>
       </section>
     </main>

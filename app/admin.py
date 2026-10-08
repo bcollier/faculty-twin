@@ -1,6 +1,6 @@
 """Settings page API (admin passcode, `ft_admin` cookie). Never linked from the student UI.
 
-Sections it serves: Model, Voice, Courses and source material, Limits and access, Activity.
+Sections it serves: Model, Voice, Courses and source material, Limits and access, Activity, Prompts.
 
 Uploads never pass through this function (Vercel caps request bodies at
 4.5 MB). `POST /api/admin/uploads` records a `sources` row and returns a signed
@@ -36,6 +36,7 @@ from . import (
     llm,
     logistics,
     playlist,
+    prompts,
     settings_store,
     speech,
     storage,
@@ -416,6 +417,158 @@ def test_model(
         },
         "playlist": result,
     }
+
+
+# ---------------------------------------------------------------- prompts
+
+class PromptBody(BaseModel):
+    text: str
+    note: Optional[str] = None
+
+
+class PromptNoteBody(BaseModel):
+    note: Optional[str] = None
+
+
+class PromptRestoreBody(BaseModel):
+    version: str
+    note: Optional[str] = None
+
+
+class PromptTestBody(BaseModel):
+    text: str
+    question: str
+    course: Optional[str] = None
+
+
+def _prompt_name(name: str) -> str:
+    if name not in prompts.REGISTRY:
+        raise HTTPException(404, "There is no prompt with that name.")
+    return name
+
+
+def _prompt_write(fn, *args) -> dict[str, Any]:
+    try:
+        fn(*args)
+    except prompts.PromptError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except supa.SupabaseError as exc:
+        config.log.warning("prompt save failed: %s", exc)
+        raise HTTPException(502, "Could not save the prompt to storage. Nothing changed.") from exc
+    return prompts.view(args[0])
+
+
+@router.get("/prompts")
+def list_prompts(_: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """Every model-facing prompt: current text, default, and whether Ben has edited it."""
+    return {"prompts": prompts.all_views(), "max_chars": prompts.MAX_CHARS}
+
+
+@router.get("/prompts/{name}/history")
+def prompt_history(name: str, _: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    try:
+        return {"versions": prompts.history(_prompt_name(name))}
+    except supa.SupabaseError as exc:
+        config.log.warning("prompt history read failed: %s", exc)
+        raise HTTPException(502, "Could not read the prompt history from storage.") from exc
+
+
+@router.put("/prompts/{name}")
+def save_prompt(name: str, body: PromptBody, _: auth.Session = Depends(auth.require_admin)) -> dict[str, Any]:
+    """Save a new version. The text is checked (length, placeholders, reply words) before anything is written."""
+    return _prompt_write(prompts.save, _prompt_name(name), body.text, body.note or "")
+
+
+@router.post("/prompts/{name}/reset")
+def reset_prompt(
+    name: str, body: Optional[PromptNoteBody] = None, _: auth.Session = Depends(auth.require_admin)
+) -> dict[str, Any]:
+    note = body.note if body else None
+    return _prompt_write(lambda n, t: prompts.save(n, "", t, reset=True), _prompt_name(name), note or "")
+
+
+@router.post("/prompts/{name}/restore")
+def restore_prompt(
+    name: str, body: PromptRestoreBody, _: auth.Session = Depends(auth.require_admin)
+) -> dict[str, Any]:
+    return _prompt_write(prompts.restore, _prompt_name(name), body.version, body.note or "")
+
+
+@router.post("/prompts/{name}/test")
+def test_prompt(
+    name: str,
+    body: PromptTestBody,
+    request: Request,
+    session: auth.Session = Depends(auth.require_admin),
+    retriever: Retriever = Depends(get_retriever),
+    embedder=Depends(get_embedder),
+    completer=Depends(get_completer),
+) -> dict[str, Any]:
+    """Run one question through the real path with the draft text, for this request only. Nothing is saved.
+
+    The draft goes through the same checks as a save, and the answer through the
+    same validators as any student's (grounding, caps, PG, codes, name tokens).
+    """
+    spec = prompts.spec(_prompt_name(name))
+    if not spec.testable:
+        raise HTTPException(400, "Eval prompts are tested by an eval run, not here.")
+    try:
+        text = prompts.check(name, body.text)
+    except prompts.PromptError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    question = clean_question(body.question)
+    course = clean_course(body.course)
+    provider, model = settings_store.llm_choice()
+    if not llm.key_configured(provider):
+        raise HTTPException(400, f"{llm.KEY_VARS[provider]} is not set, so the prompt cannot be tested.")
+    limits.check_ask_rate(auth.visitor_key(session), limits.client_hash(request))  # counts against limits; not logged
+    started = time.monotonic()
+    with prompts.draft(name, text):
+        if name == logistics.PROMPT_NAME:
+            kind = logistics.classify(question, completer, provider=provider, model=model)
+            output: dict[str, Any] = {"kind": kind.kind, "source": kind.source, "reason": kind.reason}
+            if kind.source == "keyword":
+                output["note"] = "The keyword pre-check caught this question, so the prompt was not used."
+            elif kind.source == "error":
+                output["note"] = "The reply was not a valid kind, so the question would be answered as course content."
+            ok, errors = kind.source != "error", []
+        else:
+            result, info = _answer_for_test(question, course, retriever, embedder, completer, provider, model)
+            output = {
+                "kind": info.get("kind"),
+                "narration_source": info.get("narration"),
+                "covered": result.get("covered"),
+                "message": result.get("message"),
+                "segments": [{"slide_id": s["slide_id"], "narration": s["narration"]} for s in result["segments"]],
+                "follow_ups": result.get("follow_ups") or [],
+                "note": info.get("note"),
+            }
+            errors = info.get("errors") or []
+            ok = info.get("narration") in ("llm", "stored") or not result["covered"]
+    return {
+        "ok": ok,
+        "name": name,
+        "provider": provider,
+        "model": model,
+        "latency_ms": int((time.monotonic() - started) * 1000),
+        "errors": errors,
+        "output": output,
+    }
+
+
+def _answer_for_test(question, course, retriever, embedder, completer, provider, model):
+    content = storage.store.get_or_503()
+    try:
+        return answer(question, course, content, retriever, embedder, completer, provider, model)
+    except RetrievalNotReady:
+        from . import narration
+
+        sample = [r for r in content.records if r.get("kind", "slide") == "slide"][:3]
+        codes = {r["id"]: (playlist.related_code(content, r) or {}).get("source") for r in sample}
+        res = narration.narrate(question, sample, codes, provider=provider, model=model, complete=completer)
+        result = playlist.build_playlist(content, question, sample, res.narrations, res.follow_ups, None)
+        note = "Retrieval is not ready yet, so this test used the first three slides of the index."
+        return result, {"narration": res.source, "errors": res.errors, "note": note, "kind": "course_content"}
 
 
 # ---------------------------------------------------------------- status and activity

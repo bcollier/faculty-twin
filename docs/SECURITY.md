@@ -112,6 +112,17 @@ Settings can now pick my ElevenLabs clone, an ElevenLabs stock voice, or a free 
 - **Honest labels (impersonation).** The clone label is shown only when the ElevenLabs account reports the voice as a clone (`cloned`, or a `professional` clone the account owns). Voice Library voices are also `professional` but not owned, so they are labeled stock. If the category cannot be checked the label is the neutral "AI voice." `test_label_matches_the_voice`, `test_unverifiable_voice_gets_neutral_label_not_clone`, `test_saved_kind_for_another_voice_is_never_reused`.
 - **A free third-party service.** `edge-tts` uses the endpoint behind Edge's Read Aloud, with no account or terms of service of its own; Microsoft can change or block it at any time. It receives only narration text (de-identified course material), never student input or identifiers. Its failures degrade to captions (502 before any audio). New dependencies are pinned in `requirements.txt` (`edge-tts` and `aiohttp` with its closure).
 
+### Prompt editor (added Oct 7, PR `feat/prompt-editor`)
+
+Settings > Prompts lets an admin edit every model-facing prompt (`app/prompts.py`). What changed for the threat model:
+
+- **A prompt is not a safety control.** An admin, or anyone holding the admin cookie, can now rewrite the narration prompt, so every rule that keeps the voice safe is enforced in code after the model replies (`narration.validate`): slide ids, word and character caps, web addresses, grounding and the question-echo check (C1), PG words, access codes, and `[student]` / `[person]` tokens. The PG, access-code, and name-token checks are new in this PR; before it, those rules lived only in the prompt and the pipeline. Follow-ups that fail them are dropped. Course-info answers (`course_info.problem`) also run the PG and name-token checks. `test_hostile_narration_prompt_cannot_make_the_voice_parrot_the_question`, `test_validators_reject_with_any_prompt`, `test_hostile_prompt_with_every_bad_reply_falls_back_to_notes`, `test_follow_ups_failing_the_speech_checks_are_dropped`.
+- **Same access rules as the rest of Settings.** Every `/api/admin/prompts` route needs the admin cookie, and writes are refused cross-site by the Origin middleware (M5). `test_prompt_routes_are_admin_only`, `test_prompt_writes_from_another_site_are_refused`.
+- **Bounded input.** 12,000 characters at most; placeholders limited to the registry's list; the words the reply parsers depend on must stay. History version ids are checked against a strict pattern before they become a storage path. `test_check_rejects_bad_drafts`, `test_reset_and_restore`.
+- **Spend.** "Test this draft" counts against the per-visitor and per-address question limits and the daily model-call cap, like "Test this model".
+- **Audit trail.** Every save writes a hash-chained history file to the private bucket, so a bad edit can be traced and undone.
+- **Residual risk.** A prompt can still make answers worse without breaking a rule (vaguer, shorter, or more often falling back to notes), and a logistics prompt can send too many questions to the referral. That is a quality risk, caught by testing the draft and running an eval after saving (docs/TESTING_AND_SCORES.md, Prompt changes).
+
 ## 6. Frontend changes (follow-up PR after PR #5 merged)
 
 1. **Name hint** (M7). Under the main question box: "Please leave out names, yours or anyone else's. I keep questions, without names, to improve the twin." The compact dock input carries the same hint for screen readers. Both inputs already had `maxlength="300"`.
