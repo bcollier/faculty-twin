@@ -7,9 +7,9 @@ from pathlib import Path
 
 import httpx
 import numpy as np
+import pipeline_fixture as pf
 import pytest
 
-import pipeline_fixture as pf
 from app import playlist, storage
 from indexer import build_index
 
@@ -47,7 +47,7 @@ def test_index_loads_in_backend_from_content_dir(archive, tmp_path, monkeypatch)
     assert content.matrix.shape == (4, pf.DIM) and content.matrix.dtype == np.float32
 
     s1, s3, news, code = content.records
-    assert CONTRACT_KEYS <= set(s1)
+    assert set(s1) >= CONTRACT_KEYS
     assert (s1["course_title"], s1["session_title"], s1["date"]) == ("Fake Course A", "Fruit basics", "2026-09-01")
     assert s1["transcript"] == "Apples are my favorite example of a fruit."
     assert s1["clip"] == "clips/70445-s01-001.mp4"

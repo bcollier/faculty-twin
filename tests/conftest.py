@@ -13,7 +13,6 @@ sys.path.insert(0, str(ROOT / "tests" / "fixtures"))
 
 import build_fixture  # noqa: E402
 
-
 # ---------------------------------------------------------------- no network
 # The suite never talks to a real service: models, embeddings, voices and storage are fakes.
 # This guard turns any outbound connection (or DNS lookup) to a non-loopback host into a test

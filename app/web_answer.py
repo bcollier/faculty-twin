@@ -42,13 +42,27 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 
-from . import config, limits, llm, logistics, narration, privacy, prompts, settings_store, speech, storage, usage, voices
+from . import (
+    config,
+    limits,
+    llm,
+    logistics,
+    narration,
+    privacy,
+    prompts,
+    settings_store,
+    speech,
+    storage,
+    usage,
+    voices,
+)
 
 KIND = "web"
 LABEL = "Beyond my slides: from the web"
@@ -125,12 +139,14 @@ _ADJACENT = re.compile(
 
 @dataclass
 class Scope:
+    """Where a question that no slide covers belongs, and how that was decided."""
+
     scope: str  # course_adjacent | off_topic | logistics
     source: str  # "keyword", "llm", or "error" (declined)
     reason: str = ""
 
 
-def keyword_scope(question: str) -> Optional[tuple[str, str]]:
+def keyword_scope(question: str) -> tuple[str, str] | None:
     """(scope, matched phrase) when the pre-check decides, else None."""
     text = re.sub(r"\s+", " ", (question or "").replace("’", "'"))
     hit = logistics.keyword_hit(text)
@@ -146,14 +162,14 @@ def keyword_scope(question: str) -> Optional[tuple[str, str]]:
 
 
 def _parse_scope(raw: str) -> tuple[str, str]:
-    data = narration._extract_json(raw or "")
+    data = narration.reply_json(raw or "")
     if not isinstance(data, dict) or data.get("scope") not in SCOPES:
         raise ValueError("reply had no valid scope")
     return data["scope"], str(data.get("reason") or "")[:200]
 
 
-def classify(question: str, complete: Callable[..., str], provider: Optional[str] = None,
-             model: Optional[str] = None) -> Scope:
+def classify(question: str, complete: Callable[..., str], provider: str | None = None,
+             model: str | None = None) -> Scope:
     """Keyword pre-check, then one small model call. Any failure means off_topic (decline)."""
     hit = keyword_scope(question)
     if hit:
@@ -178,13 +194,9 @@ def enabled() -> bool:
 
 
 def daily_cap() -> int:
-    raw = settings_store.get("daily_web_answer_cap")
-    if raw is not None and not isinstance(raw, bool):
-        try:
-            return int(raw)
-        except (TypeError, ValueError):
-            pass
-    return config.env_int("DAILY_WEB_ANSWER_CAP", DEFAULT_DAILY_CAP)
+    """Web answers allowed per day: the Settings value, else DAILY_WEB_ANSWER_CAP."""
+    return settings_store.int_setting("daily_web_answer_cap", "DAILY_WEB_ANSWER_CAP", DEFAULT_DAILY_CAP,
+                                      bool_is_unset=True)
 
 
 def give_back_budget() -> None:
@@ -210,7 +222,7 @@ def take_budget() -> bool:
     return ok
 
 
-def voice() -> Optional[voices.Voice]:
+def voice() -> voices.Voice | None:
     """The free voice that reads web answers, or None (text only). Never the clone, never ElevenLabs."""
     try:
         parsed = voices.parse(settings_store.get("web_answer_voice"))
@@ -252,13 +264,14 @@ def _post(client: httpx.Client, req: llm.Request, provider: str) -> dict[str, An
     return data
 
 
-def _source(url: Any, title: Any) -> Optional[dict[str, str]]:
+def _source(url: Any, title: Any) -> dict[str, str] | None:
     if not isinstance(url, str) or not url.strip():
         return None
     return {"url": url.strip(), "title": str(title or "").strip()}
 
 
 def anthropic_request(model: str, system: str, user: str, max_tokens: int) -> llm.Request:
+    """The usual Anthropic request with the server-side web search tool added."""
     req = llm.build_anthropic(model, system, user, max_tokens)
     req.body["tools"] = [dict(ANTHROPIC_TOOL)]
     return req
@@ -277,7 +290,8 @@ def parse_anthropic(pages: list[dict[str, Any]]) -> WebReply:
                                                              "cache_read_input_tokens"))
         reply.tokens_out += int(u.get("output_tokens") or 0)
         reply.searches += int((u.get("server_tool_use") or {}).get("web_search_requests") or 0)
-    last_search = max((i for i, b in enumerate(blocks) if b.get("type") in ("server_tool_use", "web_search_tool_result")),
+    search_types = ("server_tool_use", "web_search_tool_result")
+    last_search = max((i for i, b in enumerate(blocks) if b.get("type") in search_types),
                       default=-1)
     texts = []
     for i, b in enumerate(blocks):
@@ -300,6 +314,7 @@ def parse_anthropic(pages: list[dict[str, Any]]) -> WebReply:
 
 
 def openai_request(model: str, system: str, user: str, max_tokens: int) -> llm.Request:
+    """A Responses API request (chat completions has no web search tool) that asks for the sources too."""
     headers = {"Authorization": f"Bearer {llm._key('openai')}", "Content-Type": "application/json"}
     body = {
         "model": model,
@@ -348,6 +363,7 @@ def parse_openai(data: dict[str, Any]) -> WebReply:
 
 
 def openrouter_request(model: str, system: str, user: str, max_tokens: int) -> llm.Request:
+    """The usual OpenRouter request with the web plugin tool, and without JSON mode."""
     req = llm.build_openrouter(model, system, user, max_tokens)
     req.body.pop("response_format", None)  # the answer is plain text
     req.body["tools"] = [json.loads(json.dumps(OPENROUTER_TOOL))]
@@ -382,8 +398,8 @@ def parse_openrouter(data: dict[str, Any]) -> WebReply:
     return reply
 
 
-def search(system: str, user: str, max_tokens: int, provider: Optional[str] = None, model: Optional[str] = None,
-           client: Optional[httpx.Client] = None) -> WebReply:
+def search(system: str, user: str, max_tokens: int, provider: str | None = None, model: str | None = None,
+           client: httpx.Client | None = None) -> WebReply:
     """One web-search answer from the active (or given) provider. Raises WebSearchError or LLMError.
 
     Counts against DAILY_LLM_CALL_CAP like every model call, and records tokens and
@@ -472,7 +488,7 @@ def _personal_detail(text: str) -> bool:
     return privacy.scrub_question(probe) != probe
 
 
-def problem(text: str, question: str = "") -> Optional[str]:
+def problem(text: str, question: str = "") -> str | None:
     """Why this text may not be shown, or None. Runs on every reply whatever the prompt says."""
     if not text:
         return "the answer is empty"
@@ -510,6 +526,7 @@ def trim_to_cap(text: str, limit: int = MAX_WORDS) -> str:
 
 
 def validate(raw: str, question: str) -> str:
+    """The cleaned, trimmed answer text, or ValidationError naming the first problem."""
     text = trim_to_cap(clean_text(raw))
     bad = problem(text, question)
     if bad:
@@ -570,10 +587,12 @@ def pick_links(reply: WebReply) -> list[dict[str, str]]:
 
 @dataclass
 class Result:
-    reply: Optional[dict[str, Any]]  # None: nothing at all to point to (no link, no course slide), so decline
+    """A web answer (or the decline), where it came from, and why it fell back if it did."""
+
+    reply: dict[str, Any] | None  # None: nothing at all to point to (no link, no course slide), so decline
     source: str  # "llm" or "fallback"
     errors: list[str] = field(default_factory=list)
-    reason: Optional[str] = None  # question_log.fallback_reason when it fell back (provider_credits, no_links, ...)
+    reason: str | None = None  # question_log.fallback_reason when it fell back (provider_credits, no_links, ...)
 
 
 def related_slides(content: Any, ranked: list[tuple[int, float]], records: list[dict[str, Any]],
@@ -610,8 +629,8 @@ def answer(
     related: list[dict[str, Any]],
     follow_ups: list[str],
     searcher: Callable[..., WebReply],
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> Result:
     """One web-search call and the checks.
 
@@ -642,7 +661,7 @@ def answer(
 
 
 def _card(question: str, text: str, links: list[dict[str, str]], related: list[dict[str, Any]],
-          follow_ups: list[str], source: str, reason: Optional[str], detail: Optional[str]) -> Result:
+          follow_ups: list[str], source: str, reason: str | None, detail: str | None) -> Result:
     errors = [detail] if detail else []
     if not links and not related:
         return Result(None, source, errors, reason)

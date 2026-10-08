@@ -4,10 +4,10 @@ Run: uv run --no-project --with pytest --with nbformat python -m pytest tests/te
 """
 
 import json
-
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "indexer"))
 

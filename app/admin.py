@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from datetime import date as date_cls
 from typing import Any
 
+import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
@@ -458,8 +459,8 @@ def test_model(
     request: Request,
     session: auth.Session = Depends(auth.require_admin),
     retriever: Retriever = Depends(get_retriever),
-    embedder=Depends(get_embedder),
-    completer=Depends(get_completer),
+    embedder: Callable[[str], np.ndarray] = Depends(get_embedder),
+    completer: Callable[..., str] = Depends(get_completer),
 ) -> dict[str, Any]:
     """Run one sample question through the chosen (unsaved) provider and model."""
     question = clean_question(body.question)
@@ -580,8 +581,8 @@ def test_prompt(
     request: Request,
     session: auth.Session = Depends(auth.require_admin),
     retriever: Retriever = Depends(get_retriever),
-    embedder=Depends(get_embedder),
-    completer=Depends(get_completer),
+    embedder: Callable[[str], np.ndarray] = Depends(get_embedder),
+    completer: Callable[..., str] = Depends(get_completer),
 ) -> dict[str, Any]:
     """Run one question through the real path with the draft text, for this request only. Nothing is saved.
 

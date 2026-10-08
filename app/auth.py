@@ -22,7 +22,6 @@ old passcode back in after a rotation. A warm instance keeps its last good copy.
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
@@ -32,7 +31,7 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException, Request, Response
 
-from . import config, settings_store
+from . import b64url, config, settings_store
 
 STUDENT_COOKIE = "ft_session"
 ADMIN_COOKIE = "ft_admin"
@@ -41,12 +40,8 @@ ADMIN_TTL = 12 * 3600
 PBKDF2_ITERATIONS = 600_000  # OWASP 2023 guidance for PBKDF2-HMAC-SHA256
 
 
-def _b64e(raw: bytes) -> str:
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-
-
-def _b64d(text: str) -> bytes:
-    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+_b64e = b64url.encode
+_b64d = b64url.decode
 
 
 def _mac(data: bytes) -> bytes:

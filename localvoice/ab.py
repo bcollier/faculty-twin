@@ -44,12 +44,13 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from . import audio
-from .engines import EngineUnavailable, build
+from .engines import Engine, EngineUnavailable, build
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "localvoice" / "out"
@@ -58,6 +59,7 @@ EXTERNAL = re.compile(r"^(?P<name>[a-z][a-z0-9\-]*)_(?P<n>\d+)\.(?:mp3|wav)$", r
 
 
 def load_narrations(path: Path | None, texts: list[str]) -> list[str]:
+    """The narrations to render: `texts`, plus a JSON list or saved playlist at `path`. ValueError if none."""
     out = list(texts)
     if path:
         data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
@@ -77,7 +79,8 @@ def _fresh_name(out_dir: Path, suffix: str) -> str:
             return name
 
 
-def render_all(engines, narrations: list[str], out_dir: Path, mp3: bool = True) -> list[dict[str, Any]]:
+def render_all(engines: Iterable[Engine], narrations: list[str], out_dir: Path,
+               mp3: bool = True) -> list[dict[str, Any]]:
     """Render every narration with every engine. Never raises: a failing engine gets an error row."""
     rows = []
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -203,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError, EngineUnavailable) as exc:
         print(exc, file=sys.stderr)
         return 2
-    out = args.out or OUT / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out = args.out or OUT / datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     out.mkdir(parents=True, exist_ok=True)
     rows = import_external([out, *args.add], out, len(narrations))  # clips already dropped into the run folder
     rows += render_all(engines, narrations, out, mp3=not args.wav)

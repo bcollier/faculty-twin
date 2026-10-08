@@ -13,9 +13,9 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
+from test_api import use_fakes
 
 from app import config, edge_voice, limits, playlist, settings_store, speech, storage, timings
-from test_api import use_fakes
 
 ANDREW = "en-US-AndrewMultilingualNeural"
 TEXT = "On this slide, k-means groups similar points. Then each center moves."

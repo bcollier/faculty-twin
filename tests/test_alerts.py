@@ -10,21 +10,23 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs
 
 import httpx
 import pytest
-
-from app.main import Retriever, app, get_completer, get_embedder, get_retriever  # before app.admin
-from app import alerts, analytics, limits, pricing, prompts, settings_store, storage, usage  # noqa: E402,I001
-
 from test_api import TEST_FAKE_embedder, TEST_FAKE_llm, TEST_FAKE_rank, TEST_FAKE_select
 
+# app.main first: it wires the routers that the admin modules import from.
+from app.main import Retriever, app, get_completer, get_embedder, get_retriever
+
+# isort: split
+from app import alerts, analytics, limits, pricing, prompts, settings_store, storage, usage  # noqa: E402,I001
+
 ROOT = Path(__file__).resolve().parents[1]
-NOW = datetime(2026, 10, 8, 18, 30, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 8, 18, 30, tzinfo=UTC)
 SID = "AC" + "0" * 32
 TOKEN = "test-auth-token-not-real"
 TO = "+14125550123"
@@ -387,7 +389,7 @@ def test_sent_alert_records_sms_usage(monkeypatch, twilio):
     out = alerts.raise_alert(detection(), "my quiz 4 is broken", "v1", NOW)
     assert out.flagged and out.status == "sent" and len(twilio.requests) == 1
     assert "70-445 (quiz)" in twilio.form()["Body"]
-    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    day = datetime.now(UTC).strftime("%Y-%m-%d")
     assert limits.read_counter(usage.sms_key(day, "messages")) == 1
     assert limits.read_counter(usage.sms_key(day, "segments")) == out.record["segments"]
     assert limits.read_counter(alerts.sent_key(NOW.strftime("%Y-%m-%d"))) == 1

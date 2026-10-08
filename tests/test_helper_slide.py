@@ -11,11 +11,10 @@ import re
 from pathlib import Path
 
 import pytest
+from test_api import TEST_FAKE_embedder, TEST_FAKE_llm, TEST_FAKE_rank, TEST_FAKE_select
 
 from app import helper_slide, limits, logistics, prompts, settings_store, usage, web_answer
 from app.main import Retriever, app, get_completer, get_embedder, get_retriever, get_searcher
-
-from test_api import TEST_FAKE_embedder, TEST_FAKE_llm, TEST_FAKE_rank, TEST_FAKE_select
 
 ROOT = Path(__file__).resolve().parents[1]
 

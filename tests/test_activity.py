@@ -8,14 +8,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import httpx
 import numpy as np
 import pytest
-
-from app.main import LOG_KINDS, Retriever, app, get_completer, get_embedder, get_retriever  # before app.admin
-from app import admin, limits, logistics, storage, supa  # noqa: E402,I001
-
 from test_api import TEST_FAKE_embedder, TEST_FAKE_llm, TEST_FAKE_rank, TEST_FAKE_select
+
+# app.main first: it wires the routers that the admin modules import from.
+from app.main import LOG_KINDS, Retriever, app, get_completer, get_embedder, get_retriever
+
+# isort: split
+from app import admin, limits, logistics, storage, supa  # noqa: E402,I001
 
 ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs" / "TESTING_AND_SCORES.md"
@@ -307,7 +308,7 @@ def test_spec_describes_the_kinds():
 
 # ---------------------------------------------------------------- scripts/threshold_table.py
 
-from scripts import live_smoke, threshold_table  # noqa: E402
+from scripts import threshold_table  # noqa: E402
 
 
 def _fake_embed_many(texts):

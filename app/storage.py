@@ -53,6 +53,8 @@ class ContentUnavailable(RuntimeError):
 
 @dataclass
 class Content:
+    """The loaded index: slide records with their embedding rows, plus topics, clip windows and course info."""
+
     records: list[dict[str, Any]]
     matrix: np.ndarray  # float32, shape (len(records), dim)
     meta: dict[str, Any] = field(default_factory=dict)
@@ -124,6 +126,7 @@ def _optional_info(read_index, read_emb) -> tuple[list[dict[str, Any]], np.ndarr
 
 
 def load_local(root: Path) -> Content:
+    """Content from a local build folder (CONTENT_DIR, dev and tests). ContentUnavailable when there is no index."""
     index_path = root / "content" / "index.json"
     emb_path = root / "content" / "embeddings.npy"
     if not index_path.exists() or not emb_path.exists():
@@ -140,6 +143,7 @@ def load_local(root: Path) -> Content:
 
 
 def load_supabase() -> Content:
+    """Content from the private bucket. ContentUnavailable when the index cannot be downloaded."""
     try:
         index_bytes = supa.download("content/index.json")
         emb_bytes = supa.download("content/embeddings.npy")
@@ -169,6 +173,7 @@ class Store:
         self._stale_tries: dict[str, int] = {}
 
     def reset(self) -> None:
+        """Forget the loaded content so the next get() loads again (used by tests)."""
         with self._lock:
             self._content = None
             self._checked_at = 0.0
@@ -219,10 +224,15 @@ class Store:
         if tries > STALE_RELOAD_TRIES:
             config.log.warning("index.json says %s but settings.index_version is %s; using it anyway", built, expected)
             return expected
-        config.log.warning("downloaded index %s is older than settings.index_version %s; reloading soon", built, expected)
+        config.log.warning("downloaded index %s is older than settings.index_version %s; reloading soon",
+                           built, expected)
         return f"stale:{built}"
 
     def get(self) -> Content:
+        """The content, loaded on first use and reloaded when settings.index_version changes.
+
+        A failed reload keeps serving what is loaded: an old index beats a 503.
+        """
         now = time.monotonic()
         with self._lock:
             content = self._content
@@ -247,6 +257,7 @@ class Store:
         return fresh
 
     def get_or_503(self) -> Content:
+        """get(), with "not loaded yet" turned into a 503 for the routes."""
         try:
             return self.get()
         except ContentUnavailable as exc:
@@ -268,6 +279,7 @@ def _dev_sig(path: str, exp: int) -> str:
 
 
 def verify_dev_link(path: str, exp: int, sig: str) -> bool:
+    """True for an unexpired /api/files link this server signed (local content only)."""
     if exp < time.time():
         return False
     return hmac.compare_digest(_dev_sig(path, exp).encode(), sig.encode("utf-8", "replace"))
@@ -296,6 +308,7 @@ def media_urls(paths: list[str | None], expires_in: int = SIGNED_URL_SECONDS) ->
 
 
 def local_file(path: str) -> Path | None:
+    """The file for a media path inside the local content folder, or None (never a path outside it)."""
     root = config.content_dir()
     if root is None or not is_media_path(path):
         return None

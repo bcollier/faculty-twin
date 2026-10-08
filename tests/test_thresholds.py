@@ -13,13 +13,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from test_api import TEST_FAKE_embedder as FRUIT_EMBEDDER
+from test_course_info import FakeModel, with_info  # noqa: F401  (pytest fixture)
+from test_course_info import TEST_FAKE_embedder as INFO_EMBEDDER
 
 from app import config, course_info, retrieval, settings_store, supa, thresholds
 from app.main import app, get_completer, get_embedder, get_retriever
-
-from test_api import TEST_FAKE_embedder as FRUIT_EMBEDDER
-from test_course_info import TEST_FAKE_embedder as INFO_EMBEDDER
-from test_course_info import FakeModel, with_info  # noqa: F401  (pytest fixture)
 
 ROOT = Path(__file__).resolve().parents[1]
 BEN_VALUE = 0.52  # Ben's NOT_COVERED_THRESHOLD; if he changes it by hand, update this number.

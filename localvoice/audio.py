@@ -21,6 +21,7 @@ PEAK_LIMIT = 0.97
 
 
 def normalize(samples: np.ndarray) -> np.ndarray:
+    """Mono float32 scaled to TARGET_RMS, then pulled down if a peak would pass PEAK_LIMIT."""
     x = np.asarray(samples, dtype=np.float32).reshape(-1)
     if x.size == 0:
         return x
@@ -34,6 +35,7 @@ def normalize(samples: np.ndarray) -> np.ndarray:
 
 
 def wav_bytes(samples: np.ndarray, rate: int) -> bytes:
+    """A 16-bit mono WAV file of the samples (clipped to [-1, 1])."""
     pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2")
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:

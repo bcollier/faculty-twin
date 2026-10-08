@@ -40,6 +40,8 @@ MIN_S = 10.0
 
 @dataclass(frozen=True)
 class Window:
+    """A stretch of clean instructor speech, in seconds, and how many words it holds."""
+
     start: float
     end: float
     words: int
@@ -50,6 +52,7 @@ class Window:
 
 
 def cue_ok(c: dict) -> bool:
+    """The instructor speaking, with no name token and nothing the PG check flags."""
     text = c.get("text") or ""
     return c.get("speaker") == "instructor" and not any(t in text for t in NAME_TOKENS) and not pg_problem(c)
 
@@ -68,7 +71,7 @@ def clean_windows(cues: list[dict], target: float = 45.0) -> list[Window]:
     windows: list[Window] = []
     run: list[dict] = []
 
-    def flush():
+    def flush() -> None:
         # Drop cues from either end until the padded span is clean, then cap at target.
         r = list(run)
         while r and not padded_clean(r[0]["start"], r[-1]["end"]):

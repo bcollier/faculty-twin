@@ -264,7 +264,7 @@ def problem(text: str) -> str | None:
 
 def validate(raw: str, ground: narration.Grounding) -> str:
     """The answer from the model's reply, trimmed to MAX_WORDS sentences and checked. Raises ValidationError."""
-    data = narration._extract_json(raw or "")
+    data = narration.reply_json(raw or "")
     if not isinstance(data, dict) or not isinstance(data.get("answer"), str):
         raise ValidationError("reply has no answer")
     text = narration.clean_speech(data["answer"])

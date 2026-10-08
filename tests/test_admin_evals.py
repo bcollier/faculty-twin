@@ -14,7 +14,10 @@ import threading
 import numpy as np
 import pytest
 
-from app.main import Retriever, app, get_completer, get_embedder, get_retriever  # first: main wires the routers
+# app.main first: it wires the routers that the admin modules import from.
+from app.main import Retriever, app, get_completer, get_embedder, get_retriever
+
+# isort: split
 from app import admin_evals, eval_core, eval_store, limits, llm, settings_store, storage  # noqa: E402
 
 FRUIT_IDS = ["70445-s01-002", "70445-s01-003"]
@@ -402,9 +405,8 @@ def test_override_is_isolated_per_context():
         assert contextvars.copy_context().run(settings_store.llm_choice) == ("openai", "gpt-6-luna")
     assert seen["other"] == ("anthropic", "claude-sonnet-5-5")
     assert settings_store.llm_choice() == ("anthropic", "claude-sonnet-5-5")
-    with pytest.raises(llm.LLMError):
-        with llm.model_override("gemini", "x"):
-            pass
+    with pytest.raises(llm.LLMError), llm.model_override("gemini", "x"):
+        pass
 
 
 def test_students_never_see_an_eval_generator(evals):

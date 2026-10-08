@@ -17,7 +17,6 @@ import pytest
 
 from localvoice import ab, audio, engines, sample
 
-
 # ---------------------------------------------------------------- engines and labels
 
 def test_only_a_clone_of_ben_gets_the_clone_label(tmp_path):
@@ -233,7 +232,9 @@ def test_cut_writes_a_private_clip_and_private_new_folders(tmp_path, monkeypatch
     os.chmod(shared, 0o755)
     out = shared / "_private" / "voice" / "ben_ref.wav"
     sample.cut(Path("video.mp4"), sample.Window(0, 12, 30), out)
-    mode = lambda p: stat.S_IMODE(p.stat().st_mode)
+    def mode(p: Path) -> int:
+        return stat.S_IMODE(p.stat().st_mode)
+
     assert mode(out) == 0o600
     assert mode(out.parent) == 0o700 and mode(out.parent.parent) == 0o700
     assert mode(shared) == 0o755  # a folder that already existed outside _private is left alone
