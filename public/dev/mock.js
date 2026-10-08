@@ -278,7 +278,7 @@ const admin = {
     voice_fallback: 'captions', voice_fallback_voice: 'edge:en-US-AndrewMultilingualNeural', voice_fallback_label: null,
     daily_voice_char_cap: 20000, daily_free_voice_char_cap: 200000,
     per_minute_limit: 5, per_day_limit: 30, question_max_chars: 300, model_warning: null,
-    max_price_per_mtok: { prompt: 15.0, completion: 60.0 }, student_passcode_source: 'env', index_version: 7 },
+    max_price_per_mtok: { prompt: 15.0, completion: 60.0 }, student_passcode_source: 'env', open_access_until: null, index_version: 7 },
   courses: COURSES.map(c => ({
     ...c,
     sessions: DATES[c.course].map((date, i) => sessionRow(c.course, i + 1, date, sessionTitle(c.course, i + 1), {

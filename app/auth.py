@@ -187,6 +187,34 @@ def issue_student(response: Response) -> None:
     set_cookie(response, STUDENT_COOKIE, token, STUDENT_TTL)
 
 
+# ---------------------------------------------------------------- open access (no passcode, for a set time)
+# Settings can open the student page to everyone until a set time (for example, graders for one day).
+# Visitors then get their own "o" cookie, so per-visitor limits still apply. That cookie is tied to the
+# open-until time: closing early or reaching that time ends every open session at once.
+OPEN_MAX_SECONDS = 48 * 3600  # Settings refuses a longer window
+
+
+def open_access_until(now: float | None = None) -> float:
+    """When open access ends (epoch seconds), or 0.0 when the page needs the passcode."""
+    try:
+        until = float(settings_store.get("open_access_until") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return until if until > (now or time.time()) else 0.0
+
+
+def _open_generation(until: float) -> str:
+    return _generation(f"open:{int(until)}")
+
+
+def issue_open(response: Response, until: float) -> Session:
+    """An open-access session for a visitor without the passcode, ending when open access ends."""
+    visitor = secrets.token_urlsafe(12)
+    ttl = max(60, int(until - time.time()))
+    set_cookie(response, STUDENT_COOKIE, make_token("o", visitor, ttl, _open_generation(until)), ttl)
+    return Session(kind="o", visitor=visitor, exp=int(time.time()) + ttl)
+
+
 def issue_admin(response: Response) -> None:
     """Sign Ben in to Settings for ADMIN_TTL."""
     gen = admin_generation()
@@ -205,11 +233,16 @@ def admin_session(request: Request) -> Session | None:
     return read_token(request.cookies.get(ADMIN_COOKIE), "a", admin_generation())
 
 
-def require_student(request: Request) -> Session:
-    """Student cookie, or an admin cookie (so Ben can preview the student view)."""
-    session = read_token(request.cookies.get(STUDENT_COOKIE), "s", student_generation())
+def require_student(request: Request, response: Response) -> Session:
+    """Student cookie, or an admin cookie (so Ben can preview the student view), or open access when it is on."""
+    cookie = request.cookies.get(STUDENT_COOKIE)
+    session = read_token(cookie, "s", student_generation())
     if session is None:
         session = admin_session(request)
+    if session is None:
+        until = open_access_until()
+        if until:
+            session = read_token(cookie, "o", _open_generation(until)) or issue_open(response, until)
     if session is None:
         raise HTTPException(401, "Please enter the course passcode first.")
     return session

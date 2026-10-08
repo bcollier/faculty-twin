@@ -212,6 +212,7 @@ async function loadSettings() {
   $('#provider').value = S.settings.provider || 'anthropic';
   $('#model-id').value = S.settings.model || '';
   $('#current-model').textContent = liveModelText();
+  renderOpenAccess();
   $('#cap').value = S.settings.daily_voice_char_cap ?? S.status?.today?.voice_char_cap ?? '';
   $('#free-cap').value = S.settings.daily_free_voice_char_cap ?? S.status?.today?.free_voice_char_cap ?? '';
   renderWebAnswers();
@@ -844,6 +845,37 @@ $('#pass-form').addEventListener('submit', async (e) => {
     say(st, 'Passcode changed. Share the new one with the class.', 'ok');
   } catch (ex) { sayError(st, ex); }
 });
+
+/* ---------------- 4a. open access (no passcode until a set time) ---------------- */
+
+/** Whether the student page is open to everyone, and until when (in this browser's time). */
+function renderOpenAccess() {
+  const until = S.settings.open_access_until;
+  const open = typeof until === 'number' && until * 1000 > Date.now();
+  $('#open-now').textContent = open
+    ? `Open to everyone until ${new Date(until * 1000).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}. No passcode needed.`
+    : 'Closed: students need the passcode.';
+  $('#open-close').disabled = !open;
+}
+
+/** Save the open-until time (epoch seconds; 0 closes now) and say what changed. */
+async function saveOpenAccess(until, done) {
+  const st = $('#open-status');
+  try {
+    const r = await api('/api/admin/settings', { method: 'PUT', body: { open_access_until: until } });
+    if (!r.ok) { say(st, detail(r), 'err'); return; }
+    keepSettings(r.data || {});
+    renderOpenAccess();
+    say(st, done, 'ok');
+  } catch (ex) { sayError(st, ex); }
+}
+
+$('#open-midnight').addEventListener('click', () => {
+  const midnight = new Date();
+  midnight.setHours(24, 0, 0, 0);
+  saveOpenAccess(Math.floor(midnight.getTime() / 1000), 'Saved. Anyone with the link can use the student page until midnight.');
+});
+$('#open-close').addEventListener('click', () => saveOpenAccess(0, 'Closed. Students need the passcode again.'));
 
 /* ---------------- 4b. answer thresholds ---------------- */
 
