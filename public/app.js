@@ -1095,8 +1095,7 @@ function fallBackToCaptions() {
   if (player.captionsOnly) return;
   player.captionsOnly = true;
   ui.audioNote.hidden = false;
-  for (const a of player.audio.values()) { a.pause(); }
-  player.audio.clear();
+  releaseSegmentAudio(); // pause every element and drop its source, so nothing keeps downloading
   player.current = null;
   reading.words = null; // the caption timer starts the segment again on the estimate
   if (player.playing) startCaptionTimer();

@@ -850,7 +850,7 @@ function drawEndLabels(root, f, ends, meta) {
     const base = e.s.label.split(' (')[0];
     const room = f.W < 560 ? 9 : 24;
     const short = base.length > room ? `${base.slice(0, room - 1)}…` : base;
-    root.append(svg('text', { class: 'lbl', x: e.x + 10, y: e.y + 4 }, `${short} ${meta.rate ? pct(e.v) : num(e.v)}`));
+    root.append(svg('text', { class: 'lbl', x: e.x + 10, y: e.y + 4 }, `${short} ${cardValueText(meta, e.v)}`));
   }
 }
 
