@@ -277,6 +277,10 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .chips-block .chips { justify-content: center; }
 .ai-label { display: inline-flex; gap: .4rem; align-items: flex-start; margin-top: 2rem; font-size: .85rem; color: var(--ink-3); text-align: left; max-width: 34rem; }
 .ai-label svg { flex: none; margin-top: .2rem; }
+/* A quiet way in to Settings for me; the page behind it asks for the admin passcode. */
+.settings-link { margin-top: 1rem; font: 500 .75rem/1.4 var(--font-mono); letter-spacing: .06em; }
+.settings-link a { color: var(--ink-3); display: inline-block; padding: .75rem .25rem; text-decoration: underline; text-underline-offset: 3px; }
+.settings-link a:hover { color: var(--pen); }
 
 /* presenting: chat docks right, about 30% */
 .app[data-view="presenting"] {
