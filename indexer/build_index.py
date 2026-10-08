@@ -16,7 +16,16 @@ Writes:
   content/embed_cache/<model>/<hash>.npy  one cached Voyage vector per distinct embedding text
 
 Slides flagged `student_names_possible` are left out. A session with no
-alignment file still builds (its transcripts are empty). Embeddings are cached
+alignment file still builds (its transcripts are empty).
+
+Index hygiene (added Oct 8). A slide with no text, notes, OCR text or
+transcript is marked `thin: true` (every other record `thin: false`). Thin
+slides stay in the index: Ben's segment selection fills a one-slide gap from
+the records it is given, so a picture-only slide between two chosen slides must
+be there to be filled in. No row of embeddings.npy is ever all zeros (or not
+finite): a cached zero vector is not trusted, a zero vector from Voyage is
+re-embedded once with the record's placeholder text, and if that is zero too
+the build stops before writing anything. Embeddings are cached
 by a hash of the model and the text, so a re-run only embeds records that
 changed. Without VOYAGE_API_KEY, everything except embeddings.npy is written
 and the script exits 3 with the one command to run once the key is in `.env`.
@@ -90,16 +99,36 @@ def _clip_text(value: Any, limit: int) -> str:
     return cut[: space if space > limit * 0.8 else limit].rstrip()
 
 
+THIN_FIELDS = ("text", "notes", "ocr_text", "transcript")
+ZERO_NORM = 1e-6
+
+
+def placeholder_text(rec: dict[str, Any]) -> str:
+    """What a record is embedded as when it has nothing else: where it sits in the course."""
+    kind = rec.get("kind")
+    if kind not in ("slide", "code"):  # a course-info chunk (indexer/build_info_index.py)
+        return str(rec.get("title") or rec.get("id") or "Course material")
+    where = f"slide {rec.get('slide_number')}" if kind == "slide" else f"cell {rec.get('cell_number')}"
+    course = rec.get("course_title") or rec.get("course")
+    return f"{course}, session {rec.get('session')}: {rec.get('session_title') or ''}, {where}"
+
+
+def is_thin(rec: dict[str, Any]) -> bool:
+    """A slide with no text, notes, OCR text or transcript: nothing to explain but its picture and title."""
+    return rec.get("kind") == "slide" and not any(str(rec.get(k) or "").strip() for k in THIN_FIELDS)
+
+
+def usable(vec: np.ndarray | None) -> bool:
+    """A vector rank() can divide by: finite, and not all zeros."""
+    return vec is not None and bool(np.isfinite(vec).all()) and float(np.linalg.norm(vec)) > ZERO_NORM
+
+
 def embed_text(rec: dict[str, Any]) -> str:
     """Title, slide text, notes, OCR text, then what Ben said (code: title, markdown, source)."""
     keys = SLIDE_EMBED_FIELDS if rec["kind"] == "slide" else CODE_EMBED_FIELDS
     parts = [_clip_text(rec.get(k), LIMITS.get(k, 3000)) for k in keys]
     text = _clip_text("\n\n".join(p for p in parts if p), EMBED_MAX_CHARS)
-    if not text:  # an image-only slide with no OCR text: Voyage rejects empty input
-        where = f"slide {rec.get('slide_number')}" if rec["kind"] == "slide" else f"cell {rec.get('cell_number')}"
-        course = rec.get("course_title") or rec.get("course")
-        text = f"{course}, session {rec.get('session')}: {rec.get('session_title') or ''}, {where}"
-    return text
+    return text or placeholder_text(rec)  # an image-only slide with no OCR text: Voyage rejects empty input
 
 
 def _rows_by_slide_id(rows: Any) -> dict[str, dict[str, Any]]:
@@ -214,7 +243,7 @@ class _Collector:
         self.code_redactions += n_code + n_text + n_notes
         # The clip's audio may say an access code its transcript had, so a redacted transcript loses its clip.
         clip = None if n_code else self.clip_path(sid, course, session, flags)
-        return {
+        rec = {
             "id": sid,
             "kind": "slide",
             **base,
@@ -230,6 +259,8 @@ class _Collector:
             "related_code": [],
             "flags": sorted(flags),
         }
+        rec["thin"] = is_thin(rec)
+        return rec
 
     def clip_path(self, sid: str, course: str, session: int, flags: set[str]) -> str | None:
         """The slide's class clip, unless its session or flags rule clips out or the file is missing."""
@@ -279,6 +310,7 @@ def _code_record(cell: dict[str, Any], source: str, base: dict[str, Any]) -> dic
         "clip": None,
         "related_code": [],
         "flags": sorted(cell.get("flags") or []),
+        "thin": False,
     }
 
 
@@ -311,6 +343,7 @@ def collect(build: Path, archive: Path,
         "with_transcript": sum(1 for r in slides if r["transcript"]),
         "with_clip": sum(1 for r in slides if r["clip"]),
         "with_related_code": sum(1 for r in slides if r["related_code"]),
+        "thin": sum(1 for r in slides if r["thin"]),
         "by_course": collector.by_course,
     }
     return records, {"counts": stats, "sources": dict(sorted(collector.sources.items()))}
@@ -424,7 +457,8 @@ def embed_records(
     The matrix is None when some texts are not cached and there is no key to embed them.
     """
     texts = [(text_of or embed_text)(r) for r in records]
-    vecs: list[np.ndarray | None] = [cache.get(t) for t in texts]
+    # A cached zero (or broken) vector is not trusted: it is embedded again (Oct 8).
+    vecs: list[np.ndarray | None] = [_trusted(cache.get(t)) for t in texts]
     cached = sum(v is not None for v in vecs)
     todo = sorted({t for t, v in zip(texts, vecs) if v is None})
     if todo and not key:
@@ -437,9 +471,15 @@ def embed_records(
         finally:
             if own:
                 client.close()
-        vecs = [cache.get(t) for t in texts]
+        asked = set(todo)
+        vecs = [_trusted(cache.get(t)) for t in texts]
+        for i, vec in enumerate(vecs):
+            if vec is None and texts[i] in asked:
+                vecs[i] = _placeholder_vector(records[i], cache, key, client, sleep, log, usage)
     if any(v is None for v in vecs):
         raise EmbeddingError("some embeddings are missing from the cache after embedding")
+    if not all(usable(v) for v in vecs):  # the guarantee rank() relies on: no zero-norm row
+        raise EmbeddingError("an embedding row is all zeros or not finite")
     dims = {v.shape[0] for v in vecs if v is not None}
     if len(dims) != 1:
         raise EmbeddingError(f"embeddings have mixed dimensions {sorted(dims)}; clear the cache for this model")
@@ -482,13 +522,45 @@ def _embed_into_cache(
             sleep(61.0)
             continue
         for text, vec in zip(group, got):
-            cache.put(text, vec)
+            if usable(vec):  # a zero vector is never cached; the placeholder retry in embed_records handles it
+                cache.put(text, vec)
         done += 1
         log(f"  embedded batch {done} ({len(group)} texts, {len(groups)} batches left)")
         if slow and groups:
             spent = (usage.get("tokens", 0) - before) if usage is not None else 0
             spent = spent or sum(map(len, group)) // 3  # no usage reported: about 3 characters a token
             sleep(max(60.0 / SLOW_RPM, 60.0 * spent / SLOW_TPM) + 1.0)
+
+
+def _trusted(vec: np.ndarray | None) -> np.ndarray | None:
+    return vec if usable(vec) else None
+
+
+def _placeholder_vector(
+    rec: dict[str, Any],
+    cache: EmbedCache,
+    key: str | None,
+    client: httpx.Client | None,
+    sleep: Callable[[float], None],
+    log: Callable[[str], None],
+    usage: dict[str, int] | None,
+) -> np.ndarray:
+    """Voyage gave a zero vector for this record's text: embed its placeholder text instead, or stop."""
+    text = placeholder_text(rec)
+    log(f"  Voyage returned a zero vector for {rec.get('id')}; re-embedding it with its placeholder text")
+    vec = _trusted(cache.get(text))
+    if vec is None:
+        own = client is None
+        client = client or httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0))
+        try:
+            vec = voyage_embed([text], cache.model, key or "", client, sleep, usage)[0]
+        finally:
+            if own:
+                client.close()
+    if not usable(vec):
+        raise EmbeddingError(f"Voyage returned a zero vector for {rec.get('id')}, and for its placeholder text too")
+    cache.put(text, vec)
+    return np.asarray(vec, dtype=np.float32)
 
 
 def _paced_mode_message(rest: list[str]) -> str:

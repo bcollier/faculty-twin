@@ -371,7 +371,7 @@ flowchart LR
 | TypeSafe (Jev), and DeepEval's PostHog telemetry | Optional eval judge; DeepEval's own usage events | Local build machine |
 | Hugging Face Hub | Model weights for the local Kokoro and Chatterbox voices, first run only | Local build machine |
 | GitHub and GitHub Actions; PyPI, apt, Playwright downloads | Code, pull requests, the test suite (no network calls in tests) | GitHub Actions |
-| Vercel | Deploys `main`, holds the keys, runs the function | Vercel |
+| Vercel | Serves the deployed `main`, holds the keys, runs the function | Vercel |
 | Google Fonts | Fonts on the demo page in `docs/demo/` only, not the app | Viewer's browser |
 
 The pipeline, eval and CI diagrams, every endpoint with the file and function that calls it, auth variable, cost basis and what data it receives, all 67 of the app's own routes, and the local tools (ffmpeg, Apple Vision OCR, LibreOffice, Poppler and others): **[docs/APIS.md](docs/APIS.md)**.
@@ -448,7 +448,7 @@ uv run --no-project --with-requirements requirements.txt --with-requirements req
 
 ### Deploy
 
-- **Vercel deploys `main`.** Every change goes branch, pull request, squash merge (see [AGENTS.md](AGENTS.md)); the merge deploys the static files and the function together.
+- **Deploys are run by hand from `main`.** Every change goes branch, pull request, squash merge (see [AGENTS.md](AGENTS.md)). The repo is not connected to Vercel's Git integration, so a merge does not deploy by itself: pull `main`, then run `npx -y vercel@62.4.0 deploy --prod --yes`, which ships the static files and the function together, and check it with `python3 scripts/live_smoke.py`.
 - **Keys** live in the Vercel project's environment variables (the names are in `.env.example`). `SESSION_SECRET` and `AUDIO_SIGNING_SECRET` must each be at least 32 random characters in production.
 - **Supabase, once:** run `supabase/schema.sql` in the SQL editor and create a private Storage bucket named `twin-content` (see [supabase/README.md](supabase/README.md)).
 - **Content** is not part of a deploy: it reaches the bucket through `indexer/upload.py`, and warm functions pick up a new `index_version` within a minute.
