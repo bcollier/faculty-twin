@@ -102,6 +102,20 @@ def top_hits(ranked: list[tuple[int, float]], records: list[dict[str, Any]], n: 
     return [Hit(records[i], float(score)) for i, score in ranked[:n]]
 
 
+def one_course(hits: list[Hit], course: Optional[str]) -> list[Hit]:
+    """With "All courses", only the top chunk's course (and chunks with no course) go into one answer.
+
+    Added Oct 8 (code review): the top 3 chunks could come from both courses, so a single answer,
+    labelled with one course, mixed the other course's policies, due dates, and links.
+    """
+    if course is not None or not hits:
+        return hits
+    top = str(hits[0].record.get("course") or "")
+    if top in ("", "all"):
+        return hits
+    return [h for h in hits if str(h.record.get("course") or "") in ("", "all", top)]
+
+
 # ---------------------------------------------------------------- prompt
 
 def due_text(raw: Any) -> str:
@@ -240,6 +254,7 @@ def answer(
     model: Optional[str] = None,
 ) -> Result:
     """One grounded model call over the top chunks; the top chunk's first sentences if it fails."""
+    hits = one_course(hits, course)
     top = hits[0].record
     errors: list[str] = []
     source = "llm"
