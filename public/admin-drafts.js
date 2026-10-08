@@ -5,6 +5,7 @@
 import { LABEL, renderHelperFigure, toMarkdown, toSvgString } from './helper-slide.js';
 
 const $ = (s, r = document) => r.querySelector(s);
+/** Build an element: `class`, `text`, `on<event>` listeners, other keys as attributes. Never takes HTML. */
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -17,6 +18,7 @@ const el = (tag, attrs = {}, ...kids) => {
   for (const kid of kids) if (kid != null) n.append(kid);
   return n;
 };
+/** Date and time in Eastern time. */
 const fmtWhen = (iso) => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -28,6 +30,7 @@ const STATUS = {
   hidden: { text: 'Hidden', cls: 'warn' },
 };
 
+/** fetch wrapper that never throws: no connection comes back as status 0 with a message. */
 async function call(path, { method = 'GET', body } = {}) {
   let res;
   try {
@@ -41,11 +44,14 @@ async function call(path, { method = 'GET', body } = {}) {
   try { data = await res.json(); } catch { /* none */ }
   return { ok: res.ok, status: res.status, data };
 }
+/** The server's error message, else `fallback`. */
 const detail = (r, fallback) => (typeof r?.data?.detail === 'string' ? r.data.detail : fallback || `Request failed (HTTP ${r?.status}).`);
+/** Write a status line; `kind` is '', 'ok' or 'err'. */
 function say(node, text, kind = '') { node.textContent = text || ''; node.className = `status-line ${kind}`.trim(); }
 
 let pending = null; // the generated, unsaved draft: { topic, spec }
 
+/** Save text as a file through a temporary link. */
 function download(name, text, type) {
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = el('a', { href: url, download: name });
@@ -55,10 +61,12 @@ function download(name, text, type) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** A file name from a slide title. */
 function slug(text) {
   return String(text || 'slide').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'slide';
 }
 
+/** Download SVG and Copy as Markdown for one slide. */
 function exportButtons(spec, status) {
   return [
     el('button', { type: 'button', class: 'btn btn-small', text: 'Download SVG',
@@ -72,6 +80,7 @@ function exportButtons(spec, status) {
 
 /* ---------------- settings ---------------- */
 
+/** The helper slide switches, the cap and today's count. */
 function renderSettings(d) {
   $('#hs-enabled').checked = !!d.helper_slides_enabled;
   $('#hs-approved').checked = !!d.helper_slides_use_approved;
@@ -79,6 +88,7 @@ function renderSettings(d) {
   $('#hs-cap-hint').textContent = `Model calls for helper slides per day (DAILY_HELPER_SLIDE_CAP, default 150). Each is about a cent. Past the cap, answers go out without one. Zero turns them off. Today so far: ${d.helper_slides_today ?? 0}.`;
 }
 
+/** Fetch the helper slide settings. */
 async function loadSettings() {
   const r = await call('/api/admin/helper-slides');
   if (r.ok) renderSettings(r.data);
@@ -99,6 +109,7 @@ $('#hs-settings').addEventListener('submit', async (e) => {
 
 /* ---------------- generate ---------------- */
 
+/** Recent declined questions as topic ideas. */
 async function loadGaps() {
   const r = await call('/api/admin/drafts/gaps');
   const gaps = r.ok ? (r.data.gaps || []) : [];
@@ -137,23 +148,24 @@ $('#hs-save').addEventListener('click', async () => {
 
 /* ---------------- review ---------------- */
 
+/** One saved draft: the slide, Approve, Hide or Back to draft, Edit text, export and Delete. */
 function draftItem(d) {
   const status = el('p', { class: 'status-line', role: 'status' });
   const pill = STATUS[d.status] || STATUS.draft;
   const editor = el('textarea', { class: 'hs-edit', rows: '12', spellcheck: 'false', 'aria-label': 'Slide spec (JSON)', hidden: true });
   editor.value = JSON.stringify(d.spec, null, 2);
   const saveEdit = el('button', { type: 'button', class: 'btn btn-small btn-primary', text: 'Save text', hidden: true });
-  const setStatus = (next) => async () => {
-    const r = await call(`/api/admin/drafts/${encodeURIComponent(d.id)}`, { method: 'PATCH', body: { status: next } });
+  // PATCH or DELETE this draft: the list reloads on success, the reason shows under the draft on failure.
+  const change = async (method, body) => {
+    const r = await call(`/api/admin/drafts/${encodeURIComponent(d.id)}`, { method, body });
     if (!r.ok) { say(status, detail(r), 'err'); return; }
     loadDrafts();
   };
+  const setStatus = (next) => () => change('PATCH', { status: next });
   saveEdit.addEventListener('click', async () => {
     let spec;
     try { spec = JSON.parse(editor.value); } catch { say(status, 'That is not valid JSON.', 'err'); return; }
-    const r = await call(`/api/admin/drafts/${encodeURIComponent(d.id)}`, { method: 'PATCH', body: { spec } });
-    if (!r.ok) { say(status, detail(r), 'err'); return; }
-    loadDrafts();
+    await change('PATCH', { spec });
   });
   return el('li', { class: 'hs-item' },
     el('div', { class: 'hs-head' },
@@ -172,13 +184,12 @@ function draftItem(d) {
       ...exportButtons(d.spec, status),
       el('button', { type: 'button', class: 'btn btn-small', text: 'Delete', onclick: async () => {
         if (!window.confirm(`Delete the draft "${d.topic}"? This cannot be undone.`)) return;
-        const r = await call(`/api/admin/drafts/${encodeURIComponent(d.id)}`, { method: 'DELETE' });
-        if (!r.ok) { say(status, detail(r), 'err'); return; }
-        loadDrafts();
+        await change('DELETE');
       } })),
     editor, saveEdit, status);
 }
 
+/** Every saved draft, newest first. */
 async function loadDrafts() {
   const r = await call('/api/admin/drafts');
   if (!r.ok) { say($('#hs-list-status'), detail(r, 'Couldn\'t load the drafts.'), 'err'); return; }

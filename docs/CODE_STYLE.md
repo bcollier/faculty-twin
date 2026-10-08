@@ -6,7 +6,7 @@ The conventions the code follows, so a change reads like the code around it. The
 
 ## What is never touched
 
-- **Ben's hand-written code** ([AGENTS.md](../AGENTS.md), "Code Ben writes by hand"): `rank()`, `select_segments()` and `NOT_COVERED_THRESHOLD` in `app/retrieval.py`, and `onClipEnded()` in `public/app.js`. Refactors work around them. `ruff.toml` skips `app/retrieval.py` entirely, so the linter never asks for an edit there.
+- **Ben's hand-written code** ([AGENTS.md](../AGENTS.md), "Code Ben writes by hand"): `rank()`, `select_segments()` and `NOT_COVERED_THRESHOLD` in `app/retrieval.py`, and `onClipEnded()` in `public/app.js`. Refactors work around them: the helpers `onClipEnded()` calls (`showSegment`, `playCurrent`, `preloadAudio`, `finishAnswer`) keep their names and behavior. `ruff.toml` skips `app/retrieval.py` entirely, so the linter never asks for an edit there.
 - **Behavior.** A clean-code change keeps every output the same: the test suite, the browser tests and the mock contract test are the safety net. Where a cleaner version would change an output (a stored file format, a cache key, a log message Settings shows), the old behavior stays and a comment says why.
 
 ## Python
@@ -49,6 +49,22 @@ uvx ruff check --fix .    # apply the safe fixes
 **Scripts.** A stage that can run as `python indexer/<stage>.py` starts with the same two lines (`if __package__ in (None, ""): sys.path.insert(...)`), so it imports `indexer.*` the same way whether it runs as a script, a module, or from the worker.
 
 **Privacy in code.** Anything that touches rosters, transcripts or eval questions logs counts, ids and reason codes only. When a refactor moves such code, a differential check runs the old and new versions on the same inputs (the de-identification split in this pass was compared on 38,988 texts with zero differences).
+
+## JavaScript (`public/`)
+
+**No build step.** Plain ES modules, no framework, no bundler: what is in `public/` is what the browser runs. CI runs `node --check` on every file.
+
+**Files.** `app.js` is the student page; `admin.js` signs in to Settings and runs its numbered sections, and each other Settings section is its own script (`admin-analytics.js`, `admin-evals.js`, `admin-alerts.js`, `admin-drafts.js`) that starts when `admin.js` dispatches `ft-admin-enter`. Logic with no DOM lives in its own module with named exports and its own node test: `readalong.js` (read-along timing), `prompt-diff.js` (Settings > Prompts' diff), `helper-slide.js` (drawing a checked slide spec). A page script loads such a module with `await import('./x.js')`.
+
+**Why the page scripts stay whole.** The node tests (`tests/js/fakedom.mjs`) run a page script's source as one function body, where a static `import` is not allowed, and several Python tests read `app.js` and `admin.js` for their guards. So a page script is organized into sections inside one file, listed in its header comment, rather than split into many files. For the same reason each page script keeps its own small `$`, `el` and request helpers: the copies are deliberate, and each file loads on its own.
+
+**Sections and comments.** A section starts with a `/* ---- name ---- */` (or boxed `/* ==== */`) header. Every function has a one-line `/** ... */` above it saying what it shows, returns or changes; comments say why (a browser quirk, a privacy rule, a race between requests), not what the next line does.
+
+**Names.** `load*` fetches and then draws, `render*` redraws from the state already loaded, `show*` puts something on screen, `draw*` builds SVG. Each script keeps its state in one object (`app`, `player` and `reading` on the student page; `S`, `E`, `A`, `P` in Settings).
+
+**DOM.** Elements are built with `el()` and text goes in with `textContent`. Nothing is ever parsed as HTML (`tests/test_security.py` fails on `innerHTML` and friends).
+
+**Refactoring drawing code.** A change to code that draws (a chart, a table) is checked by rendering the old and the new version into a recording fake DOM with the same data and comparing the result. In this pass: the Evals report card chart (96 data, width and measure combinations), the Analytics price table (8 tables, plus typing, adding a model and switching plan), and the prompt diff (3,002 text pairs), all identical.
 
 ## Tests
 

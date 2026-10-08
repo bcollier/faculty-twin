@@ -1,5 +1,13 @@
 // Faculty Twin: Settings page (admin). Not linked from the student page.
 // Talks only to /api/admin/* with the ft_admin cookie. Keys never reach the browser.
+//
+// This file signs in and runs the numbered sections: 1 model, 2 voice, 3 courses and source material,
+// 4 limits, web answers and access, 4b answer thresholds, 5 activity, 6 prompts. The other sections
+// are their own scripts (admin-analytics.js, admin-evals.js, admin-alerts.js, admin-drafts.js); they
+// start when this file dispatches `ft-admin-enter`. Prompts' "Run an eval" dispatches `ft:run-eval`.
+//
+// Each page script defines its own small helpers ($, el, api) on purpose: the scripts load
+// independently (no bundler), and the node tests (tests/js/fakedom.mjs) run one file at a time.
 
 const DEV_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 if (DEV_HOSTS.includes(location.hostname) && new URLSearchParams(location.search).get('mock') === '1') {
@@ -7,8 +15,12 @@ if (DEV_HOSTS.includes(location.hostname) && new URLSearchParams(location.search
   // would otherwise show fake "saved" results while nothing is saved.
   await import('./dev/mock.js');
 }
+// Settings > Prompts' word-level diff (pure functions).
+const DIFF = await import('./prompt-diff.js');
 
+/** The first element matching `s`. */
 const $ = (s, r = document) => r.querySelector(s);
+/** Build an element: `class`, `text`, `on<event>` listeners, other keys as attributes. Never takes HTML. */
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -21,12 +33,14 @@ const el = (tag, attrs = {}, ...kids) => {
   for (const kid of kids) if (kid != null) n.append(kid);
   return n;
 };
+/** The list in a reply: the reply itself when it is an array, else the first array under one of `keys`. */
 const asList = (d, ...keys) => {
   if (Array.isArray(d)) return d;
   for (const k of keys) if (Array.isArray(d?.[k])) return d[k];
   return [];
 };
 const pad2 = (n) => String(n).padStart(2, '0');
+/** "70-445" for "70445". */
 const courseCode = (c) => (/^\d{5}$/.test(String(c)) ? `${String(c).slice(0, 2)}-${String(c).slice(2)}` : String(c ?? ''));
 const fmtWhen = (iso) => {
   if (!iso) return '';
@@ -34,14 +48,18 @@ const fmtWhen = (iso) => {
   return isNaN(d) ? iso : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 };
 const fmtNum = (n) => (typeof n === 'number' ? n.toLocaleString('en-US') : String(n ?? ''));
+/** "daily_api_calls" as "Daily API calls". */
 const humanize = (k) => String(k).replace(/_/g, ' ').replace(/\b(api|id)\b/gi, s => s.toUpperCase()).replace(/^./, c => c.toUpperCase());
 
+/** The server could not be reached. */
 class NetworkError extends Error {}
+/** A 401: api() has already shown the sign-in screen, so callers show nothing more. */
 class AuthError extends Error {}
 /* True once this page has been inside the app. Only then does a 401 mean the session ran out;
    on a fresh visit with no admin cookie, a 401 just means "not signed in yet". */
 let hadSession = false;
 
+/** fetch wrapper: {status, ok, data}. Throws NetworkError (no reply) or AuthError (signed out, login shown). */
 async function api(path, { method = 'GET', body, timeout = 30000 } = {}) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeout);
@@ -62,23 +80,35 @@ async function api(path, { method = 'GET', body, timeout = 30000 } = {}) {
   }
   return { status: res.status, ok: res.ok, data };
 }
+/** The server's error message (FastAPI's `detail`, a string or a list of field errors), else `fallback`. */
 const detail = (r, fallback) => {
   const d = r?.data?.detail;
   if (typeof d === 'string') return d;
   if (Array.isArray(d) && d[0]?.msg) return d.map(x => x.msg).join('; ');
   return fallback || `Request failed (HTTP ${r?.status}).`;
 };
+/** Write a status line; `kind` is '', 'ok' or 'err'. */
 function say(node, text, kind = '') {
   node.textContent = text || '';
   node.className = `status-line ${kind}`.trim();
 }
 const errText = (e) => (e instanceof NetworkError ? 'Can\'t reach the server.' : (e?.message || 'Something went wrong.'));
+/** Show a failed request on a status line. A sign-out shows nothing: the login screen is already up. */
+function sayError(node, e) {
+  if (!(e instanceof AuthError)) say(node, errText(e), 'err');
+}
+/** Keep what the server says was saved (it returns the full settings after a PUT). */
+function keepSettings(saved) {
+  S.settings = { ...S.settings, ...saved };
+}
 
 /* ---------------- screens ---------------- */
 
 const screens = { boot: $('#a-boot'), offline: $('#a-offline'), login: $('#a-login'), app: $('#a-app') };
+/** Show one of boot, offline, login, app. */
 function show(name) { for (const [k, n] of Object.entries(screens)) n.hidden = k !== name; }
 
+/** The sign-in screen, with an optional note (for example "your session ran out"). */
 function showLogin(note) {
   show('login');
   $('#a-login-note').hidden = !note;
@@ -87,6 +117,7 @@ function showLogin(note) {
   $('#a-passcode').focus();
 }
 
+/** First load: /api/admin/status decides between the app, the login screen (401) and offline. */
 async function boot() {
   show('boot');
   try {
@@ -128,6 +159,7 @@ const S = {
   pollTimer: null,
 };
 
+/** Signed in: render the status and load every section. */
 async function enter(status) {
   hadSession = true;
   show('app');
@@ -145,6 +177,7 @@ async function enter(status) {
 
 /* ---------------- keys / status ---------------- */
 
+/** Which keys are set on the server, the limits, and today's counts. */
 function renderStatus(st) {
   S.status = st || {};
   const keys = S.status.keys || {};
@@ -158,6 +191,7 @@ function renderStatus(st) {
 function providerKeyName(p) {
   return { anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY', openrouter: 'OPENROUTER_API_KEY' }[p];
 }
+/** Warn when the chosen provider's key is not set on the server. */
 function updateProviderWarning() {
   const name = providerKeyName($('#provider').value);
   const keys = S.status?.keys || {};
@@ -169,6 +203,7 @@ function updateProviderWarning() {
 
 /* ---------------- 1. model ---------------- */
 
+/** The saved settings into the model, cap and web answer fields. */
 async function loadSettings() {
   try {
     const r = await api('/api/admin/settings');
@@ -184,13 +219,15 @@ async function loadSettings() {
   updateProviderWarning();
 }
 
+/** "Live now: provider / model", with the server's warning about it. */
 function liveModelText() {
   if (!S.settings.model) return '';
   const warn = S.settings.model_warning ? ` (${S.settings.model_warning})` : '';
   return `Live now: ${S.settings.provider} / ${S.settings.model}${warn}`;
 }
 
-let modelsReq = 0;
+let modelsReq = 0;   // only the newest model-list request may render
+/** The provider's model list (a failure still lets the admin type a model id). */
 async function loadModels() {
   const provider = $('#provider').value;
   const my = ++modelsReq;
@@ -207,12 +244,14 @@ async function loadModels() {
   }
 }
 
+/** A per-token price as dollars per million tokens, "free", or null when it is not a number. */
 function perMillion(x) {
   const n = Number(x);
   if (!isFinite(n)) return null;
   if (n === 0) return 'free';
   return `$${(n * 1e6).toFixed(2)}`;
 }
+/** "Name · 200k context · $3.00 in / $15.00 out per 1M tokens". */
 function modelMeta(m) {
   const bits = [];
   if (m.name && m.name !== m.id) bits.push(m.name);
@@ -225,6 +264,7 @@ function modelMeta(m) {
   return bits.join(' · ');
 }
 
+/** The model list filtered by the search box (the first 200 shown). */
 function renderModels() {
   const q = $('#model-search').value.trim().toLowerCase();
   const current = $('#model-id').value.trim();
@@ -257,11 +297,11 @@ $('#save-model').addEventListener('click', async () => {
   try {
     const r = await api('/api/admin/settings', { method: 'PUT', body: { provider, model } });
     if (!r.ok) { say($('#save-model-status'), detail(r), 'err'); return; }
-    S.settings = { ...S.settings, ...(r.data || { provider, model }) };
+    keepSettings(r.data || { provider, model });
     $('#current-model').textContent = liveModelText();
     const warn = S.settings.model_warning;
     say($('#save-model-status'), warn ? `Saved. ${warn}` : 'Saved. New questions use this model.', warn ? 'err' : 'ok');
-  } catch (e) { if (!(e instanceof AuthError)) say($('#save-model-status'), errText(e), 'err'); }
+  } catch (e) { sayError($('#save-model-status'), e); }
 });
 
 $('#test-model').addEventListener('click', async () => {
@@ -283,7 +323,7 @@ $('#test-model').addEventListener('click', async () => {
     out.textContent = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
     out.hidden = false;
   } catch (e) {
-    if (!(e instanceof AuthError)) say($('#test-status'), errText(e), 'err');
+    sayError($('#test-status'), e);
   } finally { btn.disabled = false; }
 });
 
@@ -304,6 +344,7 @@ const KIND_TEXT = {
   none: 'captions only',
 };
 
+/** The voice groups from the server, then every voice-dependent control. */
 async function loadVoices() {
   say($('#voices-status'), 'Loading voices...');
   try {
@@ -314,10 +355,11 @@ async function loadVoices() {
       S.freeDefault = r.data?.free_voice_default || '';
       say($('#voices-status'), r.data?.elevenlabs_error || '', r.data?.elevenlabs_error ? 'err' : '');
     }
-  } catch (e) { if (!(e instanceof AuthError)) say($('#voices-status'), errText(e), 'err'); }
+  } catch (e) { sayError($('#voices-status'), e); }
   renderVoices();
 }
 
+/** One voice as a radio button, with a Preview button when it has a sample. */
 function voiceItem(v, current, previewKind) {
   const id = `voice-${String(v.voice_id || 'default').replace(/[^A-Za-z0-9_-]/g, '_')}`;
   const sub = [v.description, v.is_default ? 'server default (ELEVENLABS_VOICE_ID)' : null].filter(Boolean).join(' · ');
@@ -334,6 +376,7 @@ function voiceItem(v, current, previewKind) {
   return li;
 }
 
+/** The voice groups, the "Other" group, and the custom free voice; then the fallback and web voice menus. */
 function renderVoices() {
   const current = S.settings.voice_id ?? '';
   const known = new Set();
@@ -365,6 +408,7 @@ function renderVoices() {
   renderCurrentVoice();
 }
 
+/** "Another Microsoft voice": a radio plus a ShortName field and its own Preview. */
 function customFreeItem(current) {
   const li = el('li', { class: 'voice voice-custom' },
     el('label', { for: 'voice-custom' },
@@ -387,17 +431,27 @@ function customFreeItem(current) {
   return li;
 }
 
+/** The free Microsoft voices from the voice list. */
 function freeVoices() {
   return asList(S.voiceGroups.find(g => g.id === 'free')?.voices);
 }
 
+/**
+ * <option>s for the free voices. A saved voice that is not on the list gets its own option labeled
+ * `savedLabel` (pass null for none), so saving the form again keeps it.
+ */
+function freeVoiceOptions(chosen, savedLabel) {
+  const options = freeVoices().map(v => el('option', { value: v.voice_id, selected: v.voice_id === chosen }, `${v.name} (${v.description || 'free'})`));
+  if (savedLabel != null && !freeVoices().some(v => v.voice_id === chosen)) options.push(el('option', { value: chosen, selected: true }, savedLabel));
+  return options;
+}
+
+/** The fallback when the first voice fails: captions, or a free voice (the menu shows only then). */
 function renderFallback() {
   const mode = S.settings.voice_fallback || 'captions';
   $('#voice-fallback').value = mode;
   const chosen = S.settings.voice_fallback_voice || S.freeDefault;
-  const options = freeVoices().map(v => el('option', { value: v.voice_id, selected: v.voice_id === chosen }, `${v.name} (${v.description || 'free'})`));
-  if (chosen && !freeVoices().some(v => v.voice_id === chosen)) options.push(el('option', { value: chosen, selected: true }, chosen.slice(5)));
-  $('#voice-fallback-voice').replaceChildren(...options);
+  $('#voice-fallback-voice').replaceChildren(...freeVoiceOptions(chosen, chosen ? chosen.slice(5) : null));
   $('#voice-fallback-voice-field').hidden = mode !== 'free';
 }
 $('#voice-fallback').addEventListener('change', () => {
@@ -406,6 +460,7 @@ $('#voice-fallback').addEventListener('change', () => {
 });
 $('#voice-fallback-voice').addEventListener('change', () => say($('#save-voice-status'), 'Not saved yet.'));
 
+/** "Live now: ..." with the label students see and the fallback. */
 function renderCurrentVoice() {
   const s = S.settings;
   const kind = s.voice_kind || 'none';
@@ -414,6 +469,10 @@ function renderCurrentVoice() {
   say($('#voice-current'), `Live now: ${KIND_TEXT[kind] || kind}.${label}${fb}`);
 }
 
+/**
+ * Play or stop a voice sample. `kind` 'remote' plays the provider's sample URL; 'server' fetches our
+ * admin-only preview route first, so an error message can be shown instead of a silent failure.
+ */
 async function togglePreview(btn, url, kind) {
   if (previewBtn === btn) { previewAudio.pause(); btn.textContent = 'Preview'; previewBtn = null; return; }
   if (previewBtn) previewBtn.textContent = 'Preview';
@@ -467,10 +526,10 @@ $('#save-voice').addEventListener('click', async () => {
   try {
     const r = await api('/api/admin/settings', { method: 'PUT', body });
     if (!r.ok) { say($('#save-voice-status'), detail(r), 'err'); return; }
-    S.settings = { ...S.settings, ...(r.data || {}) };
+    keepSettings(r.data || {});
     renderCurrentVoice();
     say($('#save-voice-status'), 'Saved.', 'ok');
-  } catch (e) { if (!(e instanceof AuthError)) say($('#save-voice-status'), errText(e), 'err'); }
+  } catch (e) { sayError($('#save-voice-status'), e); }
 });
 
 /* ---------------- 3. courses and source material ---------------- */
@@ -479,6 +538,7 @@ const KIND_ACCEPT = { slides: '.pdf,.pptx', transcript: '.vtt', video: '.mp4', n
 const HAS_KEYS = [['slides', 'Slides'], ['transcript', 'Transcript'], ['video', 'Video'], ['clips', 'Clips'], ['indexed', 'Indexed']];
 const STATUS_PILL = { ready: 'ok', processing: 'info', uploaded: 'warn', uploading: 'warn', error: 'err' };
 
+/** Courses, sessions and uploaded sources, then the tables, the upload menus and the status poll. */
 async function loadCourses() {
   say($('#courses-status'), 'Loading...');
   try {
@@ -486,7 +546,7 @@ async function loadCourses() {
     S.courses = c.ok ? asList(c.data, 'courses') : [];
     S.sources = s.ok ? asList(s.data, 'sources') : [];
     say($('#courses-status'), c.ok ? '' : detail(c, 'Couldn\'t load courses.'), c.ok ? '' : 'err');
-  } catch (e) { if (!(e instanceof AuthError)) say($('#courses-status'), errText(e), 'err'); }
+  } catch (e) { sayError($('#courses-status'), e); }
   renderCourses();
   renderSources();
   fillCourseSelects();
@@ -494,8 +554,10 @@ async function loadCourses() {
 }
 $('#refresh-courses').addEventListener('click', loadCourses);
 
+/** The session's id, or "70445-s03" when the server did not send one. */
 function sessionId(s, course) { return s.id ?? `${course}-s${pad2(s.session)}`; }
 
+/** One table per course: each session, what exists for it, its worst source status, Upload and Hide. */
 function renderCourses() {
   const wrap = $('#course-blocks');
   if (!S.courses.length) { wrap.replaceChildren(el('p', { class: 'muted', text: 'No courses yet. Add one below.' })); return; }
@@ -529,6 +591,7 @@ function renderCourses() {
   }));
 }
 
+/** Hide a session from students, or show it again. */
 async function toggleVisible(btn, course, s) {
   const next = s.visible === false;
   btn.disabled = true;
@@ -538,10 +601,11 @@ async function toggleVisible(btn, course, s) {
     s.visible = next;
     say($('#courses-status'), `Session ${s.session} is now ${next ? 'visible to students' : 'hidden from students'}.`, 'ok');
     renderCourses();
-  } catch (e) { if (!(e instanceof AuthError)) say($('#courses-status'), errText(e), 'err'); }
+  } catch (e) { sayError($('#courses-status'), e); }
   finally { btn.disabled = false; }
 }
 
+/** Every uploaded file, newest first, with its status and a Re-run button. */
 function renderSources() {
   const body = $('#sources-body');
   if (!S.sources.length) { body.replaceChildren(el('tr', {}, el('td', { colspan: '7', class: 'muted', text: 'Nothing uploaded yet.' }))); return; }
@@ -560,6 +624,7 @@ function renderSources() {
     }, 'Re-run')))));
 }
 
+/** Queue a source for the worker again. */
 async function rerun(id) {
   try {
     const r = await api(`/api/admin/sources/${encodeURIComponent(id)}/rerun`, { method: 'POST' });
@@ -568,9 +633,10 @@ async function rerun(id) {
     if (s) Object.assign(s, r.data && typeof r.data === 'object' ? r.data : { status: 'uploaded' });
     renderSources(); renderCourses(); schedulePoll();
     say($('#courses-status'), 'Queued. The worker picks it up on its next check.', 'ok');
-  } catch (e) { if (!(e instanceof AuthError)) say($('#courses-status'), errText(e), 'err'); }
+  } catch (e) { sayError($('#courses-status'), e); }
 }
 
+/** While anything is queued or processing, check the sources every 4 seconds. */
 function schedulePoll() {
   clearTimeout(S.pollTimer);
   const busy = S.sources.some(x => ['uploaded', 'processing', 'uploading'].includes(x.status));
@@ -584,6 +650,7 @@ function schedulePoll() {
   }, 4000);
 }
 
+/** The course menus in the upload and new-session forms (keeping the current choice). */
 function fillCourseSelects() {
   for (const sel of [$('#up-course'), $('#ns-course')]) {
     const prev = sel.value;
@@ -592,6 +659,7 @@ function fillCourseSelects() {
   }
   fillSessionSelect();
 }
+/** The session menu for the course picked in the upload form. */
 function fillSessionSelect() {
   const c = S.courses.find(x => x.course === $('#up-course').value);
   const sel = $('#up-session');
@@ -602,6 +670,7 @@ function fillSessionSelect() {
 $('#up-course').addEventListener('change', fillSessionSelect);
 $('#up-kind').addEventListener('change', () => { $('#up-file').accept = KIND_ACCEPT[$('#up-kind').value]; $('#up-file').value = ''; });
 
+/** Point the upload form at a session and move to it. */
 function pickUpload(course, session) {
   $('#up-course').value = course;
   fillSessionSelect();
@@ -659,6 +728,7 @@ $('#upload-form').addEventListener('submit', async (e) => {
   }
 });
 
+/** Upload straight to storage with the signed link (XHR, because fetch reports no upload progress). */
 function putWithProgress(url, file, method, headers, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -685,7 +755,7 @@ $('#course-form').addEventListener('submit', async (e) => {
     say(st, `Added ${course}.`, 'ok');
     e.target.reset();
     loadCourses();
-  } catch (ex) { if (!(ex instanceof AuthError)) say(st, errText(ex), 'err'); }
+  } catch (ex) { sayError(st, ex); }
 });
 
 $('#session-form').addEventListener('submit', async (e) => {
@@ -700,16 +770,20 @@ $('#session-form').addEventListener('submit', async (e) => {
     e.target.reset();
     await loadCourses();
     pickUpload(course, session);
-  } catch (ex) { if (!(ex instanceof AuthError)) say(st, errText(ex), 'err'); }
+  } catch (ex) { sayError(st, ex); }
 });
 
 /* ---------------- 4. limits and access ---------------- */
 
-function renderLimits() {
-  const limits = S.status?.limits || {};
-  const entries = Object.entries(limits);
-  $('#limits-kv').replaceChildren(...(entries.length ? entries : [['not reported', '']]).map(([k, v]) =>
+/** A <dl> of name and number pairs, or one `emptyName` row when there are none. */
+function renderKv(node, values, emptyName) {
+  const entries = Object.entries(values);
+  node.replaceChildren(...(entries.length ? entries : [[emptyName, '']]).map(([k, v]) =>
     el('div', {}, el('dt', { text: humanize(k) }), el('dd', { text: fmtNum(v) }))));
+}
+
+function renderLimits() {
+  renderKv($('#limits-kv'), S.status?.limits || {}, 'not reported');
 }
 
 $('#cap-form').addEventListener('submit', async (e) => {
@@ -721,11 +795,11 @@ $('#cap-form').addEventListener('submit', async (e) => {
   try {
     const r = await api('/api/admin/settings', { method: 'PUT', body: { daily_voice_char_cap: v, daily_free_voice_char_cap: fv } });
     if (!r.ok) { say(st, detail(r), 'err'); return; }
-    S.settings = { ...S.settings, ...(r.data || {}) };
+    keepSettings(r.data || {});
     const eleven = v === 0 ? 'ElevenLabs is off' : `ElevenLabs ${fmtNum(v)}`;
     const free = fv === 0 ? 'free voices off' : `free voices ${fmtNum(fv)}`;
     say(st, `Saved. ${eleven}, ${free} characters a day.`, 'ok');
-  } catch (ex) { if (!(ex instanceof AuthError)) say(st, errText(ex), 'err'); }
+  } catch (ex) { sayError(st, ex); }
 });
 
 /* Web answers (beyond my slides): on/off, the daily cap, and an optional free voice. Never the clone. */
@@ -736,10 +810,8 @@ function renderWebAnswers() {
   const today = s.web_answers_today ?? S.status?.today?.web_answers;
   $('#web-cap-hint').textContent = `Web answers per day across all students (DAILY_WEB_ANSWER_CAP, default 200). Each one costs a few cents in searches and tokens. Past the cap, those questions get the usual "not covered" reply. Zero turns them off.${today != null ? ` Today so far: ${fmtNum(today)}.` : ''}`;
   const chosen = s.web_answer_voice || 'none';
-  const options = [el('option', { value: 'none', selected: chosen === 'none' }, 'Off (text only)')];
-  for (const v of freeVoices()) options.push(el('option', { value: v.voice_id, selected: v.voice_id === chosen }, `${v.name} (${v.description || 'free'})`));
-  if (chosen !== 'none' && !freeVoices().some(v => v.voice_id === chosen)) options.push(el('option', { value: chosen, selected: true }, chosen.replace(/^edge:/, '')));
-  $('#web-voice').replaceChildren(...options);
+  const off = el('option', { value: 'none', selected: chosen === 'none' }, 'Off (text only)');
+  $('#web-voice').replaceChildren(off, ...freeVoiceOptions(chosen, chosen !== 'none' ? chosen.replace(/^edge:/, '') : null));
 }
 
 $('#web-form').addEventListener('submit', async (e) => {
@@ -751,12 +823,12 @@ $('#web-form').addEventListener('submit', async (e) => {
   try {
     const r = await api('/api/admin/settings', { method: 'PUT', body });
     if (!r.ok) { say(st, detail(r), 'err'); return; }
-    S.settings = { ...S.settings, ...(r.data || {}) };
+    keepSettings(r.data || {});
     renderWebAnswers();
     const on = body.web_answers_enabled && cap > 0;
     const spoken = body.web_answer_voice === 'none' ? 'text only' : `read by ${body.web_answer_voice.replace(/^edge:/, '')} (a stock voice)`;
     say(st, on ? `Saved. Web answers are on, up to ${fmtNum(cap)} a day, ${spoken}.` : 'Saved. Web answers are off.', 'ok');
-  } catch (ex) { if (!(ex instanceof AuthError)) say(st, errText(ex), 'err'); }
+  } catch (ex) { sayError(st, ex); }
 });
 
 $('#pass-form').addEventListener('submit', async (e) => {
@@ -770,7 +842,7 @@ $('#pass-form').addEventListener('submit', async (e) => {
     if (!r.ok) { say(st, detail(r), 'err'); return; }
     e.target.reset();
     say(st, 'Passcode changed. Share the new one with the class.', 'ok');
-  } catch (ex) { if (!(ex instanceof AuthError)) say(st, errText(ex), 'err'); }
+  } catch (ex) { sayError(st, ex); }
 });
 
 /* ---------------- 4b. answer thresholds ---------------- */
@@ -784,6 +856,7 @@ const TH_SOURCE = { code: 'my code default', env: 'the INFO_THRESHOLD environmen
 const TH_LABEL = { slide_threshold: 'slide threshold', info_threshold: 'course-info threshold', info_margin: 'course-info margin' };
 const fmtTh3 = (v) => (typeof v === 'number' ? String(Math.round(v * 1000) / 1000) : 'none');
 
+/** The three threshold fields, where each value comes from, and the last five changes. */
 function renderThresholds(d) {
   if (!d) return;
   const s = d.slide || {}, i = d.info || {}, m = d.margin || {};
@@ -806,6 +879,7 @@ function renderThresholds(d) {
   })) : [el('li', { class: 'muted', text: 'No changes yet.' })]));
 }
 
+/** Fetch the thresholds and their history. */
 async function loadThresholds() {
   try {
     const r = await api('/api/admin/thresholds');
@@ -813,6 +887,7 @@ async function loadThresholds() {
   } catch (e) { /* auth handled in api() */ }
 }
 
+/** Save one threshold (null resets it to the default). The range check here matches the server's. */
 async function saveThreshold(which, value) {
   const t = TH[which];
   const st = $(t.status);
@@ -823,7 +898,7 @@ async function saveThreshold(which, value) {
     if (!r.ok) { say(st, detail(r), 'err'); return; }
     renderThresholds(r.data);
     say(st, value === null ? `${t.name} reset to the default. Run an eval to check it.` : `Saved. Run an eval to check the new value.`, 'ok');
-  } catch (ex) { if (!(ex instanceof AuthError)) say(st, errText(ex), 'err'); }
+  } catch (ex) { sayError(st, ex); }
 }
 
 for (const which of Object.keys(TH)) {
@@ -838,10 +913,7 @@ for (const which of Object.keys(TH)) {
 /* ---------------- 5. activity ---------------- */
 
 function renderToday() {
-  const today = S.status?.today || {};
-  const entries = Object.entries(today);
-  $('#today-kv').replaceChildren(...(entries.length ? entries : [['nothing yet', '']]).map(([k, v]) =>
-    el('div', {}, el('dt', { text: humanize(k) }), el('dd', { text: fmtNum(v) }))));
+  renderKv($('#today-kv'), S.status?.today || {}, 'nothing yet');
 }
 
 /* What answered each question (question_log.kind). docs/TESTING_AND_SCORES.md explains each one. */
@@ -855,6 +927,7 @@ const KIND_BADGES = {
   not_covered: { text: 'Not covered', cls: 'warn', title: 'No slide scored at or above the threshold.' },
   alert: { text: 'Student alert', cls: 'warn', title: 'A student reported a broken quiz, submission or API key. See Student alerts for whether a text went out.' },
 };
+/** What answered the question (an older row without a kind is inferred from `covered`). */
 function kindBadge(x) {
   const fallback = x.covered ? KIND_BADGES.course_content : KIND_BADGES.not_covered;
   const b = KIND_BADGES[x.kind] || fallback;
@@ -886,6 +959,7 @@ const FALLBACK_REASONS = {
   no_links: 'Search gave no usable link',
   error: 'Unexpected error',
 };
+/** "Fell back: ..." when a course-info or web answer could not be written. */
 function fallbackBadge(x) {
   if (!x.fallback_reason) return null;
   const text = FALLBACK_REASONS[x.fallback_reason] || x.fallback_reason;
@@ -893,10 +967,12 @@ function fallbackBadge(x) {
     : x.kind === 'course_info' ? 'the Canvas text' : 'my fallback';
   return el('span', { class: 'pill warn', text: `Fell back: ${text}`, title: `The student saw ${saw}, not a written answer (${x.fallback_reason}).`, style: 'margin-left:.3rem' });
 }
+/** "provider / model", or "none" when no model was called. */
 function modelText(x) {
   return [x.provider, x.model].filter(Boolean).join(' / ') || 'none';
 }
 
+/** Refresh the status counts and the last 50 questions. */
 async function loadActivity() {
   try {
     const [st, lg] = await Promise.all([api('/api/admin/status'), api('/api/admin/log')]);
@@ -920,50 +996,10 @@ $('#refresh-activity').addEventListener('click', loadActivity);
 const SCORES_DOC = 'https://github.com/bcollier/faculty-twin/blob/main/docs/TESTING_AND_SCORES.md#prompt-changes';
 const P = { list: [], maxChars: 12000, sel: null, history: [], review: null };
 
-/* Word-level diff: common prefix and suffix trimmed, then an LCS over the middle.
-   Very large rewrites fall back to a line diff so the browser never builds a huge table. */
-function tokens(s) { return String(s).match(/\s+|[^\s]+/g) || []; }
-function lcsDiff(a, b) {
-  const n = a.length, m = b.length;
-  const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
-  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) {
-    dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-  }
-  const out = [];
-  let i = 0, j = 0;
-  while (i < n && j < m) {
-    if (a[i] === b[j]) { out.push(['=', a[i]]); i++; j++; }
-    else if (dp[i + 1][j] >= dp[i][j + 1]) out.push(['-', a[i++]]);
-    else out.push(['+', b[j++]]);
-  }
-  while (i < n) out.push(['-', a[i++]]);
-  while (j < m) out.push(['+', b[j++]]);
-  return out;
-}
-function diffParts(before, after) {
-  let a = tokens(before), b = tokens(after);
-  if (a.length * b.length > 1.5e6) { a = String(before).split(/(?<=\n)/); b = String(after).split(/(?<=\n)/); }
-  let pre = 0;
-  while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++;
-  let suf = 0;
-  while (suf < a.length - pre && suf < b.length - pre && a[a.length - 1 - suf] === b[b.length - 1 - suf]) suf++;
-  const midA = a.slice(pre, a.length - suf), midB = b.slice(pre, b.length - suf);
-  const mid = midA.length * midB.length > 1.5e6
-    ? [...midA.map(t => ['-', t]), ...midB.map(t => ['+', t])]
-    : lcsDiff(midA, midB);
-  const parts = [];
-  const push = (op, t) => { const last = parts[parts.length - 1]; if (last && last[0] === op) last[1] += t; else parts.push([op, t]); };
-  a.slice(0, pre).forEach(t => push('=', t));
-  mid.forEach(([op, t]) => push(op, t));
-  a.slice(a.length - suf).forEach(t => push('=', t));
-  return parts;
-}
-function countWords(parts, op) {
-  return parts.filter(p => p[0] === op).reduce((n, p) => n + (p[1].match(/\S+/g) || []).length, 0);
-}
+/** Draw the diff in the review panel (screen readers hear "added" and "removed") and summarize it. */
 function renderDiff(before, after) {
-  const parts = diffParts(before, after);
-  const added = countWords(parts, '+'), removed = countWords(parts, '-');
+  const parts = DIFF.diffParts(before, after);
+  const added = DIFF.countWords(parts, '+'), removed = DIFF.countWords(parts, '-');
   const nodes = parts.map(([op, t]) => {
     if (op === '=') return document.createTextNode(t);
     const tag = op === '+' ? 'ins' : 'del';
@@ -977,6 +1013,7 @@ function renderDiff(before, after) {
   return { added, removed, summary, same };
 }
 
+/** The prompt list, then select `keep` (or the one selected, or the first). */
 async function loadPrompts(keep) {
   say($('#prompts-status'), 'Loading prompts...');
   try {
@@ -985,17 +1022,19 @@ async function loadPrompts(keep) {
     P.list = asList(r.data, 'prompts');
     P.maxChars = r.data?.max_chars || 12000;
     say($('#prompts-status'), '');
-  } catch (e) { if (!(e instanceof AuthError)) say($('#prompts-status'), errText(e), 'err'); return; }
+  } catch (e) { sayError($('#prompts-status'), e); return; }
   const name = keep || P.sel?.name || P.list[0]?.name;
   if (name) selectPrompt(name, { quiet: true });
   else renderPromptList();
 }
 
+/** Unsaved edits, Edited, or Default. */
 function promptBadge(p) {
   if (P.sel?.name === p.name && isDirty()) return el('span', { class: 'pill warn', text: 'Unsaved edits' });
   return p.is_overridden ? el('span', { class: 'pill info', text: 'Edited' }) : el('span', { class: 'pill off', text: 'Default' });
 }
 
+/** The prompt picker, with each prompt's state. */
 function renderPromptList() {
   $('#prompt-list').replaceChildren(...P.list.map(p => el('li', {},
     el('button', {
@@ -1008,8 +1047,10 @@ function renderPromptList() {
       p.updated_at ? ` · saved ${fmtWhen(p.updated_at)}` : '')))));
 }
 
+/** The editor holds text that is not saved. */
 function isDirty() { return !!P.sel && $('#pe-text').value !== P.sel.current; }
 
+/** Open a prompt in the editor (asks first when that would discard unsaved edits, unless `quiet`). */
 function selectPrompt(name, { quiet = false } = {}) {
   if (!quiet && P.sel && P.sel.name !== name && isDirty()
       && !window.confirm('Discard your unsaved edits to this prompt?')) return;
@@ -1046,6 +1087,7 @@ function selectPrompt(name, { quiet = false } = {}) {
   loadHistory();
 }
 
+/** "1,234 of 12,000 characters", red when over. */
 function updateCount() {
   const n = $('#pe-text').value.length;
   const over = n > P.maxChars;
@@ -1080,6 +1122,7 @@ function openReview(mode, { before, after, title, confirm, version } = {}) {
   $('#pe-review-h').focus();
   $('#pe-review').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
+/** Close the review panel without writing anything. */
 function closeReview() { P.review = null; $('#pe-review').hidden = true; }
 $('#pe-cancel').addEventListener('click', closeReview);
 
@@ -1132,10 +1175,11 @@ $('#pe-confirm').addEventListener('click', async () => {
     if (i >= 0 && r.data) P.list[i] = r.data;
     selectPrompt(name, { quiet: true });
     showAfterSave(rv.mode);
-  } catch (e) { if (!(e instanceof AuthError)) say($('#pe-review-status'), errText(e), 'err'); }
+  } catch (e) { sayError($('#pe-review-status'), e); }
   finally { $('#pe-confirm').disabled = false; }
 });
 
+/** After a save, reset or restore: when it takes effect, and a link to run an eval. */
 function showAfterSave(mode) {
   const p = P.sel;
   const what = { save: 'Saved', reset: 'Reset to the default', restore: 'Restored' }[mode] || 'Saved';
@@ -1180,10 +1224,11 @@ $('#pe-test').addEventListener('click', async () => {
       : `The safety checks rejected the model's replies, so students would get the fallback. ${fmtNum(ms)} ms.`, r.data?.ok ? 'ok' : 'err');
     out.textContent = JSON.stringify({ ...(r.data?.output || {}), ...(errs.length ? { rejected_replies: errs } : {}) }, null, 2);
     out.hidden = false;
-  } catch (e) { if (!(e instanceof AuthError)) say($('#pe-test-status'), errText(e), 'err'); }
+  } catch (e) { sayError($('#pe-test-status'), e); }
   finally { btn.disabled = !P.sel?.testable; }
 });
 
+/** The selected prompt's saved versions, newest first. */
 async function loadHistory() {
   const name = P.sel?.name;
   if (!name) return;
@@ -1196,9 +1241,10 @@ async function loadHistory() {
     P.history = asList(r.data, 'versions');
     say($('#pe-history-status'), P.history.length ? '' : 'No saved versions yet. The built-in default is in use until the first save.');
     renderHistory();
-  } catch (e) { if (!(e instanceof AuthError)) say($('#pe-history-status'), errText(e), 'err'); }
+  } catch (e) { sayError($('#pe-history-status'), e); }
 }
 
+/** Each saved version with Compare and Restore (both open the review panel first). */
 function renderHistory() {
   const live = P.sel?.hash;
   $('#pe-history').replaceChildren(...P.history.map((v, i) => {

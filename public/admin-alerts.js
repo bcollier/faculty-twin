@@ -3,6 +3,7 @@
 // The server never sends a Twilio token or the full phone number: the destination is its last 4 digits.
 
 const $ = (s, r = document) => r.querySelector(s);
+/** Build an element: `class`, `text`, `on<event>` listeners, other keys as attributes. Never takes HTML. */
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -15,7 +16,9 @@ const el = (tag, attrs = {}, ...kids) => {
   for (const kid of kids) if (kid != null) n.append(kid);
   return n;
 };
+/** "70-445" for "70445"; anything else is "unclear" (the classifier could not tell). */
 const courseCode = (c) => (/^\d{5}$/.test(String(c)) ? `${String(c).slice(0, 2)}-${String(c).slice(2)}` : 'unclear');
+/** Date and time in Eastern time (when the texts went out, as Ben reads them). */
 const fmtWhen = (iso) => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -29,6 +32,7 @@ const STATUS = {
   over_cap: { text: 'Over daily cap', cls: 'off', title: 'Past today\'s text cap: stored here, not texted.' },
 };
 
+/** fetch wrapper that never throws: no connection comes back as status 0 with a message. */
 async function call(path, { method = 'GET', body } = {}) {
   let res;
   try {
@@ -42,11 +46,14 @@ async function call(path, { method = 'GET', body } = {}) {
   try { data = await res.json(); } catch { /* none */ }
   return { ok: res.ok, status: res.status, data };
 }
+/** The server's error message, else `fallback`. */
 const detail = (r, fallback) => (typeof r?.data?.detail === 'string' ? r.data.detail : fallback || `Request failed (HTTP ${r?.status}).`);
+/** Write a status line; `kind` is '', 'ok', 'warn' or 'err'. */
 function say(node, text, kind = '') { node.textContent = text || ''; node.className = `status-line ${kind}`.trim(); }
 
 let state = null;
 
+/** Whether the text went out, with Twilio's error code in the tooltip when it failed. */
 function statusPill(a) {
   const s = STATUS[a.status] || { text: a.status || 'unknown', cls: 'off', title: '' };
   const t = a.twilio || {};
@@ -54,6 +61,7 @@ function statusPill(a) {
   return el('span', { class: `pill ${s.cls}`, text: s.text, title: `${s.title}${extra}`.trim() });
 }
 
+/** The switch, the cap, whether Twilio is ready, and every alert. */
 function render() {
   const d = state;
   $('#al-enabled').checked = !!d.enabled;
@@ -84,6 +92,7 @@ function render() {
   )) : [el('tr', {}, el('td', { colspan: '7', class: 'muted', text: d.error || 'No alerts yet.' }))]));
 }
 
+/** Fetch the alert settings and the alerts. */
 async function load() {
   const r = await call('/api/admin/alerts');
   if (!r.ok) { say($('#al-status'), detail(r, 'Couldn\'t load the alerts.'), 'err'); return; }
@@ -91,6 +100,7 @@ async function load() {
   render();
 }
 
+/** Save the on/off switch and the daily text cap. */
 async function save(e) {
   e.preventDefault();
   const cap = Number($('#al-cap').value);
@@ -105,6 +115,7 @@ async function save(e) {
   say($('#al-status'), 'Saved.', 'ok');
 }
 
+/** Send one test text to the configured phone. */
 async function sendTest() {
   const btn = $('#al-test');
   btn.disabled = true;
