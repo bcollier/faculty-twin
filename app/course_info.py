@@ -30,9 +30,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Optional
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 import numpy as np
 
@@ -82,10 +83,12 @@ class Hit:
 
 @dataclass
 class Result:
+    """A course-info reply, whether the model wrote it, its errors, and why it fell back."""
+
     reply: dict[str, Any]
     source: str  # "llm" or "fallback"
     errors: list[str] = field(default_factory=list)
-    reason: Optional[str] = None  # why it fell back (FALLBACK_REASONS), for the Activity log
+    reason: str | None = None  # why it fell back (FALLBACK_REASONS), for the Activity log
 
 
 def threshold() -> float:
@@ -118,7 +121,7 @@ def canvas_request(question: str) -> bool:
     return bool(_CANVAS_REQUEST.search(question or ""))
 
 
-def wins(best_info: Optional[float], best_slide: Optional[float], canvas: bool = False) -> bool:
+def wins(best_info: float | None, best_slide: float | None, canvas: bool = False) -> bool:
     """True when the best Canvas chunk should answer instead of the slides (docs/SPEC.md step 6a).
 
     It must clear the info threshold and beat the best slide by the margin. Added Oct 8: the course-set
@@ -134,7 +137,7 @@ def wins(best_info: Optional[float], best_slide: Optional[float], canvas: bool =
     return best_slide is None or round(best_info - best_slide, 6) >= margin()
 
 
-def searchable(content: Any, course: Optional[str]) -> tuple[list[dict[str, Any]], Optional[np.ndarray]]:
+def searchable(content: Any, course: str | None) -> tuple[list[dict[str, Any]], np.ndarray | None]:
     """Info chunks (and their matrix rows) for this course filter. A chunk with no course fits both."""
     records = getattr(content, "info_records", None) or []
     matrix = getattr(content, "info_matrix", None)
@@ -168,7 +171,7 @@ def top_hits(ranked: list[tuple[int, float]], records: list[dict[str, Any]], n: 
     return [Hit(records[i], float(score)) for i, score in ranked[:n]]
 
 
-def one_course(hits: list[Hit], course: Optional[str]) -> list[Hit]:
+def one_course(hits: list[Hit], course: str | None) -> list[Hit]:
     """With "All courses", only the top chunk's course (and chunks with no course) go into one answer.
 
     Added Oct 8 (code review): the top 3 chunks could come from both courses, so a single answer,
@@ -206,14 +209,15 @@ def _eastern(when: datetime) -> datetime:
 
         return when.astimezone(ZoneInfo("America/New_York"))
     except Exception:  # no tz database: US rules, DST from the 2nd Sunday of March to the 1st Sunday of November
-        utc = when.astimezone(timezone.utc)
-        march = datetime(utc.year, 3, 8 + (6 - datetime(utc.year, 3, 8).weekday()) % 7, 7, tzinfo=timezone.utc)
-        november = datetime(utc.year, 11, 1 + (6 - datetime(utc.year, 11, 1).weekday()) % 7, 6, tzinfo=timezone.utc)
+        utc = when.astimezone(UTC)
+        march = datetime(utc.year, 3, 8 + (6 - datetime(utc.year, 3, 8).weekday()) % 7, 7, tzinfo=UTC)
+        november = datetime(utc.year, 11, 1 + (6 - datetime(utc.year, 11, 1).weekday()) % 7, 6, tzinfo=UTC)
         hours = -4 if march <= utc < november else -5
         return utc.astimezone(timezone(timedelta(hours=hours)))
 
 
 def chunk_payload(rec: dict[str, Any]) -> dict[str, Any]:
+    """What the model sees of one Canvas chunk (title, kind, due date, text clipped)."""
     course = str(rec.get("course") or "")
     return {
         "course": faq.COURSE_LABELS.get(course, course),
@@ -225,6 +229,7 @@ def chunk_payload(rec: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_user_prompt(question: str, hits: list[Hit]) -> str:
+    """The course-info prompt: the question, then the top Canvas chunks."""
     return (
         "Student question (answer it only from the Canvas material below):\n"
         + json.dumps(question)
@@ -234,6 +239,7 @@ def build_user_prompt(question: str, hits: list[Hit]) -> str:
 
 
 def grounding(question: str, hits: list[Hit]) -> narration.Grounding:
+    """The grounding check for a Canvas answer: the chunks' words and the question."""
     materials = ["Canvas", NOT_ANSWERED, *faq.COURSE_LABELS.values()]
     for h in hits:
         p = chunk_payload(h.record)
@@ -243,7 +249,7 @@ def grounding(question: str, hits: list[Hit]) -> narration.Grounding:
 
 # ---------------------------------------------------------------- validation and fallback
 
-def problem(text: str) -> Optional[str]:
+def problem(text: str) -> str | None:
     """Why this text may not be shown, or None. Shared by the model's answer and the fallback."""
     if _STUDENT.search(text):
         return "it contains [student]"
@@ -257,6 +263,7 @@ def problem(text: str) -> Optional[str]:
 
 
 def validate(raw: str, ground: narration.Grounding) -> str:
+    """The answer from the model's reply, trimmed to MAX_WORDS sentences and checked. Raises ValidationError."""
     data = narration._extract_json(raw or "")
     if not isinstance(data, dict) or not isinstance(data.get("answer"), str):
         raise ValidationError("reply has no answer")
@@ -375,6 +382,7 @@ def fallback_reason(exc: Exception) -> str:
 # ---------------------------------------------------------------- the reply
 
 def links(hits: list[Hit]) -> list[dict[str, str]]:
+    """One Canvas link per distinct page among the hits, labeled with its title."""
     out, seen = [], set()
     for h in hits:
         url = str(h.record.get("canvas_url") or "").strip()
@@ -388,25 +396,33 @@ def links(hits: list[Hit]) -> list[dict[str, str]]:
 
 def answer(
     question: str,
-    course: Optional[str],
+    course: str | None,
     hits: list[Hit],
     follow_ups: list[str],
     complete: Callable[..., str],
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> Result:
     """One grounded model call over the top chunks; the top chunk's first sentences if it fails."""
     hits = one_course(hits, course)
     top = hits[0].record
+    text, errors, reason = _model_answer(question, hits, complete, provider, model)
+    source = "llm"
+    if text is None:
+        text, source = fallback_text(top), "fallback"
+    return Result(_reply(question, course, hits, top, text, follow_ups), source, errors, reason)
+
+
+def _model_answer(question: str, hits: list[Hit], complete: Callable[..., str], provider: str | None,
+                  model: str | None) -> tuple[str | None, list[str], str | None]:
+    """(checked answer or None, errors, fallback reason). A reply that is not JSON is asked for once more."""
     errors: list[str] = []
-    source, reason = "llm", None
+    reason = None
     system, user, ground = system_prompt(), build_user_prompt(question, hits), grounding(question, hits)
-    text = None
     for attempt in range(1 + NOT_JSON_RETRIES):
         try:
             raw = complete(system, user, MAX_TOKENS, provider=provider, model=model)
-            text = validate(raw, ground)
-            break
+            return validate(raw, ground), errors, None  # the retry answered: nothing fell back
         except Exception as exc:  # model trouble or a reply that fails the checks: never put it on screen
             errors.append(str(exc)[:200])
             reason = fallback_reason(exc)
@@ -415,10 +431,12 @@ def answer(
                 continue
             config.log.warning("course-info answer fell back (%s): %s", reason, str(exc)[:200])
             break
-    if text is None:
-        text, source = fallback_text(top), "fallback"
-    else:
-        reason = None  # the retry answered: nothing fell back
+    return None, errors, reason
+
+
+def _reply(question: str, course: str | None, hits: list[Hit], top: dict[str, Any], text: str,
+           follow_ups: list[str]) -> dict[str, Any]:
+    """The From Canvas card: the answer, which course it is from, and the Canvas links."""
     code = str(top.get("course") or "")
     if code not in faq.COURSE_LABELS:
         code = course or ""
@@ -435,4 +453,4 @@ def answer(
         "sources": [],
         "follow_ups": follow_ups[:3],
     }
-    return Result(reply, source, errors, reason)
+    return reply

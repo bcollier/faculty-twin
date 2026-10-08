@@ -12,9 +12,6 @@ line-length = 120
 # area from this list, so the list shrinks to the permanent entries below.
 extend-exclude = [
     # app/ modules another agent is changing right now, or not cleaned yet:
-    "app/main.py",
-    "app/course_info.py",
-    "app/logistics.py",
     "app/storage.py",
     "app/playlist.py",
     "app/speech.py",
