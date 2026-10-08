@@ -132,6 +132,7 @@ class LocalBucket:
         return f.read_bytes() if f.is_file() else None
 
     def put(self, path: str, data: bytes, content_type: str = "application/json") -> None:
+        """Write `data` whole: to a temporary file first, then renamed, so a reader never sees half a file."""
         f = self._file(path)
         f.parent.mkdir(parents=True, exist_ok=True)
         tmp = f.with_name(f.name + ".tmp")

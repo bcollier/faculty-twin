@@ -375,6 +375,7 @@ class Detection:
         return self.classified.confidence if self.classified else None
 
     def public(self) -> dict[str, Any]:
+        """The detection as plain JSON, for Settings > Prompts' test of the alert prompt (no question text)."""
         return {
             "incident": self.incident,
             "type": self.type,
