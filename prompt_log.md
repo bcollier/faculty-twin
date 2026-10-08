@@ -1,5 +1,212 @@
 # Prompt log: Faculty Twin (15-113 Project 2)
 
+## How this log is organized
+
+This file is separate from the README. It answers four questions, then keeps the full record of every session:
+
+1. **Which tool did which job:** the table just below.
+2. **One place the AI got it wrong:** the section after the table, with more in each session's "got it wrong" list.
+3. **The prompts worth logging:** "Key prompts", 36 prompts quoted word for word.
+4. **Everything else:** the full session record, in order, every prompt verbatim with a summary of the response.
+
+## Tools and the job each did
+
+| Tool | Model | Job | Why this tool |
+| --- | --- | --- | --- |
+| Claude in the claude.ai app | Claude Fable 5.1 | Picking the idea, architecture and hosting; writing `docs/SPEC.md` | Long back-and-forth thinking with web search, no code needed yet |
+| Claude Code in the terminal, repo setup session | Claude Opus 5.5 | Creating the repo, README, `AGENTS.md`, the evals harness, `localvoice/`, the demo script, the FAQ answers | Multi-file work with git, tests and pull requests |
+| Claude Code in the terminal, build session | Claude Opus 5.5 with a team of sub-agents | Backend, frontend, the content pipeline (slides, de-identification, alignment, clips, index), security review, QA, deploys, Settings pages (Evals, Analytics, Prompts, thresholds), Canvas import, the lecture archive | Many independent pieces built in parallel, each with tests and its own pull request |
+| Cursor | Grok 4.7, then Claude Opus 5.5 | Coaching on the four pieces I wrote by hand: explaining numpy, `uv`, cosine similarity, the player logic; a test harness to try my code | In-editor explanations next to my own code while I wrote it |
+| ChatGPT Codex | gpt-5.6-sol (high reasoning) | Built the first 45-884 archive (recordings, cleaned transcripts, retrieval chunks) and started the multi-course archive before it ran out of usage | It was already connected to my browser and Drive on my computer |
+
+**Inside the app** (not tools for building it): Claude, OpenAI or OpenRouter write the narration; Voyage AI embeds slides and questions; ElevenLabs and Microsoft edge-tts speak; GPT-6.1 Sol and Claude Opus 5.5 judge the evals.
+
+**The code I wrote by hand:** `rank`, `select_segments` and `NOT_COVERED_THRESHOLD = 0.52` in `app/retrieval.py`, and `onClipEnded()` in `public/app.js` (PR #32). How I got there is in the Cursor sessions and the repo setup session below.
+
+## One place the AI got it wrong
+
+The AI-built content pipeline put an in-class **quiz access code** into the search index. Two class transcripts had me reading the code aloud, and one slide was titled "Quiz Code:" with the code on it. Nothing in the pipeline looked for that. The twin then read the code out in an answer. It was caught by the first real eval run on October 7, when one of the AI judges flagged it in its reasoning. The fix (PR #35) leaves out any slide that announces a code, replaces code sentences with "[access code removed]", drops the clip for that slide, and adds tests. The prompt editor later moved this check into code that runs on every answer, whatever the prompt says.
+
+Other places it got things wrong are listed, as facts, at the end of each session below. Among them: a student's full name that survived on one slide because of a stale cache (caught by the upload leak check before anything went live), Zoom's raw caption track copied into every class clip (caught and re-encoded before upload), and the AI widening my "these aren't my courses" answer to delete more archive files than I named.
+
+## Key prompts (36 of the 109 logged below, verbatim)
+
+These are the prompts that shaped the project, copied exactly as I typed them (typos included). Each one is also in the full record below, with a summary of the response. Where a prompt contained a passcode or key it is redacted, per `AGENTS.md`.
+
+**1. Claude (claude.ai app), Planning session, Prompt 1**
+
+> what about creating a digital twin, but it uses my voice and has an avatar? Or I would like a faculty twin where it talks with audio, you ask about "clustering methods" and the chatbot goes off to the side and my slides and code that is relevant appears, and I talk verbally through what is on their screen. could we do this? It would be cool if it is in my voice, or cool if it had a digital avatar video component walk me through
+
+**2. Claude (claude.ai app), Planning session, Prompt 3**
+
+> ok, I have accounts at Render, Vercel, and now cloudflare so hosting with any should be fine. Create the detailed spec and build guide to getting this project done. do it in its own repo first, then we can integrate it with my portfolio page later. ask me questions about how to make this better
+
+**3. Claude (claude.ai app), Planning session, Prompt 4**
+
+> i don't like the delay from render what other options do I have
+
+**4. Claude (claude.ai app), Planning session, Prompt 6**
+
+> I want it to run for free, would it fit in the free cloudflare budget?
+
+**5. Claude (claude.ai app), Planning session, Prompt 10**
+
+> copy all the prompts and summary of responses to a prompt_log.md starting with this question
+
+**6. Claude Code, Repo setup session, Prompt 1**
+
+> create a new repo for faculty_twin folder and push to github main. use contents from SPEC to build a basic readme . put the spec in a docs folder
+
+**7. Claude Code, Repo setup session, Prompt 3**
+
+> move it for me . write agents.md based on the same for all the othe repos I've worked on. note that this one is not from gaim so it doesn't use the same gaim specific rules
+
+**8. Claude Code, Repo setup session, Prompt 4**
+
+> add a source for the pdf guide the original source is here https://www.cmu.edu/computing/services/ai/tools/chatgpt/digital_twin_gpt.html so ensure the pdf is publicly available here is another source of the same pdf
+
+**9. Claude Code, Repo setup session, Prompt 7**
+
+> can we build out the rest of the app without these parts or does development have to stop while I build them
+
+**10. Claude Code, Repo setup session, Prompt 8**
+
+> /goal continue working on every aspect of the code that is completable until I do my coding part that you are blocked on. finish all items in "What can keep growing now" and even work on tasks in the roadmap until I stop you manually or you finish all the work. I also want work on evals, having LLM's rate the responses of real student questions from my email (top 25)
+>
+> go through my email and find the most common student questions, and group them by category such as "API_KEY_NOT_WORKING " or "Question about missing class" or "reschedule presentation" or code help.  pull de-identified student questions, the last 100 you can find in my connected email. record a textual variation written by AI so the student cannot be identified by style or handwriting. Meaning the same meaning while keeping the style somewhat anonymous.
+
+**11. Claude Code (with sub-agents), Build session, Prompt 1**
+
+> get the digital twin faculty twin repo from my github. start a deep session on building this out read the spec and build out the app. ask for credentials or secrets as needed. launch a whole team of agents to work on designing, building, testing, and doing a security analysis of the MVP of this working. as sources go through my two current teaching courses from Google cloud and get the transcripts for every day of class from the Zoom recordings. de-identify the names of any students mentioned as you import . take the most current slide deck PDF from all the slides and do whatever you need to do in pre-processing so students can ask a question and be pointed to the current slides from the semester based on the course transcripts and the slides. if claude code can process the video from the courses you may build a version that cuts up class video and shows it to illustrate a point
+
+**12. Claude Code (with sub-agents), Build session, Prompt 2**
+
+> as part of the build of this the administrator needs to be able to chain the model from Claude native, OpenAI Native, and OpenRouter -> Choose Model with an OpenRouter Key
+
+**13. Claude Code (with sub-agents), Build session, Prompt 4**
+
+> there should be a settings page, choose the voice, the model, add source material to a course, etc.
+
+**14. Claude Code (with sub-agents), Build session, Prompt 5**
+
+> /Users/bcollier/Code/FacultyTwinContent. check out the data in here for formats available in previous step. de-identify anyone named except Benjamin (Ben) Collier
+
+**15. Claude Code (with sub-agents), Build session, Prompt 6**
+
+> is there lessons from this we could learn cite the source and story and look at the detail. what would the next version be like to get the virtual avatar like in the image
+
+**16. Claude Code (with sub-agents), Build session, Prompt 8**
+
+> go through all of my courses content from the last few years, organize clearly all the data and downloads. i want the code, slides, recordings, recommended readings etc. these are in bookmarks . go through the same process of cleaning up as with ai methods course
+
+**17. Claude Code (with sub-agents), Build session, Prompt 9**
+
+> go over this The CMU guide (Waddell, Digital Twin GPT) adds a framework for choosing what goes into a twin, plus ethics rules: redact, no FERPA data, keep it internal, use version control.
+
+**18. Claude Code (with sub-agents), Build session, Prompt 21**
+
+> when we save teh chat prompt history hide the student password
+
+**19. Claude Code (with sub-agents), Build session, Prompt 25**
+
+> make options for me to use one of the free Microsoft TTS packages see ignatius for details. allow free voice, elevenlabs voices, and then my voice clone
+
+**20. Claude Code (with sub-agents), Build session, Prompt 31**
+
+> gently smooth over any cursing in the text with a simple word substitue since there may be cursing and we want to keep this PG
+
+**21. Claude Code (with sub-agents), Build session, Prompt 32**
+
+> For 1,2,3,4 you are correct those aren’t my course, and for guest speaker just note that and don’t show the recording
+
+**22. Cursor (Grok 4.7), Coaching session, Prompt 10**
+
+> walk me through editing this code
+>
+> What you write	File and line
+> NOT_COVERED_THRESHOLD (still None)	app/retrieval.py:30
+> rank	app/retrieval.py:36
+> select_segments	app/retrieval.py:45
+> onClipEnded()	public/app.js:859 (it was line 789 earlier; other work has merged since)
+
+**23. Cursor (Grok 4.7), Coaching session, Prompt 11**
+
+> explain the choices I have about how to implement these two methods, give me example solutions and alternative ideas for how this could go, as well as a suggestion on what would be an appropriate implementation for someone of my coding familiarity
+
+**24. Cursor (Claude Opus 5.5), Session, Prompt 18**
+
+> ok, claude code decided for me that this rank and select_segments are the two parts that I should write, but I don't understand them well enough to write them on my own with a deadline soon, can you suggest simpler code to write or walk me through everything I need to know to change the @app/retrieval.py as needed?
+
+**25. Claude Code, Repo setup session, Prompt 13**
+
+> explain exactly why i haev to write this code quoting from this https://www.cs.cmu.edu/~113/project2.html#grading
+
+**26. Claude Code, Repo setup session, Prompt 16**
+
+> Setup using Jev for evaluations make them an exploration point in this project
+
+**27. Claude Code, Repo setup session, Prompt 21**
+
+> Closer to 0.54: declines more safely, add notes on how the value was chosen
+
+**28. Claude Code, Repo setup session, Prompt 24**
+
+> I think I want my faculty twin to know things from my FAQ page, such as I have a calendly link for them to setup a 30 minute minute meeting anytime 9am-5:30pm Monday to Friday. My calendar is usually up to date so if calendly offers you a slot go ahead and book and assume its on my calendar and I look forward to seeing you.
+
+**29. Claude Code, Repo setup session, Prompt 25**
+
+> if they need to rescheudle a presentation, they should be told that the TA handles the presentation schedule changes, give who the TA is for each of my courses along with their email addresses. STRETCH GOAL allow students to reschedule with the agent. meaning I publish a schedule, and if a team wants to move their presentation to an open slot they are welcome to do that. maybe havea road map where people just talk to my bot instead of editing a publicly editable google sheet
+
+**30. Claude Code, Repo setup session, Prompt 27**
+
+> deploy asap before the deadline, still tweaking features and testing for a bit longer
+>
+> ta names and emails are fine, for how to pronounce names I don't know try to avoid saying thier names just put it in an easy to link to card that pops out the contact information for the TA  for the course .
+>
+> what the meeting asnwers working? explain
+
+**31. Claude Code (with sub-agents), Build session, Prompt 53**
+
+> this question is missing simple answers to things that are posted on Canvas, control the browser or write code to import all relevant student faceing questions linked on cavnas https://canvas.cmu.edu/courses/54496/modules.  https://canvas.cmu.edu/courses/55124
+
+**32. Claude Code (with sub-agents), Build session, Prompt 54**
+
+> in the Admin only section there needs to be evals and reports of what phrases were tested in which models and what the ratings and evaluations were. maybe per run summaires or a report card over time for evals. should be able to start a round of evals with different models generating responses, and different models judging.  in the admin section i should be able to change any of the prompts for facultytwin
+
+**33. Claude Code (with sub-agents), Build session, Prompt 55**
+
+> i want an analytics section as well in admin settings. track tokens spent in / out etc. to estimate spend, displays number of tokens to which models etc. average scores across lots of evals for models . i don't know think about all the things I would want to know about how students are using it like what topics are they asking about. all questions should be logged to supabase then a topic analytics in admin section
+
+**34. Claude Code (with sub-agents), Build session, Prompt 57**
+
+> this should be a setting on the admin page Slides scoring 0.52 or higher are used.
+
+**35. Claude Code (with sub-agents), Build session, Prompt 68**
+
+> whats still running that  I need for the demo, are we ready for demo? I want to do show off one question, show a slide about what data goes into the twin , then data on evals and about the eval harness
+
+**36. Claude Code (with sub-agents), Build session, Prompt 71**
+
+> why are we waiting until after midnight just go.
+>
+> give me a script and stage directions for the video.
+>
+> what I want to do is create a "Effective Coding with AI Project 2" or similar repo. in that folder I want to show off my experiments in using code based tools with gen ai.
+>
+> The sections of project two are goign to be: data visualization with AI -> Evaluations teaching
+> strenghts page -> visualizations and synthesis.
+>
+> Apple vision integration-> the travel page
+> Apple vision -> reels
+>
+> Connections -> using LLMs for game engine
+>
+> […] (continues in the full record below)
+
+---
+
+# Full session record
+
 ## Planning session, Monday October 5, 2026
 
 **Tool:** Claude in the claude.ai app (chat with web search and document tools). Configured model: `claude-fable-5-1`; the app can switch the serving model mid-session.
@@ -131,9 +338,9 @@ Candidates for the assignment's "one place AI got it wrong" paragraph. These are
 
 ## Still to add as the build proceeds
 
-- Claude Code prompts for each block (plan, implement, review), verbatim.
-- Which tool I used for which job, and why.
-- Which code I wrote or substantially changed by hand.
+- Claude Code prompts for each block (plan, implement, review), verbatim. *Done: see the sessions below.*
+- Which tool I used for which job, and why. *Done: "Tools and the job each did" at the top.*
+- Which code I wrote or substantially changed by hand. *Done: also at the top, and PR #32.*
 
 ---
 
@@ -935,3 +1142,51 @@ Prompts below are verbatim, except where noted. Screenshot-only prompts are desc
 - The code map review table (slide titles and code) was committed to the public repo in PR #30 and moved out in PR #31; it stays in git history.
 - Uploading the Canvas index switched on Canvas answers on the live site while deploys were being held for my recording.
 - The demo page first read as if the rosters went to Voyage AI. They never leave the build machine (PR #51).
+
+### Prompt 72
+
+> remove this comment everywehre This README was drafted with Claude Code from the five projects' own READMEs and repos. Ben edits it in his own words before submission.
+
+**Response summary.** Removed the note from the Project 2 repo README; it appeared nowhere else.
+
+### Prompt 73 (with a screenshot of the video script's travel line)
+
+> is the code to do the travel stuff committed or was that all done as ad hoc scripts for claude code
+
+**Response summary.** The travel page and its results are committed; the photo-selection pipeline was one-off scripts in a Claude Code session, documented in `travel/README.md` but not committed, because it reads my private Photos library. Reels' pipeline is committed.
+
+### Prompt 74
+
+> put links in my script make it easy the data and evals page, Part 1.  , , https://github.com/bcollier/effective-coding-with-ai-project-2/blob/main/VIDEO_SCRIPT.md
+>
+> Faculty Twin idle screen. -> https://faculty-twin.vercel.app
+>
+> etc
+
+**Response summary.** Added a direct link to every scene in `VIDEO_SCRIPT.md`, including line links to my hand-written code.
+
+### Prompt 75
+
+> ok we good to record?
+
+**Response summary.** Checked the live site, model (Claude Opus 5.5), voice allowance and demo pages: ready.
+
+### Prompt 76 (with a screenshot of the Project 2 README table)
+
+> this was apple vision api for python
+
+**Response summary.** The travel and Reels rows and the video script now say Apple's Vision API, called from Python.
+
+### Prompt 77
+
+> ok log all prompts, and make sure this is met
+>
+> Does your prompt log include the following information:
+> - Which tool for which job
+> - One place AI got it wrong
+> - 15 to 40 prompts worth logging
+> - separate from your README file
+> - and it isn't just a summary of your prompts, but instead, the actual prompts you used
+
+**Response summary.** Added "How this log is organized", a tools table, "One place the AI got it wrong", and "Key prompts" (36 verbatim) at the top, kept the full record below, and logged these last prompts.
+
