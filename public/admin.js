@@ -750,6 +750,7 @@ const KIND_BADGES = {
   course_content: { text: 'Covered', cls: 'ok', title: 'Slides found at or above the threshold, narrated by the model.' },
   stored_topic: { text: 'Stored answer', cls: 'ok', title: 'A suggested question: its stored answer was replayed. No search, no model.' },
   faq: { text: 'FAQ', cls: 'info', title: 'Answered from my course FAQ, word for word. No search, no model.' },
+  course_info: { text: 'From Canvas', cls: 'info', title: 'Answered from my Canvas pages (syllabus, policies, assignments), written by the model from those pages only.' },
   logistics: { text: 'Referred to Ben', cls: 'info', title: 'A logistics question: the student was sent to me.' },
   not_covered: { text: 'Not covered', cls: 'warn', title: 'No slide scored at or above the threshold.' },
 };

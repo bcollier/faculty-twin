@@ -71,7 +71,7 @@ create table if not exists question_log (
   provider    text,
   model       text,
   latency_ms  integer,
-  kind        text  -- course_content, logistics, or null (not covered)
+  kind        text  -- course_content, stored_topic, faq, course_info, logistics, not_covered (null on old rows)
 );
 -- Added Oct 7 (logistics check): for tables made before the column existed.
 alter table question_log add column if not exists kind text;

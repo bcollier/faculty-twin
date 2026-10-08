@@ -16,8 +16,8 @@ and `/api/ask`), `app/limits.py` (`log_question`, `recent_questions`),
 - **Supabase** holds storage (the index, slide images, clips, stored audio)
   and Postgres (settings, counters, and the `question_log` table behind
   Activity).
-- **Providers:** Anthropic, OpenAI or OpenRouter write narration and do the
-  logistics check; Voyage embeds questions; ElevenLabs and edge-tts speak.
+- **Providers:** Anthropic, OpenAI or OpenRouter write narration, write
+  course-info answers from Canvas, and do the logistics check; Voyage embeds questions; ElevenLabs and edge-tts speak.
 - **The local build machine** (the one that holds the private archive) runs
   the content pipeline, the upload worker, in-process eval runs, and the
   scripts on this page. Local commands read the git-ignored `.env`.
@@ -31,9 +31,15 @@ The path is saved with the question as its **kind**.
 | --- | --- | --- | --- | --- | --- |
 | 1 | The question matches a suggested question (same words, ignoring case and punctuation, course fits the filter) | `stored_topic` | no | no | The stored, pre-generated walkthrough, with fresh signed links |
 | 2 | The question matches an entry in my course FAQ (`app/faq.py`, `app/faq_entries.json`) | `faq` | no | no | My written FAQ answer, word for word, with link buttons and TA contact cards |
-| 3 | Embed the question with Voyage and rank every visible slide (`rank()` in `app/retrieval.py`). No slide at or above the threshold | `not_covered` | yes | no | The not-covered reply |
-| 4 | Slides found, but the logistics check says it is about meetings, absences, grades, deadlines, Canvas and the like (`app/logistics.py`) | `logistics` | yes | only if the keyword pre-check missed it | The "that one is for me directly" referral, with the Calendly button |
-| 5 | Slides found and it is course content | `course_content` | yes | yes (the logistics check, then narration) | A narrated walkthrough of the chosen slides |
+| 3 | Embed the question with Voyage once, rank every visible slide and every course-info chunk from Canvas with the same vector (`rank()` in `app/retrieval.py`). The best info chunk scores at least `INFO_THRESHOLD` (0.55) and beats the best slide (`app/course_info.py`) | `course_info` | yes | yes (one grounded answer call) | A short answer in my voice written only from the top 3 Canvas chunks, with buttons that open those Canvas pages |
+| 4 | No slide at or above the threshold | `not_covered` | yes | no | The not-covered reply |
+| 5 | Slides found, but the logistics check says it is about meetings, absences, grades, deadlines, Canvas and the like (`app/logistics.py`) | `logistics` | yes | only if the keyword pre-check missed it | The "that one is for me directly" referral, with the Calendly button |
+| 6 | Slides found and it is course content | `course_content` | yes | yes (the logistics check, then narration) | A narrated walkthrough of the chosen slides |
+
+Path 3 is on only when the private course-info index is loaded
+(`content/info_index.json` and `content/info_embeddings.npy` in the bucket,
+next to the slide index). Without those files the twin skips it and nothing
+else changes.
 
 ## The Activity table, column by column
 
@@ -57,6 +63,7 @@ A badge for the kind of answer (see the table above):
 | Covered | `course_content` | true |
 | Stored answer | `stored_topic` | true |
 | FAQ | `faq` | false |
+| From Canvas | `course_info` | true |
 | Referred to Ben | `logistics` | false |
 | Not covered | `not_covered` | false |
 
@@ -73,7 +80,8 @@ segment. For a new question that means both of these held:
    as not covered, because the student was referred to me instead.
 
 A stored suggested question is covered because its stored walkthrough has
-segments. An FAQ answer is recorded as not covered: it answers from my FAQ,
+segments. A course-info answer from Canvas is recorded as covered too: it is
+answered from course material, just not from slides. An FAQ answer is recorded as not covered: it answers from my FAQ,
 not from slides. The "Today" counters `covered` and `not_covered` count the
 same way, so FAQ answers and referrals add to `not_covered`.
 
@@ -94,6 +102,10 @@ student picked and for sessions visible to students. Cosine similarity can
 run from -1 to 1, but in practice questions land between about 0.35
 (nothing to do with the course) and 0.70 (squarely on a slide). The log keeps
 four decimals; the page shows three.
+
+For a **From Canvas** row it is the best course-info chunk's score instead
+(the same cosine similarity, against the Canvas index), which is at least
+`INFO_THRESHOLD` and higher than every slide.
 
 It is blank, with the tooltip "No search ran", when retrieval never ran:
 
@@ -123,6 +135,7 @@ What to expect per kind:
 | FAQ | Matching regular expressions against a small JSON file. No network call at all | near 0 ms |
 | Stored answer | Rebuilding the stored walkthrough and signing its image, clip and audio links in one Supabase call. No embedding, no model | a few hundred ms |
 | Not covered | One Voyage embedding, plus ranking every slide | about a second |
+| From Canvas | One Voyage embedding, ranking the slides and the Canvas chunks, and one answer call | a few seconds, mostly the model |
 | Referred to Ben | Embedding and ranking, plus one small model call when the keyword pre-check misses | one to a few seconds |
 | Covered | Embedding, ranking, the logistics check, the narration call (with one retry if its JSON fails validation) and signing links | several seconds, mostly the narration model |
 
@@ -135,6 +148,11 @@ only when a model was actually called for that question:
 - **Covered:** the model wrote the narration (and usually did the logistics
   check). If the narration call failed twice and the twin fell back to my
   speaker notes, the model is still shown, because it was called.
+- **From Canvas:** the model wrote the answer from the Canvas chunks. If the
+  reply failed its checks (over 120 words, a web address, `[student]`, an
+  access-code-like token, or words not in the chunks) the twin showed the top
+  chunk's first sentences instead; the model is still shown, because it was
+  called.
 - **Referred to Ben:** shown when the model did the logistics check; "none"
   when the keyword pre-check caught it with no call.
 - **Stored answer, FAQ, Not covered:** always "none".
@@ -207,6 +225,20 @@ Worth watching as more off-topic questions come in.
 
 Changing the threshold is my call and my code: edit the value and the comment
 in `app/retrieval.py` by hand.
+
+## The course-info threshold (`INFO_THRESHOLD`)
+
+Course-info answers from Canvas have their own bar, set by the
+`INFO_THRESHOLD` environment variable (default 0.55, read on every question,
+so a change in Vercel takes effect on the next deploy). The best Canvas chunk
+must score at least this much **and** beat the best slide; otherwise the
+question goes on to the slides as before. 0.55 starts just above the
+logistics band from the Oct 7 eval (0.54 to 0.55 against slides), so a
+question has to match a Canvas page clearly before it is answered from one.
+Re-check it with real questions once the Canvas index is built: a policy or
+due-date question that comes back as slides or not covered means it is too
+high, and a concept question answered from a syllabus page means it is too
+low. An invalid value falls back to 0.55 with a warning in the logs.
 
 ## Run a new test
 

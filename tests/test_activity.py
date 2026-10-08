@@ -119,7 +119,8 @@ def test_every_logged_kind_is_known(student):
     for q in ["Tell me about fruit", "Show me the banana slide", "When are your office hours?",
               "who won the Stanley Cup", "Can I get a regrade on my fruit quiz?"]:
         _ask(student, q)
-    assert {r["kind"] for r in limits._mem_log} == set(LOG_KINDS)
+    # course_info needs the optional info index, which this fixture leaves out: tests/test_course_info.py logs it.
+    assert {r["kind"] for r in limits._mem_log} == set(LOG_KINDS) - {"course_info"}
 
 
 # ---------------------------------------------------------------- the Activity rows
