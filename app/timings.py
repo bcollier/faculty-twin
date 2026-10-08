@@ -187,7 +187,7 @@ def estimate(text: str, duration: float) -> Words:
 # ---------------------------------------------------------------- storage
 
 _lock = threading.Lock()
-_memory: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
+_memory: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
 
 def key(tag: str, text: str) -> str:

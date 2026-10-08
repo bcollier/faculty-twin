@@ -9,6 +9,7 @@ Turns the private lecture archive (slide decks, Zoom captions, class video, note
 | File | Stage | What it does |
 | --- | --- | --- |
 | `slides.py` | 1 | Renders each slide PDF page to WebP (LibreOffice first for a pptx-only deck), extracts text, speaker notes and OCR text (`ocr_vision.swift`, Apple Vision), sets caution flags, extracts notebook cells |
+| `slide_boxes.py` | 1 | Word boxes per slide for the read-along highlights: `pdftotext -bbox-layout`, or Apple Vision OCR boxes (`ocr_vision.swift --boxes`) for picture-only slides; name scrub, secret and PG filters per line; writes `<slide_id>.boxes.json`. `slides.py` calls it; it also runs on its own |
 | `deidentify.py` | 2 | Parses the transcripts, replaces every person named except Ben with `[student]` or `[person]`, marks student turns, writes the review files |
 | `pg_filter.py` | 2 | Swaps cursing for a mild word in transcripts, slide text and Canvas text; marks changed cues `pg: true` |
 | `roster.py` | 2 | One loader for every roster format (course roster, Canvas group export, gradebook) |
@@ -19,9 +20,9 @@ Turns the private lecture archive (slide decks, Zoom captions, class video, note
 | `build_index.py` | 5 | One record per slide and code cell, embedded with Voyage (cached), into `content/index.json` and `content/embeddings.npy`, with a manifest per version |
 | `build_info_index.py` | info | Chunks the Canvas items and embeds them into `content/info_index.json` and `content/info_embeddings.npy` |
 | `code_map.json`, `suggest_code_map.py` | 5 | The hand-checked slide to notebook-cell mapping, and the script that drafts it for review |
-| `pregenerate.py` | topics | Suggested questions: stored playlists and mp3s under `topics/` and `audio/<voice tag>/` |
+| `pregenerate.py` | topics | Suggested questions: stored playlists and mp3s under `topics/` and `audio/<voice tag>/`, each mp3 with its word timings (`<hash>.words.json`); `--timings-only` adds timings to older clips with ElevenLabs forced alignment |
 | `leakcheck.py` | gate | Scans every output against the full roster; one hit stops the upload. Reports where, never what |
-| `upload.py` | 6 | Uploads an allowlist built from the index to the bucket, skips unchanged files, prunes old ones, bumps `settings.index_version` |
+| `upload.py` | 6 | Uploads an allowlist built from the index to the bucket, skips unchanged files, prunes old ones, bumps `settings.index_version`. `--only slides/ --only audio/` sends just those objects (no prune, no version bump) |
 | `worker.py`, `com.collier.facultytwin.worker.plist` | Settings | Polls the `sources` table every 30 seconds for files uploaded in Settings, copies each into the archive, runs the stages it affects, marks it ready or error. The plist starts it at login |
 | `common.py` | all | Paths, `.env` loading, hashing, atomic writes, a small Supabase client |
 
