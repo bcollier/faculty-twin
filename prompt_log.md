@@ -1428,6 +1428,22 @@ Two tests were added in `tests/test_retrieval.py`:
 
 ### Prompt (Oct 8, later)
 
+> yes keep the prompt log. Astra. Which company makes it, and what’s its exact model ID? I need that to put it on the approved list for outside-class answers.  -> this is such a dumb question, just do a google search for it you can find this
+
+(The middle part is the AI's previous question, pasted back.)
+
+**Response summary.** Kept the prompt log rule. Looked up Astra: OpenAI's GPT-6 Astra, API model ID `gpt-6-astra`, announced September 3, 2026. It was already in the app's model list (`app/llm.py`) and price table (`app/pricing.py`). `docs/V2.md` now names the approved models by exact ID: `claude-opus-5-5` and `gpt-6-astra`.
+
+**Where the AI got it wrong.** It asked me which company makes Astra and for its model ID instead of looking it up. A web search answered it, and the ID was already in this repo.
+
+### Prompt (Oct 8, later)
+
+> fable is fine too for outiside-class answers
+
+**Response summary.** Added Anthropic's Claude Fable 5.1 (`claude-fable-5-1`, already in the app's model list and price table) to the approved models for outside-class answers in `docs/V2.md`, next to `claude-opus-5-5` and `gpt-6-astra`. The doc notes that Fable took about 20 seconds per typed answer in a live test.
+
+### Prompt (Oct 8, later)
+
 > create a cartoon version of my face for use on the faculty twin page, show me options
 
 **Response summary.** Made six cartoon styles from the headshot on collier.phd with OpenAI `gpt-image-2.5-sunburst` image edits:
@@ -1516,17 +1532,3 @@ The Figma image tool could not take a reference photo, because the Figma account
 **Response summary.** Logged this session's remaining prompts here and saved where things stand.
 - **Open:** the v2 design (PR #109) is still unmerged, for my review. The next build step is V2 Stage 1, thumbs up and down.
 - **Twilio:** needs funds.
-
-> yes keep the prompt log. Astra. Which company makes it, and what’s its exact model ID? I need that to put it on the approved list for outside-class answers.  -> this is such a dumb question, just do a google search for it you can find this
-
-(The middle part is the AI's previous question, pasted back.)
-
-**Response summary.** Kept the prompt log rule. Looked up Astra: OpenAI's GPT-6 Astra, API model ID `gpt-6-astra`, announced September 3, 2026. It was already in the app's model list (`app/llm.py`) and price table (`app/pricing.py`). `docs/V2.md` now names the approved models by exact ID: `claude-opus-5-5` and `gpt-6-astra`.
-
-**Where the AI got it wrong.** It asked me which company makes Astra and for its model ID instead of looking it up. A web search answered it, and the ID was already in this repo.
-
-### Prompt (Oct 8, later)
-
-> fable is fine too for outiside-class answers
-
-**Response summary.** Added Anthropic's Claude Fable 5.1 (`claude-fable-5-1`, already in the app's model list and price table) to the approved models for outside-class answers in `docs/V2.md`, next to `claude-opus-5-5` and `gpt-6-astra`. The doc notes that Fable took about 20 seconds per typed answer in a live test.
