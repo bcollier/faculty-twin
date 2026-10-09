@@ -1434,3 +1434,50 @@ The Figma image tool could not take a reference photo, because the Figma account
   - The flat-vector avatar sits at the head of the chat dock.
   - Files are in `public/avatars/`, with no JavaScript changes.
   - The other twin session is splitting `public/app.js` and owns deploys, so it was told about the change.
+
+### Prompt (Oct 8, later)
+
+> the visual white overlap between my photo and the one below looks weird
+
+(Sent with a screenshot of the collier.phd home page.)
+
+**Response summary.** On collier.phd (PR #152), the k-means card no longer tucks 22px under the portrait polaroid. The two white cards overlapping read as one smudged card.
+
+### Prompt (Oct 8, later)
+
+> the shrunk version of my face looks bad, lots of spots on my face
+
+(Sent with a screenshot of the header badge.)
+
+**Response summary.** The stippled hedcut turned into blotches at 46px. On collier.phd (PR #153), the header badge, and the image the home portrait docks into, are now a tight crop of the flat-vector cartoon (`assets/portrait-badge.webp`).
+
+### Prompt (Oct 8, later)
+
+> the headers of these look off the text has a line going through it
+
+(Sent with a screenshot of the course cards.)
+
+**Response summary.**
+- **The line:** the red rule on the cards was drawn at a fixed 80px, so wrapped headers ran through it. It's now the header's bottom border and moves down with the text (collier.phd PR #154).
+- **The repeat:** the Executive Education cards printed the program twice, and the grey line now shows just the school (#155).
+
+**Where the AI got it wrong.** PRs #152 and #154 changed `css/site.css` without rerunning `scripts/build.py`. The pages kept the old `site.css?v=` cache-busting hash, so browsers could keep showing the old styles until #155 rebuilt.
+
+### Prompt (Oct 9)
+
+> How did I spend $19 in one day on twilio?
+
+(Sent with Twilio's low-balance email: $1.00 left.)
+
+**Response summary.** The Twilio keys are only in Vercel, so the AI could not open the usage page; this answer is an inference.
+- **Likely cause:** one-time US texting registration (A2P 10DLC): about $4.50 to register the brand and $15 to vet the campaign, about $19 together, on the day the student-alert number was set up.
+- **Not the texts:** the alert guards keep texting far below that: one alert per visitor per day, a 2 hour dedupe, a daily cap of 10 (50 at most), and 300 characters per text.
+- **Next steps:** confirm on Twilio's Usage page, and add funds or turn on auto-recharge. The ongoing cost is about $3 to $4 a month (the $2 campaign renewal and the number) plus about a cent per text.
+
+### Prompt (Oct 9)
+
+> log progress I'm going to shut down
+
+**Response summary.** Logged this session's remaining prompts here and saved where things stand.
+- **Open:** the v2 design (PR #109) is still unmerged, for my review. The next build step is V2 Stage 1, thumbs up and down.
+- **Twilio:** needs funds.
