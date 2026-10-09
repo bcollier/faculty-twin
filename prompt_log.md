@@ -1372,6 +1372,41 @@ Two tests were added in `tests/test_retrieval.py`:
 
 **The guard test.** `tests/test_thresholds.py` failed any branch that edits `app/retrieval.py`. I chose to let a change through only when a commit carries the trailer `Retrieval-Change-Requested-By: Ben`, documented in `AGENTS.md`. This edit to my code was written by Claude Code (Claude Opus 5.5), following my instruction and design choice.
 
+## Planning session, Thursday October 8, 2026
+
+**Tool:** Claude Code, Claude Opus 5.5. Prompts are listed by time, because the project-wide prompt numbers are kept by the build session.
+
+### Prompt (Oct 8)
+
+> take a look at faculty twin repo and related content. build out design and stages to take it to the next level. 
+>
+> Right now, I'm not very impressed with the style of reactions that it's giving. It basically responds to these questions with a lecture that is very serious and sounds not really like how I would like to respond to these questions. I think I would want a more upbeat discussion.
+>
+> If somebody says, "What is the difference between AI agents and agentic AI?" I might say, "Hey, that's a great question. We covered this in class a little bit. Let me explain what we covered in class." If somebody asked a question like, "What kind of Python frameworks are out there for doing AI agents?" and I didn't cover that in class, I might say, "Oh, yes, we talked about AI agents in class on these days. Let me show you some Python frameworks for creating agents," and that would be out-of-class material.
+>
+> I don't really like that it requires so much that I'm only using text from class. I think it's good on the safety front, but I'm much more open to having it come up with answers from outside of class, as long as it's verified sources and things like that. This is a very simple version that we have right now. What would help get better answers, more useful? I would want to see a thumbs up, like, "This response was helpful," et cetera.
+>
+> How do I get feedback from students on this? What about help with assignments? What would a Faculty Twin version two look like, given that this is our early two-day version?
+
+**Response summary.** Read the spec, roadmap, prompts, the ask pipeline and the narration checks, then wrote `docs/V2.md` (design only, nothing built).
+- **Why v1 sounds like a lecture:** 4 to 5 slides of 60 to 90 words each, one segment per slide, a prompt that rewards caution, a grounding check that rejects fresh examples and falls back to reading speaker notes, no greeting or session dates, and first-wins routing that never mixes slides with outside material.
+- **v2 answer shape:** one composer call with an opener that names the class session and date, 1 to 3 slides, labeled "beyond class" parts from allowlisted sources, an invitation, and Go deeper for the v1 walkthrough.
+- **Feedback:** thumbs up and down with reasons, a Settings inbox where my rewrite becomes a golden answer and an eval reference, Ask Ben, a Monday digest, think-alouds and pulse surveys.
+- **Assignment coach:** a help level per assignment, a hint ladder, and solution fingerprints checked in code.
+- **Seven stages**, thumbs first so v1 has a baseline, and seven decisions for me, starting with whether my cloned voice may speak outside material.
+
+### Prompt (Oct 8, later)
+
+> Yes, i'm fine with my voice speaking about something a model like opus 5.5 or astra has said The doc lists seven. The one that blocks Stage 3: may your cloned voice speak outside-class material? I recommend yes, with a spoken handoff (“this next part is from outside class”) and the “Beyond class” label. That means rewriting the voice safety rules in AGENTS.md and the spec first. The other six can wait until their stage.
+
+(The second half is the AI's previous reply, pasted back.)
+
+**Response summary.** Recorded decision 1 in `docs/V2.md`: my cloned voice may speak outside-class material, with the spoken handoff and the Beyond class label.
+- **New source tier:** a beyond part may also come from an approved model's own knowledge (to start: Claude Opus 5.5 and Astra, editable in Settings). It's for stable ideas only. Anything that changes over time still needs a cited source.
+- **Labeling:** the card names the model.
+- **Unapproved model:** a model-knowledge part is dropped when the active model isn't on the list.
+- **Safety rules:** drafted the replacement "Safety rules for the voice" for `AGENTS.md`. It goes in with the first Stage 3 PR rather than now, because until then the code still grounds every spoken word in course material.
+
 ## Post-assignment session, Thursday October 8, 2026
 
 **Tool:** Claude Code, Claude Opus 5.5.
@@ -1390,6 +1425,22 @@ Two tests were added in `tests/test_retrieval.py`:
   - Removed stale "Ben writes this by hand" stubs in `app/retrieval.py`, `public/app.js` and `indexer/pregenerate.py`, and the "fail until Ben writes" note in `tests/test_retrieval.py`.
 - **Left as is:** branch, PR and squash merge, secrets, privacy, the voice safety rules (those change in V2 Stage 3), the prompt log itself, the rule that I write the README, and the demo script (a record of the submission).
 - **Checked:** full test suite, 1604 passed and 5 skipped. `ruff check .` and `node --check public/app.js` pass.
+
+### Prompt (Oct 8, later)
+
+> yes keep the prompt log. Astra. Which company makes it, and what’s its exact model ID? I need that to put it on the approved list for outside-class answers.  -> this is such a dumb question, just do a google search for it you can find this
+
+(The middle part is the AI's previous question, pasted back.)
+
+**Response summary.** Kept the prompt log rule. Looked up Astra: OpenAI's GPT-6 Astra, API model ID `gpt-6-astra`, announced September 3, 2026. It was already in the app's model list (`app/llm.py`) and price table (`app/pricing.py`). `docs/V2.md` now names the approved models by exact ID: `claude-opus-5-5` and `gpt-6-astra`.
+
+**Where the AI got it wrong.** It asked me which company makes Astra and for its model ID instead of looking it up. A web search answered it, and the ID was already in this repo.
+
+### Prompt (Oct 8, later)
+
+> fable is fine too for outiside-class answers
+
+**Response summary.** Added Anthropic's Claude Fable 5.1 (`claude-fable-5-1`, already in the app's model list and price table) to the approved models for outside-class answers in `docs/V2.md`, next to `claude-opus-5-5` and `gpt-6-astra`. The doc notes that Fable took about 20 seconds per typed answer in a live test.
 
 ### Prompt (Oct 8, later)
 

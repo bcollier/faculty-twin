@@ -2,6 +2,8 @@
 
 Ideas for after the October 7 submission. Nothing here is in scope for Tier 1 to 3 in [SPEC.md](SPEC.md); each item moves into the spec before it is built.
 
+**v2 design (Oct 8):** the plan for a more conversational twin that blends class and outside material, student feedback, and assignment help is in [V2.md](V2.md).
+
 ## Voice: free and open-source models on the local build machine
 
 Added October 5, 2026. These run locally on the build machine (the computer that holds the private archive), so they cost nothing per character. Vercel functions cannot run them, so they fit **pre-generated audio** (the 8 to 10 suggested questions, rendered once by the indexer and uploaded under `audio/<voice tag>/`), not live answers. Live answers keep using the hosted tiers (my ElevenLabs clone, ElevenLabs stock voices, free Microsoft voices through edge-tts). Serving a local model for live answers would mean exposing a voice server on a home computer to the internet, which the security review advises against.
