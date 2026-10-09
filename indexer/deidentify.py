@@ -1261,58 +1261,69 @@ def sweep_texts(texts: Iterable[str], scrub: ScrubList, english: set[str], given
     phrase_re = re.compile(r"(?<![\w-])(?:" + "|".join(re.escape(p) for p in KNOWN_PERSON_PHRASES) + r")(?![\w-])",
                            re.IGNORECASE)
     given = given - INSTRUCTOR_FORMS
+    common_words = frequent if frequent is not None else english
     hits = []
     for text in texts:
         text = blank_institution_terms(text)  # "Andrew ID", "andrew.cmu.edu" are not names (indexer/roster.py)
-        for m in phrase_re.finditer(text):
-            if not is_eponym(text, m.start(), m.end()):
-                context = text[max(0, m.start() - 40):m.start()] + "<P>" + text[m.end():m.end() + 40]
-                hits.append(("known_person", context))
+        hits += _known_person_hits(text, phrase_re)
         title_starts = {m.start("n") for m in TITLE_RE.finditer(text)}
         for m in WORD_RE.finditer(text):
-            tok = m.group(0)
-            low = _norm(tok)
+            low = _norm(m.group(0))
             if low in INSTRUCTOR_FORMS or (low in keep and low not in tokens):
                 continue
-            cap = tok[:1].isupper()
-            acronym = tok.isupper() and 1 < len(tok) <= 5
-            common = low in (frequent if frequent is not None else english)
-            non_person = low in NON_PERSON_LOW
-            sent_start = Scrubber._sentence_start(text, m.start())
-            kind = None
-            if low in tokens and not acronym:
-                if non_person:
-                    kind = "ambiguous" if cap else None
-                elif not common and (cap or len(low) >= 4):
-                    kind = "override_term" if low in scrub.extra and low not in scrub.exact else "roster"
-                elif cap and not sent_start:
-                    kind = "roster"
-                elif cap:
-                    kind = "ambiguous"
-            elif low in scrub.person and (cap or not common) and not is_eponym(text, m.start(), m.end()):
-                kind = "override_term"
-            elif low in scrub.nick and cap and not acronym and not non_person and (not sent_start or not common):
-                kind = "roster_nickname"
-            elif cap and not acronym and not non_person and not is_eponym(text, m.start(), m.end()):
-                if low in KNOWN_PERSON_LOW and (not common or not sent_start):
-                    kind = "known_person"
-                elif m.start() in title_starts and (not common or not sent_start):
-                    kind = "title_name"
-                elif low in given and (not sent_start or not common):
-                    kind = "given_name"
-                elif len(low) >= 5 and not common and scrub.fuzzy_pool and \
-                        process.extractOne(low, scrub.fuzzy_pool, scorer=fuzz.ratio, score_cutoff=90):
-                    kind = "roster_fuzzy"
-            if kind is None and cap and not acronym and not non_person and not sent_start and low not in english:
-                nxt = WORD_RE.match(text, m.end() + 1) if text[m.end():m.end() + 1] == " " else None
-                if nxt and nxt.group(0)[:1].isupper() and _norm(nxt.group(0)) not in english \
-                        and _norm(nxt.group(0)) not in NON_PERSON_LOW and not nxt.group(0).isupper():
-                    kind = "cap_bigram"  # review signal: two unknown capitalised words ("Xyz Abc")
+            kind = _sweep_kind(text, m, scrub, tokens, given, english, low in common_words, title_starts)
             if kind:
                 ref = f"<R{index[low]}>" if low in index else "<N>"
                 ctx = (text[max(0, m.start() - 40):m.start()] + ref + text[m.end():m.end() + 40]).replace("\n", " ")
                 hits.append((kind, ctx))
     return hits
+
+
+def _known_person_hits(text: str, phrase_re: re.Pattern) -> list[tuple[str, str]]:
+    """("known_person", context) for each full public-figure name left in `text`, the name shown as <P>."""
+    return [("known_person", text[max(0, m.start() - 40):m.start()] + "<P>" + text[m.end():m.end() + 40])
+            for m in phrase_re.finditer(text) if not is_eponym(text, m.start(), m.end())]
+
+
+def _sweep_kind(text: str, m: re.Match, scrub: ScrubList, tokens: set[str], given: set[str], english: set[str],
+                common: bool, title_starts: set[int]) -> str | None:
+    """The SWEEP_KINDS entry the word at `m` counts under, or None when it is not name-like."""
+    tok = m.group(0)
+    low = _norm(tok)
+    cap = tok[:1].isupper()
+    acronym = tok.isupper() and 1 < len(tok) <= 5
+    non_person = low in NON_PERSON_LOW
+    sent_start = Scrubber._sentence_start(text, m.start())
+    kind = None
+    if low in tokens and not acronym:
+        if non_person:
+            kind = "ambiguous" if cap else None
+        elif not common and (cap or len(low) >= 4):
+            kind = "override_term" if low in scrub.extra and low not in scrub.exact else "roster"
+        elif cap and not sent_start:
+            kind = "roster"
+        elif cap:
+            kind = "ambiguous"
+    elif low in scrub.person and (cap or not common) and not is_eponym(text, m.start(), m.end()):
+        kind = "override_term"
+    elif low in scrub.nick and cap and not acronym and not non_person and (not sent_start or not common):
+        kind = "roster_nickname"
+    elif cap and not acronym and not non_person and not is_eponym(text, m.start(), m.end()):
+        if low in KNOWN_PERSON_LOW and (not common or not sent_start):
+            kind = "known_person"
+        elif m.start() in title_starts and (not common or not sent_start):
+            kind = "title_name"
+        elif low in given and (not sent_start or not common):
+            kind = "given_name"
+        elif len(low) >= 5 and not common and scrub.fuzzy_pool and \
+                process.extractOne(low, scrub.fuzzy_pool, scorer=fuzz.ratio, score_cutoff=90):
+            kind = "roster_fuzzy"
+    if kind is None and cap and not acronym and not non_person and not sent_start and low not in english:
+        nxt = WORD_RE.match(text, m.end() + 1) if text[m.end():m.end() + 1] == " " else None
+        if nxt and nxt.group(0)[:1].isupper() and _norm(nxt.group(0)) not in english \
+                and _norm(nxt.group(0)) not in NON_PERSON_LOW and not nxt.group(0).isupper():
+            kind = "cap_bigram"  # review signal: two unknown capitalised words ("Xyz Abc")
+    return kind
 
 
 def sweep(archive: Path = ARCHIVE, out_dir: Path | None = None, verbose: bool = True) -> dict:
@@ -1354,9 +1365,14 @@ def dump(archive: Path, course: str, session: int, start: int = 0, count: int = 
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: `run` de-identifies every transcript, `sweep` checks the outputs, `dump` prints one session.
+
+    `sweep` exits 1 when a name-like token survives (review-only kinds aside) or PG language remains,
+    so a script can stop on it.
+    """
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--archive", type=Path, default=ARCHIVE)
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub =ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("run")
     sw = sub.add_parser("sweep")
     sw.add_argument("--details", action="store_true", help="print masked context for each hit")

@@ -552,6 +552,7 @@ def text_align(slides: list[dict], cues: list[dict], stretches: list[tuple[float
     anchors = sorted(frame_runs_t, key=lambda r: r[1])
 
     def bounds(a: float, b: float) -> tuple[int, int]:
+        """The slide range (two either side of the nearest frame matches) a chunk from a to b may match."""
         before = [r for r in anchors if r[2] <= a + 1e-6]
         after = [r for r in anchors if r[1] >= b - 1e-6]
         p = before[-1][0] if before else None
@@ -782,6 +783,10 @@ def dump_check(s: Session, out_dir: Path, n: int = 30, seed: int = 0, low_only: 
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: align each session's transcript to its slides, or write calibration sheets.
+
+    A session whose inputs have not changed is skipped unless --force.
+    """
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--course", choices=sorted(COURSE_PREFIX))
     ap.add_argument("--session", type=int)

@@ -17,6 +17,8 @@ from test_api import TEST_FAKE_llm, TEST_FAKE_select
 from app.main import Retriever, app, get_completer, get_embedder, get_retriever, get_searcher
 
 # isort: split
+from page_source import page_source  # tests/fixtures is on sys.path (tests/conftest.py)
+
 from app import course_info, limits, llm, logistics, retrieval, settings_store, storage
 from app.admin import activity_row
 
@@ -602,10 +604,10 @@ def test_activity_row_keeps_model_for_course_info():
 
 
 def test_frontend_reuses_faq_card_for_course_info():
-    app_js = (ROOT / "public" / "app.js").read_text()
+    app_js = page_source("app.js")
     assert "answer.kind === 'course_info'" in app_js and "'From Canvas'" in app_js
     assert "window.open(link.url, '_blank', 'noopener')" in app_js
-    admin_js = (ROOT / "public" / "admin.js").read_text()
+    admin_js = page_source("admin.js")
     assert "course_info: { text: 'From Canvas'" in admin_js
     html = (ROOT / "public" / "index.html").read_text()
     assert 'id="stage-message-label"' in html
@@ -700,5 +702,5 @@ def test_a_model_answer_logs_no_fallback_reason(with_info, student):
 
 
 def test_admin_activity_shows_the_fallback_reason():
-    admin_js = (ROOT / "public" / "admin.js").read_text()
+    admin_js = page_source("admin.js")
     assert "x.fallback_reason" in admin_js and "provider_credits" in admin_js

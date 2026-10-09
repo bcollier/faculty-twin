@@ -2,7 +2,7 @@
 
 Oct 8 live bug: with the course filter on 45-884, "What are frames and semantic networks in knowledge
 representation?" got a web answer, because its best 45-884 slide scored 0.412 while 70-445 teaches it
-(0.594). These tests use Ben's real `retrieval.rank` and `retrieval.select_segments` (called, never changed)
+(0.594). These tests use the real `retrieval.rank` and `retrieval.select_segments` (first written by Ben, rebuilt Oct 8)
 over the synthetic fixture: the fruit slides are all in 70445, the weather slides in 45884. The embedder,
 the model and the web search are TEST FAKES.
 """

@@ -261,6 +261,10 @@ def deck_inputs(deck_dir: Path) -> tuple[list[str], set[str]]:
 
 
 def main(argv: Iterable[str] | None = None) -> int:
+    """Command line: write word-box sidecars for every extracted deck, after the name scrub.
+
+    Refuses to run without rosters, because a box is only written for text that was scrubbed.
+    """
     try:
         import slides as slides_mod  # type: ignore
     except ImportError:

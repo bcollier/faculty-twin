@@ -17,6 +17,7 @@ from app.main import LOG_KINDS, Retriever, app, get_completer, get_embedder, get
 
 # isort: split
 from app import admin, limits, logistics, storage, supa  # noqa: E402,I001
+from page_source import page_source  # tests/fixtures is on sys.path (tests/conftest.py)
 
 ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs" / "TESTING_AND_SCORES.md"
@@ -278,7 +279,7 @@ def test_activity_section_links_the_doc():
 
 
 def test_activity_script_shows_badges_and_none():
-    js = (ROOT / "public" / "admin.js").read_text(encoding="utf-8")
+    js = page_source("admin.js")
     for text in ["'Covered'", "'Stored answer'", "'FAQ'", "'Referred to Ben'", "'Not covered'",
                  "'No search ran'", "'none'"]:
         assert text in js, text

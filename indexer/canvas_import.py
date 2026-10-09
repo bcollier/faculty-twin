@@ -240,6 +240,7 @@ class _HTMLText(HTMLParser):
         self.href: list[str | None] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Start a line for block tags, a bullet for list items, a cell bar for table cells; remember links."""
         if tag in self.SKIP:
             self.skip += 1
             return
@@ -253,6 +254,7 @@ class _HTMLText(HTMLParser):
             self.href.append(dict(attrs).get("href"))
 
     def handle_endtag(self, tag: str) -> None:
+        """Close a block, and keep an outside link's address next to its text so it can be cited."""
         if tag in self.SKIP:
             self.skip = max(0, self.skip - 1)
             return
@@ -684,6 +686,7 @@ class Importer:
             return
 
         def fetch() -> str:
+            """Download the file into a temporary folder and extract its text (cached by update time)."""
             data = self.canvas.download(meta["url"])
             with tempfile.TemporaryDirectory() as tmp:
                 p = Path(tmp) / f"file{ext}"
@@ -861,6 +864,10 @@ def import_course(course: str, archive: Path, canvas: CanvasClient, cleaner: Cle
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command line: import each course's student-facing Canvas items and print counts per kind and filter.
+
+    Read-only on Canvas: it only lists and downloads.
+    """
     ap = argparse.ArgumentParser(description="Import student-facing course info from Canvas (read-only)")
     ap.add_argument("--archive", help="Lecture Archive folder (default ~/Lecture Archive or $LECTURE_ARCHIVE)")
     ap.add_argument("--course", choices=sorted(COURSES), action="append", help="course code (default: both)")

@@ -1428,6 +1428,95 @@ Two tests were added in `tests/test_retrieval.py`:
 
 ### Prompt (Oct 8, later)
 
+> create a cartoon version of my face for use on the faculty twin page, show me options
+
+**Response summary.** Made six cartoon styles from the headshot on collier.phd with OpenAI `gpt-image-2.5-sunburst` image edits:
+- notebook ink with highlighter
+- flat vector
+- 3D animated
+- clean-line comic
+- waving sticker
+- watercolor
+
+The Figma image tool could not take a reference photo, because the Figma account is not linked to Weave. Showed them on one contact sheet.
+
+### Prompt (Oct 8, later)
+
+> my face is much skinner now,  Ilost like 50 poiunds since that picture what can you do wit hthe attached.
+
+(Sent with four selfies.)
+
+**Response summary.** Redid the six styles from two of the new selfies (the smiling whiteboard one and the front-facing one). It left out the sunset selfie, because another person is in it, and the cap selfie, because it hides my hair. "3D animated" was replaced with "at the whiteboard".
+
+### Prompt (Oct 8, later)
+
+> I like this. i actually want the main photo on collier.phd changed to this photo set as well. save both of these photo panels as me for future use on the tiste
+>
+>
+> do this 
+> I’d go with #5 as the greeting on the start screen and #2 as the small avatar in the chat panel. If you’d rather have one image for everything, #1 matches the site best.
+
+(The second part is the AI's previous suggestion, pasted back.)
+
+**Response summary.**
+- **collier.phd** (ben.collier.phd PR #151):
+  - The notebook-ink cartoon is now the home and CV portrait.
+  - The stippled header badge is redrawn from the flat-vector cartoon.
+  - The social preview image is rebuilt.
+  - Both avatar sets (current look, and the older portrait) are saved under `assets/avatars/`.
+- **Faculty Twin** (this repo):
+  - The waving sticker, with its background cut out, greets on the passcode and idle screens.
+  - The flat-vector avatar sits at the head of the chat dock.
+  - Files are in `public/avatars/`, with no JavaScript changes.
+  - The other twin session is splitting `public/app.js` and owns deploys, so it was told about the change.
+
+### Prompt (Oct 8, later)
+
+> the visual white overlap between my photo and the one below looks weird
+
+(Sent with a screenshot of the collier.phd home page.)
+
+**Response summary.** On collier.phd (PR #152), the k-means card no longer tucks 22px under the portrait polaroid. The two white cards overlapping read as one smudged card.
+
+### Prompt (Oct 8, later)
+
+> the shrunk version of my face looks bad, lots of spots on my face
+
+(Sent with a screenshot of the header badge.)
+
+**Response summary.** The stippled hedcut turned into blotches at 46px. On collier.phd (PR #153), the header badge, and the image the home portrait docks into, are now a tight crop of the flat-vector cartoon (`assets/portrait-badge.webp`).
+
+### Prompt (Oct 8, later)
+
+> the headers of these look off the text has a line going through it
+
+(Sent with a screenshot of the course cards.)
+
+**Response summary.**
+- **The line:** the red rule on the cards was drawn at a fixed 80px, so wrapped headers ran through it. It's now the header's bottom border and moves down with the text (collier.phd PR #154).
+- **The repeat:** the Executive Education cards printed the program twice, and the grey line now shows just the school (#155).
+
+**Where the AI got it wrong.** PRs #152 and #154 changed `css/site.css` without rerunning `scripts/build.py`. The pages kept the old `site.css?v=` cache-busting hash, so browsers could keep showing the old styles until #155 rebuilt.
+
+### Prompt (Oct 9)
+
+> How did I spend $19 in one day on twilio?
+
+(Sent with Twilio's low-balance email: $1.00 left.)
+
+**Response summary.** The Twilio keys are only in Vercel, so the AI could not open the usage page; this answer is an inference.
+- **Likely cause:** one-time US texting registration (A2P 10DLC): about $4.50 to register the brand and $15 to vet the campaign, about $19 together, on the day the student-alert number was set up.
+- **Not the texts:** the alert guards keep texting far below that: one alert per visitor per day, a 2 hour dedupe, a daily cap of 10 (50 at most), and 300 characters per text.
+- **Next steps:** confirm on Twilio's Usage page, and add funds or turn on auto-recharge. The ongoing cost is about $3 to $4 a month (the $2 campaign renewal and the number) plus about a cent per text.
+
+### Prompt (Oct 9)
+
+> log progress I'm going to shut down
+
+**Response summary.** Logged this session's remaining prompts here and saved where things stand.
+- **Open:** the v2 design (PR #109) is still unmerged, for my review. The next build step is V2 Stage 1, thumbs up and down.
+- **Twilio:** needs funds.
+
 > yes keep the prompt log. Astra. Which company makes it, and what’s its exact model ID? I need that to put it on the approved list for outside-class answers.  -> this is such a dumb question, just do a google search for it you can find this
 
 (The middle part is the AI's previous question, pasted back.)

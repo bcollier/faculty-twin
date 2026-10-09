@@ -208,30 +208,39 @@ def scatter_panel(a: dict[str, Any], title: str, getx: Getter, gety: Getter, xfm
         x, y = sx(xv), sy(yv)
         out.append(dot(x, y, f"fill s{slot}", tip(f"{yfmt(yv)} at {xfmt(xv)}", short(g), title), r=6))
     for g, _slot, xv, yv in pts:
-        x, y = sx(xv), sy(yv)
-        label = short(g)
-        lw, lh = 6.4 * len(label), 13
-        # Direct labels, placed where they collide with no other label or point; a leader line when moved far.
-        spots = [(dx, dy) for dy in (-8, 14, -22, 28, -36, 42, -50, 56) for dx in (10, -10)]
-        best = None
-        for dx, dy in spots:
-            lx = x + dx if dx > 0 else x + dx - lw
-            box = (lx, y + dy - lh + 3, lx + lw, y + dy + 3)
-            if box[0] < x0 + 2 or box[2] > W - 2 or box[1] < 0 or box[3] > y1:
-                continue
-            if all(box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3] for b in boxes):
-                best = (lx, y + dy, box, dy)
-                break
-        if best is None:
-            continue  # the legend, tooltip and table carry it
-        lx, ly, box, dy = best
-        boxes.append(box)
-        if abs(dy) > 20:
-            out.append(f'<line class="leader" x1="{x:.1f}" y1="{y:.1f}" x2="{(box[0] if box[0] > x else box[2]):.1f}" '
-                       f'y2="{ly - 4:.1f}"/>')
-        out.append(f'<text class="label" x="{lx:.1f}" y="{ly:.1f}">{esc(label)}</text>')
+        out += _point_label(sx(xv), sy(yv), short(g), boxes, x0, y1)
     out.append("</svg>")
     return panel(title, "".join(out), note)
+
+
+def _point_label(x: float, y: float, label: str, boxes: list[tuple[float, float, float, float]], x0: float,
+                 y1: float) -> list[str]:
+    """SVG for a point's direct label, placed where it collides with no other label or point.
+
+    The chosen box is added to `boxes`. A label moved far from its point gets a leader line; one with
+    no free spot is left off (the legend, tooltip and table carry it).
+    """
+    lw, lh = 6.4 * len(label), 13
+    spots = [(dx, dy) for dy in (-8, 14, -22, 28, -36, 42, -50, 56) for dx in (10, -10)]
+    best = None
+    for dx, dy in spots:
+        lx = x + dx if dx > 0 else x + dx - lw
+        box = (lx, y + dy - lh + 3, lx + lw, y + dy + 3)
+        if box[0] < x0 + 2 or box[2] > W - 2 or box[1] < 0 or box[3] > y1:
+            continue
+        if all(box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3] for b in boxes):
+            best = (lx, y + dy, box, dy)
+            break
+    if best is None:
+        return []
+    lx, ly, box, dy = best
+    boxes.append(box)
+    out = []
+    if abs(dy) > 20:
+        out.append(f'<line class="leader" x1="{x:.1f}" y1="{y:.1f}" x2="{(box[0] if box[0] > x else box[2]):.1f}" '
+                   f'y2="{ly - 4:.1f}"/>')
+    out.append(f'<text class="label" x="{lx:.1f}" y="{ly:.1f}">{esc(label)}</text>')
+    return out
 
 
 def strip_panel(a: dict[str, Any]) -> str:
@@ -641,8 +650,20 @@ def _callouts(a: dict[str, Any]) -> tuple[str, str, str]:
 def render(a: dict[str, Any], include_text: bool) -> str:
     """The whole page for one `compare_report.analyze` result. No question text unless `include_text`."""
     meta = a["meta"]
+    footer = ("<footer><p>Written by <code>evals/compare.py</code> (docs/SPEC.md, Block 8c). "
+              f"Question set: {esc(meta.get('questions_file', ''))}.\n")
+    body = f"""
+{_page_header(a)}
+{_page_sections(a, include_text)}
+{footer}Run {esc(meta.get('run_id', ''))}, finished {esc(meta.get('finished_at', ''))}.</p></footer>
+"""
+    return PAGE.replace("{{TITLE}}", "Model Comparison Report").replace("{{BODY}}", body)
+
+
+def _page_header(a: dict[str, Any]) -> str:
+    """The page header: title, lede, number tiles, legend, the callouts that apply, and the method note."""
+    meta = a["meta"]
     gens = a["generators"]
-    P = a["plain"]
     legend = "".join(f'<span><i class="key s{slot}"></i>{esc(short(g))}</span>' for g, slot in model_rows(a))
     sg = "; ".join(f"{short(s['judge'])} judging {short(s['generator'])} ({s['kind']})" for s in a["self_grading"])
     spend = meta.get("spend_usd")
@@ -657,10 +678,7 @@ def render(a: dict[str, Any], include_text: bool) -> str:
             "and n counts answers.\n"
             "  Pass rate is the share of judge verdicts that were pass, a separate overall call, "
             "not computed from the scores.</p>")
-    footer = ("<footer><p>Written by <code>evals/compare.py</code> (docs/SPEC.md, Block 8c). "
-              f"Question set: {esc(meta.get('questions_file', ''))}.\n")
-    body = f"""
-<header>
+    return f"""<header>
   <p class="eyebrow">Faculty Twin evals · {esc(meta.get('questions_file', ''))}</p>
   <h1>{esc(meta.get('label') or 'Model comparison')}</h1>
   {lede}
@@ -675,27 +693,32 @@ def render(a: dict[str, Any], include_text: bool) -> str:
   {route_note}
   {outage_note}
   {note}
-</header>
-{section("headline", "Headline", "One row per answering model, run 1. Brackets are 95% confidence intervals.",
-         _headline_table(a))}
-{section("heatmap", "Model by dimension", "Mean judged score per model and dimension (run 1). Darker is better.",
-         heatmap(a))}
-{section("dots", "Scores with confidence intervals", P["ci"], _score_panels(a))}
-{section("selfgrade", "Self-grading check",
-         "A judge from the same family as the model tends to be lenient. The diamond drops those judges.",
-         grid([dumbbell_panel(a)]) + _per_judge_table(a))}
-{section("routes", "Routing and retrieval (measured, no judge)",
-         "Did the twin take the right path, and did it find the slides a good answer needs?", _routes_content(a))}
-{section("cost", "Cost, quality and speed",
-         "Cost from each answer's tokens and the price table (an estimate, not a bill).", _cost_content(a))}
-{section("retest", "Test-retest: does a model's answer score the same twice?",
-         P["icc"] + " " + P["spearman"] + " " + P["flip"], _retest_content(a, include_text))}
-{section("judges", "Judge reliability",
-         "Test-retest for each judge, and agreement between judges. " + P["kappa"], _judges_content(a))}
-{_question_section(a, include_text)}
-{footer}Run {esc(meta.get('run_id', ''))}, finished {esc(meta.get('finished_at', ''))}.</p></footer>
-"""
-    return PAGE.replace("{{TITLE}}", "Model Comparison Report").replace("{{BODY}}", body)
+</header>"""
+
+
+def _page_sections(a: dict[str, Any], include_text: bool) -> str:
+    """Every report section in page order, the question-by-question table last (empty unless allowed)."""
+    P = a["plain"]
+    return "\n".join([
+        section("headline", "Headline", "One row per answering model, run 1. Brackets are 95% confidence intervals.",
+                _headline_table(a)),
+        section("heatmap", "Model by dimension", "Mean judged score per model and dimension (run 1). Darker is better.",
+                heatmap(a)),
+        section("dots", "Scores with confidence intervals", P["ci"], _score_panels(a)),
+        section("selfgrade", "Self-grading check",
+                "A judge from the same family as the model tends to be lenient. The diamond drops those judges.",
+                grid([dumbbell_panel(a)]) + _per_judge_table(a)),
+        section("routes", "Routing and retrieval (measured, no judge)",
+                "Did the twin take the right path, and did it find the slides a good answer needs?",
+                _routes_content(a)),
+        section("cost", "Cost, quality and speed",
+                "Cost from each answer's tokens and the price table (an estimate, not a bill).", _cost_content(a)),
+        section("retest", "Test-retest: does a model's answer score the same twice?",
+                P["icc"] + " " + P["spearman"] + " " + P["flip"], _retest_content(a, include_text)),
+        section("judges", "Judge reliability",
+                "Test-retest for each judge, and agreement between judges. " + P["kappa"], _judges_content(a)),
+        _question_section(a, include_text),
+    ])
 
 
 def grid(panels: list[str]) -> str:

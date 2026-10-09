@@ -4,7 +4,7 @@ This is the table the threshold in app/retrieval.py was chosen from: on-topic
 questions should score at or above it, off-topic questions below it. See
 docs/TESTING_AND_SCORES.md ("Re-check the threshold").
 
-- Scores come from `app.retrieval.rank` (Ben's code, called unchanged) over the
+- Scores come from `app.retrieval.rank` (the same function /api/ask uses) over the
   slides students can see, from the local index in CONTENT_DIR.
 - All questions are embedded in one Voyage request (same model and input type
   as `/api/ask`), so the free tier's 3 requests a minute is not a problem. That
@@ -189,6 +189,10 @@ def load_slides(course: str | None) -> tuple[list[dict[str, Any]], np.ndarray]:
 
 
 def main(argv: list[str] | None = None, embed_many: Callable | None = None) -> int:
+    """Command line: score on- and off-topic questions against the slides and print the threshold table.
+
+    Exit 1 when no threshold separates the two groups, so a changed index that blurs them is noticed.
+    """
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--questions", help="JSON Lines file of {question, label: on|off} (default: 10 invented ones)")
     p.add_argument("--course", choices=config.COURSE_CODES, help="score against one course only (default: all)")

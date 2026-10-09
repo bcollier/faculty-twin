@@ -4,12 +4,13 @@
 // looks up is a FakeElement remembered by its selector, so a test can read what the page wrote
 // (textContent, hidden, src) and fire its listeners. Unknown properties and methods are harmless
 // no-ops. fetch is whatever the test passes in. Nothing here touches the network.
+//
+// Pages are real ES modules (a page script imports its sections from public/student/ or
+// public/settings/), so loadPage() imports them as modules: see "Loading a page" at the bottom.
 
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { registerHooks } from 'node:module';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
 class FakeElement {
   constructor(name = '') {
@@ -117,15 +118,61 @@ export function makeBrowser({ fetch, confirm = () => true, hostname = 'faculty-t
   return { globals, element, docListeners, winListeners };
 }
 
-/** Run `file` (a public/*.js page script) in the fake browser and return the named top-level bindings. */
+/* ---- Loading a page ----
+   Each loadPage() call is one page load: its own copy of every public/ module, run against its own fake
+   browser. Two module hooks make that work without a bundler:
+   - resolve: a module that a tagged module imports from public/ gets the same `?ftload=N` tag, so each
+     load has its own module graph (top-level code such as listeners and boot() runs once per load, as
+     in a browser tab);
+   - load: every tagged module gets `const { document, window, fetch, ... } = <load N's fakes>;` in front
+     of its first line (so line numbers stay true), and a test-only `__ftPeek(name)` after its last, which
+     reads one of its top-level bindings: a test can reach a function or state object the page never
+     exports.
+   So a page module must not declare a top-level binding named like a fake global (document, fetch, ...),
+   which a browser page that uses those globals cannot do either. */
+
+const LOADS = new Map(); // load id -> { globals, modules: [module URL, in load order] }
+globalThis.__ftLoads = LOADS;
+const PUBLIC = `${pathToFileURL(resolve('public')).href}/`;
+let lastLoad = 0;
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    const found = nextResolve(specifier, context);
+    const id = context.parentURL ? new URL(context.parentURL).searchParams.get('ftload') : null;
+    if (!id || !found.url.startsWith(PUBLIC)) return found;
+    const url = new URL(found.url);
+    url.searchParams.set('ftload', id);
+    return { ...found, url: url.href, shortCircuit: true };
+  },
+  load(url, context, nextLoad) {
+    const id = Number(new URL(url).searchParams.get('ftload'));
+    if (!id) return nextLoad(url, context);
+    const { source } = nextLoad(url, { ...context, format: 'module' });
+    const load = LOADS.get(id);
+    load.modules.push(url);
+    const fakes = `const { ${Object.keys(load.globals).join(', ')} } = globalThis.__ftLoads.get(${id}).globals;`;
+    const peek = '\nexport function __ftPeek(name) { try { return eval(name); } catch { return undefined; } }\n';
+    return { format: 'module', source: fakes + String(source) + peek, shortCircuit: true };
+  },
+});
+
+/** Run `file` (a public/*.js page script, with every module it imports) in the fake browser, and return
+    the named top-level bindings: from the page script if it has one by that name, else from the first
+    module it loaded that does. */
 export async function loadPage(file, browser, expose) {
-  // A page's `import('./x.js')` would resolve next to this file; point it at the page's own folder.
-  const base = pathToFileURL(resolve(dirname(file))).href;
-  const src = readFileSync(file, 'utf8').replace(/import\((['"])\.\//g, `import($1${base}/`);
-  const names = Object.keys(browser.globals);
-  const body = `${src}\n;return { ${expose.map(n => `${n}: typeof ${n} === 'undefined' ? undefined : ${n}`).join(', ')} };`;
-  const run = new AsyncFunction(...names, body);
-  return run(...names.map(n => browser.globals[n]));
+  const id = ++lastLoad;
+  LOADS.set(id, { globals: browser.globals, modules: [] });
+  const url = pathToFileURL(resolve(file));
+  url.searchParams.set('ftload', String(id));
+  await import(url.href);
+  const modules = await Promise.all(LOADS.get(id).modules.map((u) => import(u)));
+  const found = {};
+  for (const name of expose) {
+    const holder = modules.find((m) => m.__ftPeek(name) !== undefined);
+    found[name] = holder ? holder.__ftPeek(name) : undefined;
+  }
+  return found;
 }
 
 /** A response object like fetch's. */

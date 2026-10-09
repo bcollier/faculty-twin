@@ -344,13 +344,9 @@ def run(
         items = [it for it in items if it.path.startswith(only)]
         prune = False
         log(f"Only objects under {', '.join(only)}: {len(items)} in the plan; the index version is not changed.")
-    try:
-        checker = RosterChecker.from_dir(roster)
-    except RosterMissing as exc:
-        log(f"Upload stopped: {exc}. The leak check is the gate; nothing was uploaded.")
+    hits = _leak_hits(items, roster, log)
+    if hits is None:
         return EXIT_LEAK
-    hits = leak_check(items, checker)
-    log(hits.summary())
     if hits.total and not dry_run:
         log("Upload aborted: fix the de-identification for the places above and rebuild. Nothing was uploaded.")
         return EXIT_LEAK
@@ -362,11 +358,8 @@ def run(
             f"Check SUPABASE_URL and that bucket {sb.bucket if sb else ''} exists.")
         return EXIT_CONFIG
     known = state or {}
-    todo = [it for it in items if force or known.get(it.path, {}).get("sha256") != it.sha256]
-    planned = {it.path for it in items}
-    stale = sorted(p for p in known if p not in planned and allowed(p)) if prune else []
+    todo, stale = _changes(items, known, force, prune)
     version = manifest["index_version"]
-
     if dry_run:
         _report_dry_run(items, todo, stale, known, state is None, None if only else version, log)
         if hits.total:
@@ -376,7 +369,38 @@ def run(
     if sb is None:
         log("Upload stopped: Supabase is not configured (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY in .env).")
         return EXIT_CONFIG
+    return _upload(sb, items, todo, stale, known, version, not only, log)
 
+
+def _changes(items: list[Item], known: dict[str, Any], force: bool, prune: bool) -> tuple[list[Item], list[str]]:
+    """(objects to send, bucket paths to delete) compared with the last upload's state.
+
+    `force` sends every object; with `prune`, an allowed bucket path that left the plan is deleted.
+    """
+    todo = [it for it in items if force or known.get(it.path, {}).get("sha256") != it.sha256]
+    planned = {it.path for it in items}
+    stale = sorted(p for p in known if p not in planned and allowed(p)) if prune else []
+    return todo, stale
+
+
+def _leak_hits(items: list[Item], roster: Path, log: Callable[[str], None]) -> Hits | None:
+    """Run the roster leak check over the plan and log its summary; None (after saying why) without rosters."""
+    try:
+        checker = RosterChecker.from_dir(roster)
+    except RosterMissing as exc:
+        log(f"Upload stopped: {exc}. The leak check is the gate; nothing was uploaded.")
+        return None
+    hits = leak_check(items, checker)
+    log(hits.summary())
+    return hits
+
+
+def _upload(sb: common.Supabase, items: list[Item], todo: list[Item], stale: list[str], known: dict[str, Any],
+            version: str, set_version: bool, log: Callable[[str], None]) -> int:
+    """Send the changed objects, prune the stale ones, save the state, then set settings.index_version.
+
+    `set_version` is False for an `--only` run, which leaves settings.index_version alone.
+    """
     total = sum(it.size for it in todo)
     log(f"Uploading {len(todo)} of {len(items)} objects ({total / 1e6:.1f} MB) to bucket {sb.bucket}")
     new_state = dict(known)
@@ -387,7 +411,7 @@ def run(
     if failed:
         log(f"Upload incomplete: {len(failed)} objects failed. Re-run the same command; finished objects are skipped.")
         return EXIT_UPLOAD
-    if only:
+    if not set_version:
         log("Done. The index was not part of this run, so settings.index_version is unchanged.")
         return EXIT_OK
     try:
@@ -490,7 +514,11 @@ def _save_state(sb: common.Supabase, version: str, new_state: dict[str, Any], lo
 
 
 def main(argv: list[str] | None = None, client: httpx.Client | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Mirror build outputs to the private Supabase bucket")
+    """Command line: mirror the build to the private bucket, or list what would change with --dry-run.
+
+    Without Supabase settings in .env the run can still plan and leak-check (a dry run lists everything).
+    """
+    ap =argparse.ArgumentParser(description="Mirror build outputs to the private Supabase bucket")
     ap.add_argument("--archive", help="Lecture Archive folder (default ~/Lecture Archive or $LECTURE_ARCHIVE)")
     ap.add_argument("--build", help="build folder (default <archive>/_build)")
     ap.add_argument("--roster", help="roster folder (default <archive>/_private/rosters)")

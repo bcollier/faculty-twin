@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 import pytest
+from page_source import page_source  # tests/fixtures is on sys.path (tests/conftest.py)
 from test_api import TEST_FAKE_embedder, TEST_FAKE_llm, TEST_FAKE_rank, TEST_FAKE_select
 
 from app import limits, logistics
@@ -231,7 +232,7 @@ def test_question_log_keeps_the_scrub_with_kind():
 # ---------------------------------------------------------------- frontend
 
 def test_frontend_shows_the_logistics_message():
-    js = (ROOT / "public" / "app.js").read_text()
+    js = page_source("app.js")
     copy = re.search(r"logistics: \[(.*?)\],\n", js, re.S)
     assert copy, "COPY.logistics is missing"
     assert "That one is for me directly." in copy.group(1)

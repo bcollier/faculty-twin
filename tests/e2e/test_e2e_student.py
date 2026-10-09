@@ -172,6 +172,16 @@ def test_faq_card_with_a_link_button(page, base_url):
     expect(page.locator("#player")).to_be_hidden()
 
 
+def test_helper_slide_shows_under_the_walkthrough(page, base_url):
+    # The drawing code loads only when an answer has a helper slide (a dynamic import, so its path is
+    # relative to the module that imports it: the Oct 8 module split first pointed it at the wrong folder).
+    sign_in(page, base_url)
+    ask(page, "helperdiagram")
+    wait_for_player(page)
+    expect(page.locator("#helper-slot")).to_be_visible()
+    expect(page.locator("#helper-slot")).to_contain_text("AI-drawn slide, not from my course")
+
+
 def test_faq_card_with_ta_contacts(page, base_url):
     sign_in(page, base_url)
     ask(page, "faqta")

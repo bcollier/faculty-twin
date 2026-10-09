@@ -2,7 +2,7 @@
 
 Every route except /api/health and /api/login needs the student cookie (an
 admin cookie also works, so Ben can preview). Settings routes live in
-app/admin.py and need the admin cookie.
+app/admin/ and need the admin cookie.
 """
 
 from __future__ import annotations
@@ -126,7 +126,10 @@ async def _validation_error(request: Request, exc: RequestValidationError) -> JS
 
 @dataclass
 class Retriever:
-    """The hand-written retrieval functions. Tests swap in a TEST FAKE via dependency override."""
+    """The retrieval functions (rank() and select_segments() in app/retrieval.py) and the threshold in use.
+
+    Tests swap in a TEST FAKE via dependency override.
+    """
 
     rank: Callable[[np.ndarray, np.ndarray], list[tuple[int, float]]]
     select_segments: Callable[[list[tuple[int, float]], list[dict[str, Any]], float | None], list[dict[str, Any]]]
@@ -134,7 +137,7 @@ class Retriever:
 
 
 def get_retriever() -> Retriever:
-    # The threshold is read per request (Settings override, else Ben's value in retrieval.py).
+    # The threshold is read per request (Settings override, else NOT_COVERED_THRESHOLD in app/retrieval.py).
     return Retriever(retrieval.rank, retrieval.select_segments, thresholds.slide_threshold())
 
 
@@ -411,40 +414,57 @@ def _canvas_answer(ask: _Ask) -> dict[str, Any] | None:
 
 
 def _slides_answer(ask: _Ask) -> dict[str, Any]:
-    """The last route: Ben's select_segments() picks the slides; else the other course, the web path, or not covered.
+    """The last route: select_segments() (app/retrieval.py) picks the slides; else the other course, the web path,
+    or not covered.
 
     With a course filter and nothing picked in that course, the other course's slides get a turn first
     (spec step 7c). With slides chosen, the logistics check (spec step 7a) may still send the question to Ben;
     otherwise one narration call explains the slides, with the helper-slide check beside it.
     """
-    info = ask.info
     chosen = _select(ask, ask.ranked, ask.records) if ask.records else []
     cross = False
     if not chosen:
         chosen = _other_course(ask)
         cross = bool(chosen)
     if not chosen:
-        info["kind"] = NOT_COVERED
-        if not ask.records:
-            return playlist.not_covered(ask.question)
-        # Beyond the slides (spec step 7b): a course-adjacent question may get a web answer. Its closest slides
-        # come from every course (they are links to look at): with a filter, _other_course ranked them all.
-        records, ranked = (ask.all_records, ask.all_ranked) if ask.all_records else (ask.records, ask.ranked)
-        reply, _ = _beyond_the_slides(ask.question, ask.course, ask.content, records, ranked, ask.completer,
-                                      ask.searcher or get_searcher(), ask.provider, ask.model, info, ask.used_model)
-        return reply
-
-    # Logistics check (spec step 7a): meetings, absences, grades, deadlines and Canvas go to Ben.
-    kind = logistics.classify(ask.question, ask.completer, provider=ask.provider, model=ask.model)
-    info["kind"] = kind.kind
-    info["kind_source"] = kind.source
-    if kind.source != "keyword":  # "llm", or "error" after a call was tried
-        ask.used_model()
-    if kind.kind == logistics.LOGISTICS:
+        return _no_slides(ask)
+    if _is_logistics(ask):
         return _referral(ask.question, ask.course, ask.content)
     if cross:
-        info["kind"] = CROSS_COURSE
+        ask.info["kind"] = CROSS_COURSE
+    return _narrated_slides(ask, chosen, cross)
 
+
+def _no_slides(ask: _Ask) -> dict[str, Any]:
+    """No slide in any course cleared the threshold: a web answer when the question suits one (spec step 7b),
+    else not covered."""
+    ask.info["kind"] = NOT_COVERED
+    if not ask.records:
+        return playlist.not_covered(ask.question)
+    # A web answer's closest slides come from every course (they are links to look at): with a filter,
+    # _other_course ranked them all.
+    records, ranked = (ask.all_records, ask.all_ranked) if ask.all_records else (ask.records, ask.ranked)
+    reply, _ = _beyond_the_slides(ask.question, ask.course, ask.content, records, ranked, ask.completer,
+                                  ask.searcher or get_searcher(), ask.provider, ask.model, ask.info, ask.used_model)
+    return reply
+
+
+def _is_logistics(ask: _Ask) -> bool:
+    """Spec step 7a: meetings, absences, grades, deadlines and Canvas go to Ben, even when slides matched.
+
+    Records the kind and where it came from; a model call (or a tried one) counts against the model budget.
+    """
+    kind = logistics.classify(ask.question, ask.completer, provider=ask.provider, model=ask.model)
+    ask.info["kind"] = kind.kind
+    ask.info["kind_source"] = kind.source
+    if kind.source != "keyword":  # "llm", or "error" after a call was tried
+        ask.used_model()
+    return kind.kind == logistics.LOGISTICS
+
+
+def _narrated_slides(ask: _Ask, chosen: list[dict[str, Any]], cross: bool) -> dict[str, Any]:
+    """One narration call explains the chosen slides; the helper-slide check runs beside it."""
+    info = ask.info
     codes = {r["id"]: (playlist.related_code(ask.content, r) or {}).get("source") for r in chosen}
     ask.used_model()
     # The helper-slide self-check runs beside narration, so it adds no wait (spec "AI-drawn helper slides").
@@ -462,7 +482,7 @@ def _slides_answer(ask: _Ask) -> dict[str, Any]:
 
 
 def _select(ask: _Ask, ranked: list[tuple[int, float]], records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Ben's select_segments() with the threshold in use (Settings override, else his value)."""
+    """select_segments() (app/retrieval.py) with the threshold in use (Settings override, else the default)."""
     try:
         return ask.retriever.select_segments(ranked, records, ask.retriever.threshold)
     except NotImplementedError as exc:
@@ -820,6 +840,11 @@ async def audio(
     v: str = Query("", max_length=40),
     session: auth.Session = Depends(auth.require_student),
 ):
+    """Stream one signed narration in the voice its link names (the student page's audio player).
+
+    Only text the backend signed is ever spoken, in a voice the current setting still offers, and
+    the characters count against that voice tier's daily cap once per visitor per day.
+    """
     text = speech.verify(t, v, s)  # the signature covers the text and the voice tag
     if text is None:
         raise HTTPException(403, "This audio link is not valid.")

@@ -24,6 +24,7 @@ from app.main import Retriever, app, get_completer, get_embedder, get_retriever
 
 # isort: split
 from app import alerts, analytics, limits, pricing, prompts, settings_store, storage, usage  # noqa: E402,I001
+from page_source import page_source  # tests/fixtures is on sys.path (tests/conftest.py)
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 10, 8, 18, 30, tzinfo=UTC)
@@ -633,7 +634,7 @@ def test_sms_price_is_editable_and_validated():
 # ---------------------------------------------------------------- pages and docs
 
 def test_pages_and_docs():
-    app_js = (ROOT / "public" / "app.js").read_text(encoding="utf-8")
+    app_js = page_source("app.js")
     assert "answer.kind === 'alert'" in app_js
     html = (ROOT / "public" / "admin.html").read_text(encoding="utf-8")
     assert 'id="sec-alerts"' in html and 'href="#sec-alerts"' in html and "admin-alerts.js" in html

@@ -57,9 +57,23 @@ def clear_hidden_cache() -> None:
         _hidden_generation += 1
 
 
+SEARCHABLE_VIEWS = 8  # (course, hidden sessions) views kept per loaded index
+
+
 def searchable(content: Content, course: str | None) -> tuple[list[dict[str, Any]], np.ndarray]:
-    """Slide records (and their matrix rows) a student may be shown for this question."""
+    """Slide records (and their matrix rows) a student may be shown for this question.
+
+    Changed Oct 8 (retrieval rebuild): the rows for one course filter and one set of hidden sessions are
+    copied out of the index once and kept on the loaded content as a read-only array, so every question
+    reuses it and `retrieval.rank` computes its row lengths once. A reload brings a new Content (and new
+    views); hiding or showing a session changes the key.
+    """
     hidden = hidden_sessions()
+    views = getattr(content, "views", None)
+    key = (course, frozenset(hidden))
+    if views is not None and key in views:
+        records, matrix = views[key]
+        return list(records), matrix
     rows = [
         i
         for i, r in enumerate(content.records)
@@ -67,7 +81,13 @@ def searchable(content: Content, course: str | None) -> tuple[list[dict[str, Any
         and (course is None or str(r.get("course")) == course)
         and (str(r.get("course")), int(r.get("session") or 0)) not in hidden
     ]
-    return [content.records[i] for i in rows], content.matrix[rows]
+    records, matrix = [content.records[i] for i in rows], content.matrix[rows]
+    matrix.flags.writeable = False
+    if views is not None:
+        if len(views) >= SEARCHABLE_VIEWS:
+            views.clear()
+        views[key] = (records, matrix)
+    return list(records), matrix
 
 
 def related_code(content: Content, rec: dict[str, Any]) -> dict[str, Any] | None:
@@ -218,9 +238,9 @@ def other_course_ranked(ranked: list[tuple[int, float]], records: list[dict[str,
                         course: str) -> list[tuple[int, float]]:
     """`ranked` (over every course's slides) without the pairs for `course`: indexes still point into `records`.
 
-    Added Oct 8 (the frames question filtered to 45-884): Ben's select_segments() runs on these pairs with the
-    unfiltered records list, so it can only pick the other course's slides (its gap fills come from the same
-    session as two picked slides).
+    Added Oct 8 (the frames question filtered to 45-884): select_segments() (app/retrieval.py) runs on these
+    pairs with the unfiltered records list, so it can only pick the other course's slides (its gap fills come
+    from the same session as two picked slides).
     """
     return [(i, s) for i, s in ranked if 0 <= i < len(records) and str(records[i].get("course")) != course]
 

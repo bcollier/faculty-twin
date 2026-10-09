@@ -6,7 +6,7 @@ The Activity section links here ("How these numbers work").
 
 Everything below describes what the code does today: `app/main.py` (`answer()`
 and `/api/ask`), `app/limits.py` (`log_question`, `recent_questions`),
-`app/admin.py` (`GET /api/admin/log`) and `public/admin.js`.
+`app/admin/status_activity.py` (`GET /api/admin/log`) and `public/settings/activity.js`.
 
 ## Where things run
 
@@ -80,9 +80,13 @@ segment. For a new question that means both of these held:
 
 1. **The top retrieval score was at or above the slide threshold** (my
    `NOT_COVERED_THRESHOLD`, 0.52, unless Settings overrides it).
-   `select_segments()` keeps the top 8 slides that score at or above the
-   threshold, so it returns at least one slide exactly when the best slide
-   does. If it returns none, the answer is not covered.
+   `select_segments()` keeps slides that score at or above the threshold
+   (and within 0.12 of the best one), so it returns at least one slide
+   exactly when the best slide that can lead does. *Changed Oct 8
+   (retrieval rebuild):* a picture-only slide or a navigation slide (the
+   title page, an agenda, "Questions") never leads, so if one of those is
+   the only slide over the threshold, the answer is not covered. If it
+   returns none, the answer is not covered.
 2. **An answer was built.** The logistics check ran after retrieval and said
    "course content", so narration wrote the walkthrough. A logistics question
    can score over 0.52 (most do, around 0.54 to 0.55) and still be recorded

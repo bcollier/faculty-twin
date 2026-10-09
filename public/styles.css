@@ -880,3 +880,18 @@ html.handoff-out .handoff-frame {
     transition-duration: var(--ho-reduced-ms) !important;
   }
 }
+
+/* ---------- my cartoon avatars (added Oct 8) ---------- */
+/* the waving sticker greets on the passcode and idle screens, stuck on slightly crooked like the site's notes */
+.twin-greet {
+  display: block; width: 150px; height: auto; margin: 0 auto .4rem; transform: rotate(-3deg);
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .18));
+}
+#login-form .twin-greet { width: 120px; }
+/* the small round avatar at the head of the chat dock */
+.dock-avatar { width: 34px; height: 34px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1.5px var(--line); }
+@media (max-width: 760px) {
+  .twin-greet { width: 110px; }
+  #login-form .twin-greet { width: 96px; }
+  .dock-avatar { width: 28px; height: 28px; }
+}

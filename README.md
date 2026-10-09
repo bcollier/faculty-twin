@@ -159,7 +159,7 @@ Screenshots from the live site, October 8, 2026 (what each shows and how it was 
 
 #### How a question is routed
 
-Every question takes one path, cheapest first, and the path is saved with it as its **kind**. Yellow boxes are Ben's hand-written code.
+Every question takes one path, cheapest first, and the path is saved with it as its **kind**. Yellow boxes are code Ben first wrote by hand for the course; retrieval was rebuilt on Oct 8 and measured with evals ("Slide retrieval" in [docs/SPEC.md](docs/SPEC.md)), and the 0.52 threshold is still his value.
 
 ```mermaid
 flowchart TD
@@ -172,10 +172,10 @@ flowchart TD
     T -- no --> F{"Matches Ben's course FAQ?<br/>app/faq.py keyword patterns"}
     F -- yes --> FAQ["Ben's written answer, word for word<br/>Calendly button, TA card<br/>kind faq, no model"]
     F -- no --> E["Embed once with Voyage"]
-    E --> R["rank() slides and Canvas chunks<br/>Ben's code"]
+    E --> R["rank() slides and Canvas chunks<br/>first written by Ben, rebuilt Oct 8"]
     R --> C{"Best Canvas chunk at least 0.55<br/>and above the best slide?"}
     C -- yes --> INFO["From Canvas card<br/>short answer from the chunks + links<br/>kind course_info"]
-    C -- no --> SEL["select_segments() with threshold 0.52<br/>Ben's code"]
+    C -- no --> SEL["select_segments(): threshold 0.52,<br/>one course, no repeated slide, best 5<br/>first written by Ben, rebuilt Oct 8"]
     SEL --> COV{"Any slide selected?"}
     COV -- no --> NC["I don't have course material on that<br/>kind not_covered"]
     COV -- yes --> L{"Logistics?<br/>keyword pre-check, then one small model call"}
@@ -196,7 +196,7 @@ flowchart LR
 
     SB["Student browser<br/>public/ (no keys)"] -- "/api/* with a signed cookie" --> FN["Vercel: FastAPI function app/<br/>holds every key"]
     SB -- "signed links: slides, clips, audio" --> BK[("Supabase private bucket<br/>index, slides, clips, audio")]
-    FN --- RET["rank(), select_segments(), 0.52<br/>Ben's code"]
+    FN --- RET["rank(), select_segments(), 0.52<br/>first written by Ben, rebuilt Oct 8"]
     SB --- PL["onClipEnded()<br/>Ben's code"]
     FN -- "settings, limits, question log" --> PG[("Supabase Postgres")]
     FN -- "de-identified text" --> LLM["Claude, OpenAI or OpenRouter"]
@@ -423,7 +423,7 @@ The pipeline, eval and CI diagrams, every endpoint with the file and function th
 
 | Doc | What it covers |
 | --- | --- |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The seven diagrams, with Ben's hand-written code marked |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The seven diagrams, with the code Ben first wrote by hand marked |
 | [docs/DATABASE.md](docs/DATABASE.md) | Postgres tables, the Storage bucket layout, settings and counter keys, and what lives where |
 | [docs/APIS.md](docs/APIS.md) | Every external API (provider, endpoint, calling code, auth variable, cost, data sent), the app's 67 routes, and local tools, with diagrams |
 | [docs/SPEC.md](docs/SPEC.md) | The spec and build guide: scope, data formats, every API route, limits, the build blocks |
@@ -444,8 +444,8 @@ The pipeline, eval and CI diagrams, every endpoint with the file and function th
 | `README.md` | This file. Ben's sections, then this AI-written guide |
 | `prompt_log.md` | The prompts used to build the project, verbatim (required next to the README) |
 | `AGENTS.md` | Rules for AI coding agents in this repo (branching, privacy, copy) |
-| [`app/`](app/README.md) | The backend: one FastAPI app on Vercel. Routing, retrieval (`retrieval.py`, Ben's code), narration, voice, signed links, Settings API |
-| [`public/`](public/README.md) | The frontend: the student page (`index.html`, `app.js` with Ben's `onClipEnded()`), the Settings page (`admin.html` and its scripts), styles |
+| [`app/`](app/README.md) | The backend: one FastAPI app on Vercel. Routing, retrieval (`retrieval.py`, first written by Ben, rebuilt Oct 8), narration, voice, signed links, Settings API (`app/admin/`, one module per Settings section) |
+| [`public/`](public/README.md) | The frontend: the student page (`index.html`, `app.js` and its sections in `student/`, with Ben's `onClipEnded()` in `student/player.js`), the Settings page (`admin.html`, `admin.js` and its sections in `settings/`, and the section scripts `admin-*.js`), styles |
 | [`indexer/`](indexer/README.md) | The content pipeline and the upload worker, run on the local build machine |
 | [`evals/`](evals/README.md) | The eval harness: question checks, judges, rubric, reports, calibration cases |
 | [`localvoice/`](localvoice/README.md) | Local open-source voices for pre-generated audio (roadmap work) |
